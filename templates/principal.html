@@ -15,7 +15,7 @@
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;
     line-height:1.5;padding:18px;padding-bottom:max(18px,env(safe-area-inset-bottom))}
   .wrap{max-width:760px;margin:0 auto}
-  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;gap:12px}
+  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:12px}
   .brand{display:flex;align-items:center;gap:10px;min-width:0}
   .brand img{width:34px;height:34px;border-radius:50%;background:#fff;padding:1.5px;object-fit:contain;flex-shrink:0}
   .brand-text{min-width:0}
@@ -27,14 +27,35 @@
   .header .links a:hover{color:var(--txt);border-color:var(--txt2)}
   .header .links a.admin{background:var(--gold-soft);color:var(--gold);border-color:#3d3422}
 
-  .section-h{font-size:11px;color:var(--gold);font-weight:600;letter-spacing:1.5px;
-    text-transform:uppercase;margin:26px 0 10px;display:flex;align-items:center;gap:8px}
-  .section-h:first-of-type{margin-top:0}
-  .section-h .count{color:var(--txt3);font-weight:normal}
+  /* Tabs */
+  .tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .tab{flex:1;padding:12px 0;text-align:center;font-size:14px;color:var(--txt3);
+    cursor:pointer;background:none;border:none;font-family:inherit;font-weight:500;
+    border-bottom:2px solid transparent;margin-bottom:-1px;transition:all 0.15s}
+  .tab:hover{color:var(--txt2)}
+  .tab.active{color:var(--txt);font-weight:600;border-bottom-color:var(--gold)}
+  .tab .badge{font-size:11px;color:var(--txt3);font-weight:normal;margin-left:5px}
+  .tab.active .badge{color:var(--gold)}
 
-  .song-item{display:flex;align-items:center;gap:14px;padding:14px 16px;
+  /* Search */
+  .search-wrap{position:relative;margin-bottom:14px}
+  .search{width:100%;padding:11px 14px 11px 36px;font-size:14px;background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;color:var(--txt);font-family:inherit;
+    transition:border 0.15s}
+  .search:focus{outline:none;border-color:var(--txt2);background:#252525}
+  .search::placeholder{color:var(--txt3)}
+  .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);
+    color:var(--txt3);font-size:14px;pointer-events:none}
+  .search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:var(--txt3);cursor:pointer;font-size:18px;
+    padding:4px 8px;border-radius:5px;display:none}
+  .search-clear:hover{background:var(--surface);color:var(--txt)}
+  .search-clear.visible{display:block}
+
+  /* Song items */
+  .song-item{display:flex;align-items:center;gap:14px;padding:13px 15px;
     background:var(--surface);border:1px solid var(--line);border-radius:10px;
-    margin-bottom:8px;cursor:pointer;text-decoration:none;color:var(--txt);transition:all 0.15s}
+    margin-bottom:7px;cursor:pointer;text-decoration:none;color:var(--txt);transition:all 0.15s}
   .song-item:hover{border-color:var(--txt3)}
   .song-item:active{background:var(--raised)}
   .song-item .num{font-family:ui-monospace,Menlo,monospace;font-size:13px;
@@ -49,8 +70,13 @@
   .setlist-item{background:#161616;border-color:#333}
   .setlist-item .num{color:var(--gold)}
 
-  .vacio{padding:24px 18px;color:var(--txt3);font-size:13px;text-align:center;
-    font-style:italic;border:1px dashed var(--line);border-radius:10px;margin-bottom:8px}
+  .vacio{padding:32px 20px;color:var(--txt3);font-size:13px;text-align:center;
+    font-style:italic;border:1px dashed var(--line);border-radius:10px}
+  .vacio.no-results{padding:20px}
+
+  /* Pane visibility */
+  .pane{display:none}
+  .pane.active{display:block}
 </style>
 </head>
 <body>
@@ -74,43 +100,109 @@ setInterval(() => {
     </div>
   </div>
 
-  <div class="section-h">Setlist del servicio <span class="count">· {{ setlist|length }}</span></div>
-  {% if setlist %}
-    {% for c in setlist %}
-    <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item setlist-item">
-      <span class="num">{{ loop.index }}</span>
-      <div class="info">
-        <div class="nm">
-          {{ c.titulo }}
-          {% if c.tono %}<span class="tono-tag">{{ c.tono }}</span>{% endif %}
-        </div>
-        <div class="ar">{{ c.artista or '' }}</div>
-      </div>
-      <span class="chev">›</span>
-    </a>
-    {% endfor %}
-  {% else %}
-    <div class="vacio">No hay setlist armado para hoy</div>
-  {% endif %}
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-pane="live" onclick="switchTab('live')">
+      Live <span class="badge">{{ setlist|length }}</span>
+    </button>
+    <button class="tab" data-pane="biblioteca" onclick="switchTab('biblioteca')">
+      Biblioteca <span class="badge">{{ biblioteca|length }}</span>
+    </button>
+  </div>
 
-  <div class="section-h">Biblioteca completa <span class="count">· {{ biblioteca|length }}</span></div>
-  {% if biblioteca %}
-    {% for c in biblioteca %}
-    <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item">
-      <span class="num">#{{ c.numero }}</span>
-      <div class="info">
-        <div class="nm">
-          {{ c.titulo }}
-          {% if c.tono %}<span class="tono-tag">{{ c.tono }}</span>{% endif %}
+  <!-- PANE: LIVE -->
+  <div id="pane-live" class="pane active">
+    {% if setlist %}
+      {% for c in setlist %}
+      <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item setlist-item">
+        <span class="num">{{ loop.index }}</span>
+        <div class="info">
+          <div class="nm">
+            {{ c.titulo }}
+            {% if c.tono %}<span class="tono-tag">{{ c.tono }}</span>{% endif %}
+          </div>
+          <div class="ar">{{ c.artista or '' }}</div>
         </div>
-        <div class="ar">{{ c.artista or '' }}</div>
-      </div>
-      <span class="chev">›</span>
-    </a>
-    {% endfor %}
-  {% else %}
-    <div class="vacio">No hay canciones en la biblioteca</div>
-  {% endif %}
+        <span class="chev">›</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="vacio">No hay setlist armado para hoy</div>
+    {% endif %}
+  </div>
+
+  <!-- PANE: BIBLIOTECA -->
+  <div id="pane-biblioteca" class="pane">
+    {% if biblioteca %}
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input type="text" class="search" id="search-input"
+             placeholder="Buscar por título o artista..."
+             oninput="filtrarBiblioteca()" autocomplete="off">
+      <button class="search-clear" id="search-clear" onclick="limpiarBusqueda()">✕</button>
+    </div>
+    <div id="biblioteca-lista">
+      {% for c in biblioteca %}
+      <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item"
+         data-titulo="{{ c.titulo|lower }}" data-artista="{{ (c.artista or '')|lower }}">
+        <span class="num">#{{ c.numero }}</span>
+        <div class="info">
+          <div class="nm">
+            {{ c.titulo }}
+            {% if c.tono %}<span class="tono-tag">{{ c.tono }}</span>{% endif %}
+          </div>
+          <div class="ar">{{ c.artista or '' }}</div>
+        </div>
+        <span class="chev">›</span>
+      </a>
+      {% endfor %}
+    </div>
+    <div class="vacio no-results" id="no-results" style="display:none">
+      No se encontraron canciones
+    </div>
+    {% else %}
+      <div class="vacio">No hay canciones en la biblioteca</div>
+    {% endif %}
+  </div>
 </div>
+
+<script>
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.pane === name));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + name));
+  // Si entra a biblioteca, hacer focus en el buscador (solo desktop)
+  if(name === 'biblioteca' && window.innerWidth > 768){
+    const input = document.getElementById('search-input');
+    if(input) input.focus();
+  }
+}
+
+function filtrarBiblioteca(){
+  const input = document.getElementById('search-input');
+  const q = input.value.trim().toLowerCase();
+  const items = document.querySelectorAll('#biblioteca-lista .song-item');
+  const clearBtn = document.getElementById('search-clear');
+  const noResults = document.getElementById('no-results');
+
+  clearBtn.classList.toggle('visible', q.length > 0);
+
+  let visibles = 0;
+  items.forEach(item => {
+    const t = item.dataset.titulo || '';
+    const a = item.dataset.artista || '';
+    const visible = !q || t.includes(q) || a.includes(q);
+    item.style.display = visible ? '' : 'none';
+    if(visible) visibles++;
+  });
+  noResults.style.display = (visibles === 0 && q.length > 0) ? 'block' : 'none';
+}
+
+function limpiarBusqueda(){
+  const input = document.getElementById('search-input');
+  input.value = '';
+  filtrarBiblioteca();
+  input.focus();
+}
+</script>
 </body>
 </html>
+
