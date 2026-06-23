@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<title>{{ cancion.titulo }} - Charts</title>
+<title>{{ cancion.titulo }}</title>
 <style>
   :root{
-    --bg:#14130F; --surface:#1E1C17; --raised:#26241D; --line:#34302650;
-    --txt:#F2EEE3; --txt2:#A39E8E; --txt3:#6E695C;
-    --accent:#E0A23C; --accent-soft:#3A2E18;
+    --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
+    --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
+    --gold:#C9A96E; --gold-soft:#2a2418;
     --lyric-size:18px; --chord-size:17px; --chord-min:21px;
   }
   body[data-size="xs"]{ --lyric-size:14px; --chord-size:13px; --chord-min:17px; }
@@ -25,14 +25,14 @@
   .song-title-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
   .song-title{font-size:17px;font-weight:600;line-height:1.2}
   .tono-chip{display:inline-flex;align-items:center;justify-content:center;
-    background:var(--accent);color:#1a1407;font-weight:700;font-size:15px;
-    padding:2px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace}
+    background:var(--gold);color:#000;font-weight:700;font-size:14px;
+    padding:2px 10px;border-radius:5px;font-family:ui-monospace,Menlo,monospace}
   .song-meta{font-size:12px;color:var(--txt2);margin-top:2px}
   .right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
   .pos{font-size:12px;color:var(--txt2)}
-  .back-link{font-size:12px;color:var(--txt3);text-decoration:none;padding:4px 8px;
-    border:1px solid var(--line);border-radius:6px}
-  .back-link:hover{color:var(--accent);border-color:var(--accent)}
+  .back-link{font-size:12px;color:var(--txt3);text-decoration:none;padding:5px 10px;
+    border:1px solid var(--line);border-radius:7px;transition:all 0.15s}
+  .back-link:hover{color:var(--txt);border-color:var(--txt2)}
 
   .timeline-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -14px;
     padding:0 14px 6px;flex-shrink:0;scrollbar-width:none}
@@ -40,39 +40,38 @@
   .timeline{display:inline-flex;gap:6px;padding-bottom:4px;white-space:nowrap}
   .pill{display:inline-block;padding:6px 12px;border-radius:7px;font-size:13px;
     color:var(--txt2);background:var(--surface);border:1px solid var(--line);
-    cursor:pointer;flex-shrink:0;font-family:inherit}
+    cursor:pointer;flex-shrink:0;font-family:inherit;transition:all 0.15s}
   .pill.done{color:var(--txt3)}
-  .pill.active{color:var(--accent);background:var(--accent-soft);
-    border-color:var(--accent);font-weight:600}
+  .pill.active{color:#000;background:var(--txt);border-color:var(--txt);font-weight:600}
 
   .stage{flex:1;overflow-y:auto;background:var(--surface);border:1px solid var(--line);
     border-radius:12px;padding:14px 16px;-webkit-overflow-scrolling:touch}
-  .eyebrow{font-size:12px;color:var(--accent);font-weight:600;letter-spacing:1.5px;
-    text-transform:uppercase;margin-bottom:6px}
+  .eyebrow{font-size:11px;color:var(--gold);font-weight:600;letter-spacing:1.8px;
+    text-transform:uppercase;margin-bottom:8px}
   .perfnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:14px;
-    padding:8px 12px;background:var(--raised);border-radius:7px;border-left:3px solid var(--accent)}
+    padding:9px 13px;background:var(--raised);border-radius:7px;border-left:2px solid var(--gold)}
   .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
   .lyrics .tok{display:inline-flex;flex-direction:column}
   .chord{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    font-size:var(--chord-size);font-weight:700;color:var(--accent);
+    font-size:var(--chord-size);font-weight:700;color:var(--gold);
     min-height:var(--chord-min);line-height:var(--chord-min);white-space:pre}
   .lyric{font-size:var(--lyric-size);color:var(--txt);line-height:1.35;white-space:pre}
   .inst{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 0}
   .chip{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--chord-size);
-    font-weight:700;color:var(--accent);background:var(--accent-soft);
-    padding:8px 16px;border-radius:8px}
+    font-weight:700;color:var(--gold);background:var(--gold-soft);
+    padding:8px 16px;border-radius:8px;border:1px solid #3d3422}
   .inst-label{font-size:15px;color:var(--txt2);margin-bottom:14px}
 
-  .nextpreview{flex-shrink:0;margin-top:8px;padding:8px 12px;background:var(--raised);
-    border:1px solid var(--line);border-radius:8px;border-left:3px solid var(--accent);
+  .nextpreview{flex-shrink:0;margin-top:8px;padding:9px 13px;background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;border-left:2px solid var(--gold);
     display:flex;flex-direction:column;gap:2px;overflow:hidden}
-  .nextpreview .np-tag{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;font-weight:600}
-  .nextpreview .np-name{font-size:13px;color:var(--accent);font-weight:600}
+  .nextpreview .np-tag{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1.2px;font-weight:600}
+  .nextpreview .np-name{font-size:13px;color:var(--gold);font-weight:600}
   .nextpreview .np-line{display:flex;flex-wrap:wrap;align-items:flex-end;gap:2px;margin-top:2px;
     max-height:36px;overflow:hidden}
   .nextpreview .np-tok{display:inline-flex;flex-direction:column;margin-right:6px}
   .nextpreview .np-chord{font-family:ui-monospace,Menlo,monospace;font-size:12px;
-    font-weight:700;color:var(--accent);line-height:14px;white-space:pre;opacity:0.85}
+    font-weight:700;color:var(--gold);line-height:14px;white-space:pre;opacity:0.9}
   .nextpreview .np-lyric{font-size:13px;color:var(--txt2);line-height:1.2;white-space:pre}
   .nextpreview .np-inst{font-size:12px;color:var(--txt2);font-style:italic}
   .nextpreview .np-end{font-size:13px;color:var(--txt2);font-style:italic}
@@ -80,17 +79,20 @@
   .footer{display:flex;gap:6px;align-items:center;margin-top:10px;flex-shrink:0}
   .btn-icon{width:48px;height:48px;border-radius:8px;background:var(--surface);
     border:1px solid var(--line);color:var(--txt);font-size:22px;line-height:1;
-    cursor:pointer;font-family:inherit;flex-shrink:0}
-  .btn-icon:active{background:var(--raised)}
+    cursor:pointer;font-family:inherit;flex-shrink:0;transition:all 0.15s}
+  .btn-icon:hover{border-color:var(--txt2)}
+  .btn-icon:active{background:var(--raised);transform:scale(0.97)}
   .btn-icon:disabled{opacity:0.3;cursor:not-allowed}
   .btn-mid{flex:1;background:var(--raised);color:var(--txt);border:1px solid var(--line);
-    padding:13px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500}
+    padding:13px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500;
+    transition:all 0.15s}
+  .btn-mid:hover{border-color:var(--txt2)}
 
   .size-ctrl{display:inline-flex;align-items:center;gap:4px;margin-top:2px}
   .size-btn{width:28px;height:24px;border-radius:6px;background:var(--surface);
     border:1px solid var(--line);color:var(--txt2);font-size:13px;cursor:pointer;
     font-family:inherit;font-weight:600;padding:0;line-height:1}
-  .size-btn:active{background:var(--raised);color:var(--accent)}
+  .size-btn:active{background:var(--raised);color:var(--txt)}
   .size-btn:disabled{opacity:0.35;cursor:default}
   .size-label{font-size:11px;color:var(--txt3);min-width:14px;text-align:center}
 </style>
@@ -104,7 +106,6 @@ let idx = 0;
 
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
-// Tamaño de letra persistente
 const NIVELES = ["xs","s","m","l","xl"];
 let nivelTamano = NIVELES.indexOf(localStorage.getItem("charts_tam") || "m");
 if(nivelTamano < 0) nivelTamano = 2;
@@ -213,7 +214,6 @@ function render(){
     </div>`;
   const active = document.querySelector(".pill.active");
   if(active) active.scrollIntoView({inline:"center",block:"nearest"});
-  // Scroll del stage al inicio
   const stage = document.querySelector(".stage");
   if(stage) stage.scrollTop = 0;
 }
@@ -222,7 +222,6 @@ function jump(i){ idx = i; render(); }
 function next(){ if(idx < cancion.secciones.length-1){ idx++; render(); } }
 function prev(){ if(idx > 0){ idx--; render(); } }
 
-// Atajos de teclado
 document.addEventListener("keydown", e => {
   if(e.key === "ArrowRight" || e.key === " "){ next(); e.preventDefault(); }
   else if(e.key === "ArrowLeft"){ prev(); e.preventDefault(); }

@@ -3,69 +3,85 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin - Charts</title>
+<title>Admin · Mi Iglesia Internacional</title>
 <style>
-  :root{--bg:#14130F;--surface:#1E1C17;--raised:#26241D;--line:#34302650;
-    --txt:#F2EEE3;--txt2:#A39E8E;--txt3:#6E695C;--accent:#E0A23C;
-    --accent-soft:#3A2E18;--live:#86B36A;--danger:#B36A6A}
+  :root{
+    --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
+    --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
+    --accent:#ffffff;
+    --gold:#C9A96E; --gold-soft:#2a2418;
+    --live:#86B36A; --danger:#dc6262;
+  }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;line-height:1.5;padding:18px}
   .wrap{max-width:900px;margin:0 auto}
-  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-  .header h1{font-size:20px}
-  .header .links{display:flex;gap:10px;font-size:12px}
-  .header .links a{color:var(--txt3);text-decoration:none;padding:6px 10px;
-    border:1px solid var(--line);border-radius:6px}
-  .header .links a:hover{color:var(--accent);border-color:var(--accent)}
+  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .brand img{width:34px;height:34px;border-radius:50%;background:#fff;padding:1.5px;object-fit:contain;flex-shrink:0}
+  .brand-text{min-width:0}
+  .brand-text h1{font-size:14px;font-weight:600}
+  .brand-text .sub{font-size:11px;color:var(--gold);font-weight:600;letter-spacing:1.2px;text-transform:uppercase}
+  .header .links{display:flex;gap:8px;font-size:12px;flex-shrink:0}
+  .header .links a{color:var(--txt3);text-decoration:none;padding:7px 11px;border:1px solid var(--line);border-radius:7px;transition:all 0.15s}
+  .header .links a:hover{color:var(--txt);border-color:var(--txt2)}
 
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:14px}
-  .card h2{font-size:12px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:14px}
+  .card h2{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
 
-  .flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:14px}
-  .flash.success{background:#1f3a1f;color:var(--live);border:1px solid var(--live)}
-  .flash.error{background:#3a1f1f;color:var(--danger);border:1px solid var(--danger)}
+  .flash{padding:11px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;border:1px solid}
+  .flash.success{background:rgba(134,179,106,0.1);color:var(--live);border-color:rgba(134,179,106,0.3)}
+  .flash.error{background:rgba(220,98,98,0.12);color:var(--danger);border-color:rgba(220,98,98,0.25)}
 
   input[type="file"],input[type="text"],input[type="password"]{
     width:100%;padding:11px 13px;font-size:14px;background:var(--raised);
     border:1px solid var(--line);border-radius:8px;color:var(--txt);font-family:inherit;margin-bottom:10px}
-  input:focus{outline:none;border-color:var(--accent)}
-  label{display:block;font-size:12px;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
+  input:focus{outline:none;border-color:var(--txt2)}
+  label{display:block;font-size:11px;color:var(--txt2);margin-bottom:8px;text-transform:uppercase;letter-spacing:1.2px;font-weight:500}
 
-  button{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);
-    border:1px solid var(--line);border-radius:8px;padding:10px 14px;cursor:pointer}
-  button:hover{background:#302d24}
-  button.primary{background:var(--accent);color:#1a1407;border-color:var(--accent);font-weight:600}
-  button.danger{color:var(--danger);border-color:var(--danger);background:transparent}
+  button{font-family:inherit;font-size:13px;color:var(--txt);background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;padding:10px 14px;cursor:pointer;transition:all 0.15s}
+  button:hover{border-color:var(--txt2)}
+  button.primary{background:var(--accent);color:#000;border-color:var(--accent);font-weight:600}
+  button.primary:hover{filter:brightness(0.92)}
+  button.danger{color:var(--danger);border-color:rgba(220,98,98,0.4);background:transparent}
 
   .setlist-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   @media (max-width:640px){.setlist-cols{grid-template-columns:1fr}}
-  .col-h{font-size:12px;color:var(--txt2);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .col-h{font-size:11px;color:var(--txt2);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;text-transform:uppercase;letter-spacing:1.2px;font-weight:500}
   .lista{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto}
-  .item{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--raised);
-    border:1px solid var(--line);border-radius:8px}
-  .item .num{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--txt3);min-width:30px}
+  .item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;transition:all 0.15s}
+  .item:hover{border-color:var(--txt3)}
+  .item .num{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--txt3);min-width:30px;font-weight:500}
   .item .info{flex:1;min-width:0}
   .item .nm{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .item .ar{font-size:12px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .item .actions{display:flex;gap:4px;flex-shrink:0}
-  .icon-btn{padding:5px 8px;font-size:13px;background:transparent;border:1px solid var(--line);
-    border-radius:6px;color:var(--txt2);cursor:pointer;font-family:inherit}
-  .icon-btn:hover{background:var(--surface);color:var(--txt)}
-  .icon-btn.danger{color:var(--danger);border-color:var(--danger)}
-  .item.en-set{background:var(--accent-soft);border-color:var(--accent)}
-  .item.en-set .nm{color:var(--accent)}
-  .vacio{padding:14px;color:var(--txt2);font-size:13px;text-align:center;font-style:italic;
+  .icon-btn{padding:5px 9px;font-size:13px;background:transparent;border:1px solid var(--line);
+    border-radius:6px;color:var(--txt2);cursor:pointer;font-family:inherit;min-width:30px}
+  .icon-btn:hover{background:var(--surface);color:var(--txt);border-color:var(--txt3)}
+  .icon-btn.danger{color:var(--danger);border-color:rgba(220,98,98,0.3)}
+  .icon-btn.danger:hover{background:rgba(220,98,98,0.1)}
+  .item.en-set{background:#161616;border-color:#3d3422}
+  .item.en-set .num{color:var(--gold)}
+  .vacio{padding:18px;color:var(--txt3);font-size:12px;text-align:center;font-style:italic;
     border:1px dashed var(--line);border-radius:8px}
-  .help{font-size:12px;color:var(--txt2);margin-top:8px}
-  .tono-tag{color:var(--accent);font-weight:700;font-size:12px}
+  .help{font-size:12px;color:var(--txt3);margin-top:10px}
+  .tono-tag{color:var(--gold);font-weight:700;font-size:11px;background:var(--gold-soft);padding:1px 6px;border-radius:4px;font-family:ui-monospace,Menlo,monospace}
   .pw-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:8px}
-  .pw-row label{margin-bottom:6px}
+  .pw-row input{margin-bottom:0}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>⚙ Admin · Charts</h1>
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="">
+      <div class="brand-text">
+        <h1>Mi Iglesia Internacional</h1>
+        <div class="sub">Admin · Charts</div>
+      </div>
+    </div>
     <div class="links">
       <a href="{{ url_for('principal') }}">Ver setlist</a>
       <a href="{{ url_for('logout') }}">Salir</a>
@@ -98,7 +114,7 @@
             <div class="item">
               <span class="num">#{{ c.numero }}</span>
               <div class="info">
-                <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">({{ c.tono }})</span>{% endif %}</div>
+                <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">{{ c.tono }}</span>{% endif %}</div>
                 <div class="ar">{{ c.artista or '' }}</div>
               </div>
               <div class="actions">
@@ -132,7 +148,7 @@
               <div class="item en-set" data-numero="{{ c.numero }}">
                 <span class="num">{{ loop.index }}</span>
                 <div class="info">
-                  <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">({{ c.tono }})</span>{% endif %}</div>
+                  <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">{{ c.tono }}</span>{% endif %}</div>
                   <div class="ar">#{{ c.numero }} · {{ c.artista or '' }}</div>
                 </div>
                 <div class="actions">
@@ -175,12 +191,11 @@
 
 <script>
 let setlistActual = {{ setlist|tojson }};
-let procesando = false;  // evita doble-click rapido
+let procesando = false;
 
 async function postSetlist(nuevoSetlist){
   if(procesando) return;
   procesando = true;
-  // Feedback visual inmediato
   document.body.style.opacity = '0.6';
   document.body.style.pointerEvents = 'none';
   try {

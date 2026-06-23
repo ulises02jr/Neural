@@ -3,66 +3,78 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Setlist - Charts</title>
+<title>Setlist · Mi Iglesia Internacional</title>
 <style>
-  :root{--bg:#14130F;--surface:#1E1C17;--raised:#26241D;--line:#34302650;
-    --txt:#F2EEE3;--txt2:#A39E8E;--txt3:#6E695C;--accent:#E0A23C;--accent-soft:#3A2E18}
+  :root{
+    --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
+    --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
+    --accent:#ffffff; --accent-soft:#1f1f1f;
+    --gold:#C9A96E; --gold-soft:#2a2418;
+  }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;
     line-height:1.5;padding:18px;padding-bottom:max(18px,env(safe-area-inset-bottom))}
   .wrap{max-width:760px;margin:0 auto}
-  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:10px}
-  .header h1{font-size:20px;font-weight:600}
-  .header .links{display:flex;gap:10px;font-size:12px}
-  .header .links a{color:var(--txt3);text-decoration:none;padding:6px 10px;
-    border:1px solid var(--line);border-radius:6px}
-  .header .links a:hover{color:var(--accent);border-color:var(--accent)}
+  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .brand img{width:34px;height:34px;border-radius:50%;background:#fff;padding:1.5px;object-fit:contain;flex-shrink:0}
+  .brand-text{min-width:0}
+  .brand-text h1{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand-text .sub{font-size:11px;color:var(--txt3);font-weight:normal}
+  .header .links{display:flex;gap:8px;font-size:12px;flex-shrink:0}
+  .header .links a{color:var(--txt3);text-decoration:none;padding:7px 11px;
+    border:1px solid var(--line);border-radius:7px;transition:all 0.15s}
+  .header .links a:hover{color:var(--txt);border-color:var(--txt2)}
+  .header .links a.admin{background:var(--gold-soft);color:var(--gold);border-color:#3d3422}
 
-  .section-h{font-size:12px;color:var(--accent);font-weight:600;letter-spacing:1.5px;
-    text-transform:uppercase;margin:24px 0 10px}
-  .section-h:first-child{margin-top:0}
+  .section-h{font-size:11px;color:var(--gold);font-weight:600;letter-spacing:1.5px;
+    text-transform:uppercase;margin:26px 0 10px;display:flex;align-items:center;gap:8px}
+  .section-h:first-of-type{margin-top:0}
+  .section-h .count{color:var(--txt3);font-weight:normal}
 
   .song-item{display:flex;align-items:center;gap:14px;padding:14px 16px;
-    background:var(--surface);border:1px solid var(--line);border-radius:11px;
-    margin-bottom:8px;cursor:pointer;text-decoration:none;color:var(--txt);transition:background 0.15s}
-  .song-item:active{background:var(--raised);border-color:var(--accent-soft)}
-  .song-item .num{font-family:ui-monospace,Menlo,monospace;font-size:14px;
-    color:var(--txt3);min-width:24px;text-align:right}
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    margin-bottom:8px;cursor:pointer;text-decoration:none;color:var(--txt);transition:all 0.15s}
+  .song-item:hover{border-color:var(--txt3)}
+  .song-item:active{background:var(--raised)}
+  .song-item .num{font-family:ui-monospace,Menlo,monospace;font-size:13px;
+    color:var(--txt3);min-width:26px;text-align:right;font-weight:500}
   .song-item .info{flex:1;min-width:0}
-  .song-item .nm{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .song-item .ar{font-size:13px;color:var(--txt2);margin-top:2px}
-  .song-item .chev{color:var(--txt3);font-size:22px;font-weight:300}
-  .tono-tag{color:var(--accent);font-weight:700;font-size:14px}
+  .song-item .nm{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .song-item .ar{font-size:12px;color:var(--txt2);margin-top:2px}
+  .song-item .chev{color:var(--txt3);font-size:20px;font-weight:300}
+  .tono-tag{color:var(--gold);font-weight:700;font-size:13px;
+    background:var(--gold-soft);padding:1px 7px;border-radius:4px;font-family:ui-monospace,Menlo,monospace}
 
-  .setlist-item{background:var(--accent-soft);border-color:var(--accent)}
-  .setlist-item .nm{color:var(--accent)}
+  .setlist-item{background:#161616;border-color:#333}
+  .setlist-item .num{color:var(--gold)}
 
-  .vacio{padding:18px;color:var(--txt2);font-size:14px;text-align:center;
-    font-style:italic;border:1px dashed var(--line);border-radius:11px;margin-bottom:8px}
-
-  .count{font-size:12px;color:var(--txt3);font-weight:normal;margin-left:6px}
+  .vacio{padding:24px 18px;color:var(--txt3);font-size:13px;text-align:center;
+    font-style:italic;border:1px dashed var(--line);border-radius:10px;margin-bottom:8px}
 </style>
 </head>
 <body>
 <script>
-// Auto-refresh cada 30 segundos para mostrar cambios del setlist
-// Solo si la pestaña está visible (no gasta datos en background)
 setInterval(() => {
-  if (document.visibilityState === 'visible') {
-    window.location.reload();
-  }
+  if (document.visibilityState === 'visible') window.location.reload();
 }, 30000);
 </script>
 <div class="wrap">
   <div class="header">
-    <h1>♪ Charts</h1>
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="">
+      <div class="brand-text">
+        <h1>Mi Iglesia Internacional</h1>
+        <div class="sub">Charts · Modo ensayo</div>
+      </div>
+    </div>
     <div class="links">
-      {% if es_admin %}<a href="{{ url_for('admin') }}">Admin</a>{% endif %}
+      {% if es_admin %}<a href="{{ url_for('admin') }}" class="admin">Admin</a>{% endif %}
       <a href="{{ url_for('logout') }}">Salir</a>
     </div>
   </div>
 
-  <div class="section-h">Setlist del servicio<span class="count">{{ setlist|length }}</span></div>
+  <div class="section-h">Setlist del servicio <span class="count">· {{ setlist|length }}</span></div>
   {% if setlist %}
     {% for c in setlist %}
     <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item setlist-item">
@@ -70,7 +82,7 @@ setInterval(() => {
       <div class="info">
         <div class="nm">
           {{ c.titulo }}
-          {% if c.tono %}<span class="tono-tag">({{ c.tono }})</span>{% endif %}
+          {% if c.tono %}<span class="tono-tag">{{ c.tono }}</span>{% endif %}
         </div>
         <div class="ar">{{ c.artista or '' }}</div>
       </div>
@@ -81,7 +93,7 @@ setInterval(() => {
     <div class="vacio">No hay setlist armado para hoy</div>
   {% endif %}
 
-  <div class="section-h">Biblioteca completa<span class="count">{{ biblioteca|length }}</span></div>
+  <div class="section-h">Biblioteca completa <span class="count">· {{ biblioteca|length }}</span></div>
   {% if biblioteca %}
     {% for c in biblioteca %}
     <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item">
@@ -89,7 +101,7 @@ setInterval(() => {
       <div class="info">
         <div class="nm">
           {{ c.titulo }}
-          {% if c.tono %}<span class="tono-tag">({{ c.tono }})</span>{% endif %}
+          {% if c.tono %}<span class="tono-tag">{{ c.tono }}</span>{% endif %}
         </div>
         <div class="ar">{{ c.artista or '' }}</div>
       </div>

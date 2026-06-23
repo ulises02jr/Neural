@@ -3,31 +3,46 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin - Charts</title>
+<title>Admin · Mi Iglesia Internacional</title>
 <style>
-  :root{--bg:#14130F;--surface:#1E1C17;--raised:#26241D;--line:#34302650;
-    --txt:#F2EEE3;--txt2:#A39E8E;--txt3:#6E695C;--accent:#E0A23C;--error:#B36A6A}
+  :root{
+    --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
+    --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
+    --accent:#ffffff;
+    --gold:#C9A96E;
+    --error:#dc6262;
+  }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;
     min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-    padding:32px 28px;width:100%;max-width:380px}
-  h1{font-size:20px;margin-bottom:6px;color:var(--accent)}
-  .sub{font-size:13px;color:var(--txt2);margin-bottom:24px}
-  label{display:block;font-size:12px;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
-  input{width:100%;padding:12px 14px;font-size:16px;background:var(--raised);
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:36px 28px 28px;width:100%;max-width:380px}
+  .logo{display:block;width:90px;height:90px;border-radius:50%;margin:0 auto 18px;
+    background:#fff;padding:4px;object-fit:contain}
+  .badge{display:inline-block;background:var(--gold);color:#000;font-size:10px;
+    font-weight:700;letter-spacing:1.2px;padding:3px 9px;border-radius:4px;
+    margin:0 auto 10px;text-transform:uppercase}
+  .badge-wrap{text-align:center}
+  h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:4px}
+  .sub{font-size:13px;color:var(--txt2);margin-bottom:28px;text-align:center}
+  label{display:block;font-size:11px;color:var(--txt2);margin-bottom:8px;text-transform:uppercase;letter-spacing:1.2px;font-weight:500}
+  input{width:100%;padding:13px 14px;font-size:15px;background:var(--raised);
     border:1px solid var(--line);border-radius:8px;color:var(--txt);font-family:inherit}
-  input:focus{outline:none;border-color:var(--accent)}
-  button{width:100%;margin-top:18px;padding:13px;font-size:15px;font-weight:600;
-    background:var(--accent);color:#1a1407;border:none;border-radius:8px;cursor:pointer}
-  .error{background:var(--error);color:#fff;padding:10px 12px;border-radius:7px;font-size:14px;margin-bottom:16px;text-align:center}
-  .back{display:block;margin-top:20px;text-align:center;font-size:12px;color:var(--txt3);text-decoration:none}
+  input:focus{outline:none;border-color:var(--txt);background:#252525}
+  button{width:100%;margin-top:20px;padding:13px;font-size:14px;font-weight:600;
+    background:var(--accent);color:#000;border:none;border-radius:8px;cursor:pointer;letter-spacing:0.3px}
+  button:active{transform:scale(0.985)}
+  .error{background:rgba(220,98,98,0.12);color:var(--error);padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;text-align:center;border:1px solid rgba(220,98,98,0.25)}
+  .back{display:block;margin-top:24px;text-align:center;font-size:12px;color:var(--txt3);text-decoration:none}
+  .back:hover{color:var(--txt)}
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>⚙ Admin</h1>
-  <p class="sub">Panel de administración. Subir canciones y armar setlist.</p>
+  <img src="{{ url_for('static', filename='logo.png') }}" alt="Mi Iglesia Internacional" class="logo">
+  <div class="badge-wrap"><span class="badge">Admin</span></div>
+  <h1>Mi Iglesia Internacional</h1>
+  <p class="sub">Panel de administración</p>
   {% with messages = get_flashed_messages(category_filter=["error"]) %}
     {% if messages %}<div class="error">{{ messages[0] }}</div>{% endif %}
   {% endwith %}
