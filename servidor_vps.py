@@ -41,6 +41,8 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
+from transposicion import transponer_cancion
+
 
 # ───────────────────────── Configuración base ─────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
@@ -185,10 +187,29 @@ def ver_cancion(numero):
     biblioteca = cargar_biblioteca()
     if numero not in biblioteca:
         abort(404)
+    
+    # Soporte de transposición: ?t=N donde N es semitonos (-12 a +12)
+    # Y origen: ?from=bib indica que se accedió desde biblioteca (se muestran botones +/-)
+    cancion = biblioteca[numero]
+    try:
+        semitonos = int(request.args.get("t", 0))
+        if semitonos < -12 or semitonos > 12:
+            semitonos = 0
+    except (ValueError, TypeError):
+        semitonos = 0
+    
+    if semitonos != 0:
+        cancion = transponer_cancion(cancion, semitonos)
+    
+    # Permitir transposición solo si viene de biblioteca (no desde setlist)
+    desde_biblioteca = request.args.get("from") == "bib"
+    
     return render_template(
         "visor.html",
-        cancion=biblioteca[numero],
+        cancion=cancion,
         es_admin=(session.get("rol") == "admin"),
+        permitir_transposicion=desde_biblioteca,
+        semitonos_actual=semitonos,
     )
 
 

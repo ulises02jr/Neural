@@ -142,7 +142,7 @@ setInterval(() => {
     </div>
     <div id="biblioteca-lista">
       {% for c in biblioteca %}
-      <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item"
+      <a href="{{ url_for('ver_cancion', numero=c.numero) }}?from=bib" class="song-item"
          data-titulo="{{ c.titulo|lower }}" data-artista="{{ (c.artista or '')|lower }}">
         <span class="num">#{{ c.numero }}</span>
         <div class="info">
@@ -175,6 +175,14 @@ function switchTab(name){
     if(input) input.focus();
   }
 }
+
+// Si la URL tiene ?tab=biblioteca, abrir ese tab al cargar
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('tab') === 'biblioteca'){
+    switchTab('biblioteca');
+  }
+})();
 
 function filtrarBiblioteca(){
   const input = document.getElementById('search-input');

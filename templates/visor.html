@@ -27,6 +27,23 @@
   .tono-chip{display:inline-flex;align-items:center;justify-content:center;
     background:var(--gold);color:#000;font-weight:700;font-size:14px;
     padding:2px 10px;border-radius:5px;font-family:ui-monospace,Menlo,monospace}
+
+  /* Transposición */
+  .transpose{display:inline-flex;align-items:stretch;gap:0;background:var(--surface);
+    border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-left:6px;
+    vertical-align:middle}
+  .transpose .t-btn{width:28px;height:28px;background:transparent;border:none;
+    color:var(--gold);font-size:16px;font-weight:bold;cursor:pointer;
+    font-family:inherit;line-height:1;padding:0;transition:background 0.1s}
+  .transpose .t-btn:hover{background:var(--raised)}
+  .transpose .t-btn:active{background:var(--gold-soft)}
+  .transpose .t-tono{padding:0 10px;display:flex;align-items:center;
+    background:var(--gold);color:#000;font-weight:700;font-size:13px;
+    font-family:ui-monospace,Menlo,monospace;min-width:38px;justify-content:center;
+    border-left:1px solid var(--line);border-right:1px solid var(--line);
+    text-decoration:none}
+  .transpose .t-tono:hover{filter:brightness(0.92)}
+  .transpose-hint{font-size:10px;color:var(--txt3);margin-top:2px;font-style:italic}
   .song-meta{font-size:12px;color:var(--txt2);margin-top:2px}
   .right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
   .pos{font-size:12px;color:var(--txt2)}
@@ -102,9 +119,31 @@
 
 <script>
 const cancion = {{ cancion|tojson }};
+const permitirTransposicion = {{ permitir_transposicion|tojson }};
+const semitonosActual = {{ semitonos_actual|tojson }};
+const numeroCancion = {{ cancion.numero|tojson }};
 let idx = 0;
 
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+
+function transponer(delta){
+  const nuevo = Math.max(-12, Math.min(12, semitonosActual + delta));
+  if(nuevo === semitonosActual) return;
+  window.location.href = `/cancion/${numeroCancion}?from=bib&t=${nuevo}`;
+}
+
+function htmlTransposeChip(){
+  // Si NO es desde biblioteca, mostrar solo el tono normal
+  if(!permitirTransposicion){
+    return cancion.tono ? `<span class="tono-chip">${esc(cancion.tono)}</span>` : '';
+  }
+  // Si es desde biblioteca: chip con +/- alrededor
+  return `<span class="transpose">
+    <button class="t-btn" onclick="transponer(-1)" title="Bajar 1 semitono" ${semitonosActual<=-12?'disabled':''}>−</button>
+    <a class="t-tono" href="/cancion/${numeroCancion}?from=bib&t=0" title="Volver al tono original">${esc(cancion.tono||'?')}</a>
+    <button class="t-btn" onclick="transponer(1)" title="Subir 1 semitono" ${semitonosActual>=12?'disabled':''}>+</button>
+  </span>`;
+}
 
 const NIVELES = ["xs","s","m","l","xl"];
 let nivelTamano = NIVELES.indexOf(localStorage.getItem("charts_tam") || "m");
@@ -186,12 +225,12 @@ function render(){
       <div style="min-width:0;flex:1">
         <div class="song-title-row">
           <div class="song-title">${esc(cancion.titulo)}</div>
-          ${cancion.tono?`<span class="tono-chip">${esc(cancion.tono)}</span>`:''}
+          ${htmlTransposeChip()}
         </div>
-        <div class="song-meta">${cancion.tempo} BPM · ${esc(cancion.compas)} · ${esc(cancion.artista||'')}</div>
+        <div class="song-meta">${cancion.tempo} BPM · ${esc(cancion.compas)} · ${esc(cancion.artista||'')}${semitonosActual!==0?' · <span style="color:var(--gold)">'+(semitonosActual>0?'+':'')+semitonosActual+' semitono'+(Math.abs(semitonosActual)>1?'s':'')+'</span>':''}</div>
       </div>
       <div class="right">
-        <a href="/" class="back-link">← Setlist</a>
+        <a href="${permitirTransposicion ? '/?tab=biblioteca' : '/'}" class="back-link">← Volver</a>
         <span class="pos">Sección ${idx+1} / ${cancion.secciones.length}</span>
         ${htmlBotonesTamano()}
       </div>
