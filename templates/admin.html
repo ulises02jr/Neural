@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin - Charts</title>
+<style>
+  :root{--bg:#14130F;--surface:#1E1C17;--raised:#26241D;--line:#34302650;
+    --txt:#F2EEE3;--txt2:#A39E8E;--txt3:#6E695C;--accent:#E0A23C;
+    --accent-soft:#3A2E18;--live:#86B36A;--danger:#B36A6A}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;line-height:1.5;padding:18px}
+  .wrap{max-width:900px;margin:0 auto}
+  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+  .header h1{font-size:20px}
+  .header .links{display:flex;gap:10px;font-size:12px}
+  .header .links a{color:var(--txt3);text-decoration:none;padding:6px 10px;
+    border:1px solid var(--line);border-radius:6px}
+  .header .links a:hover{color:var(--accent);border-color:var(--accent)}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:16px;margin-bottom:14px}
+  .card h2{font-size:12px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+
+  .flash{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:14px}
+  .flash.success{background:#1f3a1f;color:var(--live);border:1px solid var(--live)}
+  .flash.error{background:#3a1f1f;color:var(--danger);border:1px solid var(--danger)}
+
+  input[type="file"],input[type="text"],input[type="password"]{
+    width:100%;padding:11px 13px;font-size:14px;background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;color:var(--txt);font-family:inherit;margin-bottom:10px}
+  input:focus{outline:none;border-color:var(--accent)}
+  label{display:block;font-size:12px;color:var(--txt2);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
+
+  button{font-family:inherit;font-size:14px;color:var(--txt);background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;padding:10px 14px;cursor:pointer}
+  button:hover{background:#302d24}
+  button.primary{background:var(--accent);color:#1a1407;border-color:var(--accent);font-weight:600}
+  button.danger{color:var(--danger);border-color:var(--danger);background:transparent}
+
+  .setlist-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:640px){.setlist-cols{grid-template-columns:1fr}}
+  .col-h{font-size:12px;color:var(--txt2);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .lista{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto}
+  .item{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--raised);
+    border:1px solid var(--line);border-radius:8px}
+  .item .num{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--txt3);min-width:30px}
+  .item .info{flex:1;min-width:0}
+  .item .nm{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item .ar{font-size:12px;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item .actions{display:flex;gap:4px;flex-shrink:0}
+  .icon-btn{padding:5px 8px;font-size:13px;background:transparent;border:1px solid var(--line);
+    border-radius:6px;color:var(--txt2);cursor:pointer;font-family:inherit}
+  .icon-btn:hover{background:var(--surface);color:var(--txt)}
+  .icon-btn.danger{color:var(--danger);border-color:var(--danger)}
+  .item.en-set{background:var(--accent-soft);border-color:var(--accent)}
+  .item.en-set .nm{color:var(--accent)}
+  .vacio{padding:14px;color:var(--txt2);font-size:13px;text-align:center;font-style:italic;
+    border:1px dashed var(--line);border-radius:8px}
+  .help{font-size:12px;color:var(--txt2);margin-top:8px}
+  .tono-tag{color:var(--accent);font-weight:700;font-size:12px}
+  .pw-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:8px}
+  .pw-row label{margin-bottom:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>⚙ Admin · Charts</h1>
+    <div class="links">
+      <a href="{{ url_for('principal') }}">Ver setlist</a>
+      <a href="{{ url_for('logout') }}">Salir</a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}
+      <div class="flash {{ category }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="card">
+    <h2>Subir canción (JSON)</h2>
+    <form method="POST" action="{{ url_for('admin_subir') }}" enctype="multipart/form-data">
+      <input type="file" name="archivo" accept=".json" required>
+      <button type="submit" class="primary">Subir JSON</button>
+    </form>
+    <p class="help">El JSON debe tener los campos <code>numero</code>, <code>titulo</code> y <code>secciones</code>.</p>
+  </div>
+
+  <div class="card">
+    <h2>Setlist y biblioteca</h2>
+    <div class="setlist-cols">
+      <div>
+        <div class="col-h"><span>Biblioteca</span><span>{{ biblioteca|length }} canciones</span></div>
+        <div class="lista">
+          {% if biblioteca %}
+            {% for c in biblioteca %}
+            <div class="item">
+              <span class="num">#{{ c.numero }}</span>
+              <div class="info">
+                <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">({{ c.tono }})</span>{% endif %}</div>
+                <div class="ar">{{ c.artista or '' }}</div>
+              </div>
+              <div class="actions">
+                {% if c.numero in setlist %}
+                  <button class="icon-btn" disabled>✓</button>
+                {% else %}
+                  <button class="icon-btn" onclick="agregarAlSet({{ c.numero }})" title="Agregar al setlist">+</button>
+                {% endif %}
+                <form method="POST" action="{{ url_for('admin_eliminar', numero=c.numero) }}" style="display:inline"
+                      onsubmit="return confirm('¿Eliminar la canción #{{ c.numero }} - {{ c.titulo }}?')">
+                  <button type="submit" class="icon-btn danger" title="Eliminar">×</button>
+                </form>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="vacio">Sin canciones todavía</div>
+          {% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="col-h">
+          <span>En el setlist ({{ setlist|length }})</span>
+          {% if setlist %}<button class="icon-btn" onclick="limpiarSetlist()">Vaciar</button>{% endif %}
+        </div>
+        <div class="lista" id="lista-setlist">
+          {% if setlist %}
+            {% for n in setlist %}
+              {% set c = (biblioteca | selectattr('numero', 'equalto', n) | list | first) %}
+              {% if c %}
+              <div class="item en-set" data-numero="{{ c.numero }}">
+                <span class="num">{{ loop.index }}</span>
+                <div class="info">
+                  <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">({{ c.tono }})</span>{% endif %}</div>
+                  <div class="ar">#{{ c.numero }} · {{ c.artista or '' }}</div>
+                </div>
+                <div class="actions">
+                  <button class="icon-btn" onclick="moverEn({{ c.numero }}, -1)" {% if loop.first %}disabled{% endif %} title="Subir">↑</button>
+                  <button class="icon-btn" onclick="moverEn({{ c.numero }}, 1)" {% if loop.last %}disabled{% endif %} title="Bajar">↓</button>
+                  <button class="icon-btn danger" onclick="quitarDelSet({{ c.numero }})" title="Quitar">×</button>
+                </div>
+              </div>
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            <div class="vacio">Setlist vacío.<br>Agregá canciones desde la biblioteca →</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <p class="help">Los cambios se guardan al hacer click en cualquier botón.</p>
+  </div>
+
+  <div class="card">
+    <h2>Cambiar contraseñas</h2>
+    <form method="POST" action="{{ url_for('admin_cambiar_password') }}" style="margin-bottom:14px">
+      <input type="hidden" name="cual" value="musicos">
+      <label>Nueva contraseña para músicos</label>
+      <div class="pw-row">
+        <input type="password" name="nueva" placeholder="Mínimo 6 caracteres" required>
+        <button type="submit" class="primary">Actualizar</button>
+      </div>
+    </form>
+    <form method="POST" action="{{ url_for('admin_cambiar_password') }}">
+      <input type="hidden" name="cual" value="admin">
+      <label>Nueva contraseña de admin</label>
+      <div class="pw-row">
+        <input type="password" name="nueva" placeholder="Mínimo 6 caracteres" required>
+        <button type="submit" class="primary">Actualizar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const setlistActual = {{ setlist|tojson }};
+
+async function postSetlist(nuevoSetlist){
+  const form = new FormData();
+  form.append('setlist', nuevoSetlist.join(','));
+  await fetch("{{ url_for('admin_setlist') }}", {method: 'POST', body: form});
+  location.reload();
+}
+
+function agregarAlSet(num){
+  if(setlistActual.includes(num)) return;
+  postSetlist([...setlistActual, num]);
+}
+function quitarDelSet(num){
+  postSetlist(setlistActual.filter(n => n !== num));
+}
+function moverEn(num, dir){
+  const arr = [...setlistActual];
+  const i = arr.indexOf(num);
+  if(i < 0) return;
+  const j = i + dir;
+  if(j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  postSetlist(arr);
+}
+function limpiarSetlist(){
+  if(confirm('¿Vaciar el setlist?')) postSetlist([]);
+}
+</script>
+</body>
+</html>

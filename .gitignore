@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+config.json
+canciones/*.json
+venv/
+.DS_Store

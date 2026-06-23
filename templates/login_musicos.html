@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acceso - Charts</title>
+<style>
+  :root{--bg:#14130F;--surface:#1E1C17;--raised:#26241D;--line:#34302650;
+    --txt:#F2EEE3;--txt2:#A39E8E;--txt3:#6E695C;--accent:#E0A23C;--error:#B36A6A}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:32px 28px;width:100%;max-width:380px}
+  h1{font-size:22px;margin-bottom:6px;color:var(--accent)}
+  .sub{font-size:14px;color:var(--txt2);margin-bottom:24px}
+  label{display:block;font-size:12px;color:var(--txt2);margin-bottom:6px;
+    text-transform:uppercase;letter-spacing:1px}
+  input{width:100%;padding:12px 14px;font-size:16px;background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;color:var(--txt);font-family:inherit}
+  input:focus{outline:none;border-color:var(--accent)}
+  button{width:100%;margin-top:18px;padding:13px;font-size:15px;font-weight:600;
+    background:var(--accent);color:#1a1407;border:none;border-radius:8px;cursor:pointer}
+  .error{background:var(--error);color:#fff;padding:10px 12px;border-radius:7px;
+    font-size:14px;margin-bottom:16px;text-align:center}
+  .admin-link{display:block;margin-top:20px;text-align:center;font-size:12px;
+    color:var(--txt3);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>♪ Charts</h1>
+  <p class="sub">Ingresa la contraseña para acceder al setlist y biblioteca.</p>
+  {% with messages = get_flashed_messages(category_filter=["error"]) %}
+    {% if messages %}<div class="error">{{ messages[0] }}</div>{% endif %}
+  {% endwith %}
+  <form method="POST">
+    <label for="password">Contraseña</label>
+    <input type="password" id="password" name="password" autofocus required>
+    <button type="submit">Entrar</button>
+  </form>
+  <a class="admin-link" href="{{ url_for('admin_login') }}">Acceso administrador</a>
+</div>
+</body>
+</html>
