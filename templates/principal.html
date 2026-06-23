@@ -146,10 +146,7 @@ setInterval(() => {
          data-titulo="{{ c.titulo|lower }}" data-artista="{{ (c.artista or '')|lower }}">
         <span class="num">#{{ c.numero }}</span>
         <div class="info">
-          <div class="nm">
-            {{ c.titulo }}
-            {% if c.tono %}<span class="tono-tag">{{ c.tono }}</span>{% endif %}
-          </div>
+          <div class="nm">{{ c.titulo }}</div>
           <div class="ar">{{ c.artista or '' }}</div>
         </div>
         <span class="chev">›</span>

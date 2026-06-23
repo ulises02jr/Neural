@@ -122,14 +122,19 @@ const cancion = {{ cancion|tojson }};
 const permitirTransposicion = {{ permitir_transposicion|tojson }};
 const semitonosActual = {{ semitonos_actual|tojson }};
 const numeroCancion = {{ cancion.numero|tojson }};
-let idx = 0;
+
+// Sección inicial: si la URL trae ?s=N, arrancar ahí (para preservar al transponer)
+const urlParams = new URLSearchParams(window.location.search);
+let idx = parseInt(urlParams.get('s') || '0', 10);
+if(isNaN(idx) || idx < 0 || idx >= cancion.secciones.length) idx = 0;
 
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
 function transponer(delta){
   const nuevo = Math.max(-12, Math.min(12, semitonosActual + delta));
   if(nuevo === semitonosActual) return;
-  window.location.href = `/cancion/${numeroCancion}?from=bib&t=${nuevo}`;
+  // Mantener la sección actual al transponer
+  window.location.href = `/cancion/${numeroCancion}?from=bib&t=${nuevo}&s=${idx}`;
 }
 
 function htmlTransposeChip(){
@@ -140,7 +145,7 @@ function htmlTransposeChip(){
   // Si es desde biblioteca: chip con +/- alrededor
   return `<span class="transpose">
     <button class="t-btn" onclick="transponer(-1)" title="Bajar 1 semitono" ${semitonosActual<=-12?'disabled':''}>−</button>
-    <a class="t-tono" href="/cancion/${numeroCancion}?from=bib&t=0" title="Volver al tono original">${esc(cancion.tono||'?')}</a>
+    <a class="t-tono" href="/cancion/${numeroCancion}?from=bib&t=0&s=${idx}" title="Volver al tono original">${esc(cancion.tono||'?')}</a>
     <button class="t-btn" onclick="transponer(1)" title="Subir 1 semitono" ${semitonosActual>=12?'disabled':''}>+</button>
   </span>`;
 }
