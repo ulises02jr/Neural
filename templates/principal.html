@@ -44,6 +44,15 @@
 </style>
 </head>
 <body>
+<script>
+// Auto-refresh cada 30 segundos para mostrar cambios del setlist
+// Solo si la pestaña está visible (no gasta datos en background)
+setInterval(() => {
+  if (document.visibilityState === 'visible') {
+    window.location.reload();
+  }
+}, 30000);
+</script>
 <div class="wrap">
   <div class="header">
     <h1>♪ Charts</h1>

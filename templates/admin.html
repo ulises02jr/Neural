@@ -174,13 +174,26 @@
 </div>
 
 <script>
-const setlistActual = {{ setlist|tojson }};
+let setlistActual = {{ setlist|tojson }};
+let procesando = false;  // evita doble-click rapido
 
 async function postSetlist(nuevoSetlist){
-  const form = new FormData();
-  form.append('setlist', nuevoSetlist.join(','));
-  await fetch("{{ url_for('admin_setlist') }}", {method: 'POST', body: form});
-  location.reload();
+  if(procesando) return;
+  procesando = true;
+  // Feedback visual inmediato
+  document.body.style.opacity = '0.6';
+  document.body.style.pointerEvents = 'none';
+  try {
+    const form = new FormData();
+    form.append('setlist', nuevoSetlist.join(','));
+    await fetch("{{ url_for('admin_setlist') }}", {method: 'POST', body: form});
+    location.reload();
+  } catch(err) {
+    alert('Error al actualizar setlist: ' + err.message);
+    document.body.style.opacity = '1';
+    document.body.style.pointerEvents = 'auto';
+    procesando = false;
+  }
 }
 
 function agregarAlSet(num){
