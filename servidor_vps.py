@@ -74,18 +74,25 @@ def cargar_config():
         return json.load(f)
 
 
-def guardar_config(config):
+def guardar_config(cfg):
     with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
+        json.dump(cfg, f, indent=2)
 
 
 # ───────────────────────── App Flask ─────────────────────────
-config = cargar_config()
+# Cargamos config una vez para inicializar Flask
+_config_inicial = cargar_config()
 
 app = Flask(__name__)
-app.secret_key = config["secret_key"]
+app.secret_key = _config_inicial["secret_key"]
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB max por archivo
+
+
+def get_config():
+    """Lee config.json del disco en cada llamada.
+    Esto garantiza que múltiples workers vean los cambios."""
+    return cargar_config()
 
 
 # ───────────────────────── Helpers ─────────────────────────
@@ -123,7 +130,8 @@ def login_required(rol):
 def login():
     if request.method == "POST":
         password = request.form.get("password", "")
-        if hash_password(password) == config["password_musicos"]:
+        cfg = get_config()
+        if hash_password(password) == cfg["password_musicos"]:
             session.permanent = True
             session["rol"] = "musico"
             return redirect(url_for("principal"))
@@ -135,7 +143,8 @@ def login():
 def admin_login():
     if request.method == "POST":
         password = request.form.get("password", "")
-        if hash_password(password) == config["password_admin"]:
+        cfg = get_config()
+        if hash_password(password) == cfg["password_admin"]:
             session.permanent = True
             session["rol"] = "admin"
             return redirect(url_for("admin"))
@@ -156,7 +165,8 @@ def principal():
     biblioteca = cargar_biblioteca()
     # Setlist: lista de objetos canción en el orden del setlist
     setlist_canciones = []
-    for num in config.get("setlist", []):
+    cfg = get_config()
+    for num in cfg.get("setlist", []):
         if num in biblioteca:
             setlist_canciones.append(biblioteca[num])
     # Biblioteca completa ordenada por número
@@ -200,7 +210,7 @@ def admin():
     return render_template(
         "admin.html",
         biblioteca=biblioteca_ordenada,
-        setlist=config.get("setlist", []),
+        setlist=get_config().get("setlist", []),
     )
 
 
@@ -252,8 +262,9 @@ def admin_eliminar(numero):
                 archivo.unlink()
                 flash(f"✓ Canción #{numero} eliminada", "success")
                 # Removerla del setlist si estaba
-                if numero in config.get("setlist", []):
-                    config["setlist"].remove(numero)
+                cfg = get_config()
+                if numero in cfg.get("setlist", []):
+                    cfg["setlist"].remove(numero)
                     guardar_config(config)
                 break
         except Exception:
@@ -268,8 +279,9 @@ def admin_setlist():
     setlist_str = request.form.get("setlist", "")
     try:
         nuevo_setlist = [int(x.strip()) for x in setlist_str.split(",") if x.strip()]
-        config["setlist"] = nuevo_setlist
-        guardar_config(config)
+        cfg = get_config()
+        cfg["setlist"] = nuevo_setlist
+        guardar_config(cfg)
         flash("✓ Setlist actualizado", "success")
     except ValueError:
         flash("Lista de números inválida", "error")
@@ -284,16 +296,17 @@ def admin_cambiar_password():
     if not nueva or len(nueva) < 6:
         flash("Contraseña debe tener al menos 6 caracteres", "error")
         return redirect(url_for("admin"))
+    cfg = get_config()
     if cual == "musicos":
-        config["password_musicos"] = hash_password(nueva)
+        cfg["password_musicos"] = hash_password(nueva)
         flash("✓ Password de músicos actualizado", "success")
     elif cual == "admin":
-        config["password_admin"] = hash_password(nueva)
+        cfg["password_admin"] = hash_password(nueva)
         flash("✓ Password de admin actualizado", "success")
     else:
         flash("Tipo de password inválido", "error")
         return redirect(url_for("admin"))
-    guardar_config(config)
+    guardar_config(cfg)
     return redirect(url_for("admin"))
 
 
