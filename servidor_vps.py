@@ -65,7 +65,11 @@ def cargar_config():
             "password_musicos": hash_password("musicos2026"),
             "password_admin": hash_password("admin2026"),
             "secret_key": secrets.token_hex(32),
+            "live_token": secrets.token_hex(16),
             "setlist": [],
+            "live_activo": False,
+            "mac_local_ip": None,
+            "ultimo_heartbeat": None,
         }
         with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
             json.dump(default, f, indent=2)
@@ -73,7 +77,26 @@ def cargar_config():
         print("    Cámbialos editando el archivo.")
         return default
     with open(ARCHIVO_CONFIG, "r", encoding="utf-8") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    # Migración automática: agregar campos nuevos si la config es vieja
+    cambios = False
+    if "live_token" not in cfg:
+        cfg["live_token"] = secrets.token_hex(16)
+        cambios = True
+    if "live_activo" not in cfg:
+        cfg["live_activo"] = False
+        cambios = True
+    if "mac_local_ip" not in cfg:
+        cfg["mac_local_ip"] = None
+        cambios = True
+    if "ultimo_heartbeat" not in cfg:
+        cfg["ultimo_heartbeat"] = None
+        cambios = True
+    if cambios:
+        with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        print("✓ config.json migrado con campos de live")
+    return cfg
 
 
 def guardar_config(cfg):
@@ -173,11 +196,15 @@ def principal():
             setlist_canciones.append(biblioteca[num])
     # Biblioteca completa ordenada por número
     biblioteca_ordenada = sorted(biblioteca.values(), key=lambda c: c["numero"])
+    # Estado del live
+    live_activo = is_live_activo(cfg)
     return render_template(
         "principal.html",
         setlist=setlist_canciones,
         biblioteca=biblioteca_ordenada,
         es_admin=(session.get("rol") == "admin"),
+        live_activo=live_activo,
+        live_ip=cfg.get("mac_local_ip") if live_activo else None,
     )
 
 
@@ -228,10 +255,23 @@ def api_cancion(numero):
 def admin():
     biblioteca = cargar_biblioteca()
     biblioteca_ordenada = sorted(biblioteca.values(), key=lambda c: c["numero"])
+    cfg = get_config()
+    live_activo = is_live_activo(cfg)
+    # Hace cuántos segundos fue el último heartbeat
+    ultimo = cfg.get("ultimo_heartbeat")
+    if ultimo:
+        import time as _t
+        segundos_atras = int(_t.time() - ultimo)
+    else:
+        segundos_atras = None
     return render_template(
         "admin.html",
         biblioteca=biblioteca_ordenada,
-        setlist=get_config().get("setlist", []),
+        setlist=cfg.get("setlist", []),
+        live_activo=live_activo,
+        live_ip=cfg.get("mac_local_ip"),
+        live_token=cfg.get("live_token", ""),
+        ultimo_heartbeat_seg=segundos_atras,
     )
 
 
@@ -328,6 +368,72 @@ def admin_cambiar_password():
         flash("Tipo de password inválido", "error")
         return redirect(url_for("admin"))
     guardar_config(cfg)
+    return redirect(url_for("admin"))
+
+
+# ───────────────────────── Live (Mac local) ─────────────────────────
+# Timeout: si pasaron más de 90 segundos sin heartbeat, el live se considera apagado
+HEARTBEAT_TIMEOUT_SEG = 90
+
+
+def is_live_activo(cfg=None):
+    """True si el Mac mandó heartbeat recientemente."""
+    if cfg is None:
+        cfg = get_config()
+    if not cfg.get("live_activo"):
+        return False
+    ultimo = cfg.get("ultimo_heartbeat")
+    if not ultimo:
+        return False
+    import time as _t
+    return (_t.time() - ultimo) < HEARTBEAT_TIMEOUT_SEG
+
+
+@app.route("/api/live_ping", methods=["POST"])
+def api_live_ping():
+    """El puente.py del Mac llama esto cada 30s para avisar que está vivo."""
+    data = request.get_json(silent=True) or {}
+    cfg = get_config()
+    # Validar token
+    if data.get("token") != cfg.get("live_token"):
+        return jsonify({"ok": False, "error": "invalid token"}), 403
+    ip = data.get("ip", "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "missing ip"}), 400
+    accion = data.get("accion", "ping")  # "ping" o "bye"
+    import time as _t
+    if accion == "bye":
+        cfg["live_activo"] = False
+        cfg["ultimo_heartbeat"] = None
+        print(f"📴 Mac local desconectado (bye explícito)")
+    else:
+        cfg["live_activo"] = True
+        cfg["mac_local_ip"] = ip
+        cfg["ultimo_heartbeat"] = _t.time()
+    guardar_config(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/live_status")
+def api_live_status():
+    """El frontend lo consulta para saber si hay live activo."""
+    cfg = get_config()
+    activo = is_live_activo(cfg)
+    return jsonify({
+        "activo": activo,
+        "ip": cfg.get("mac_local_ip") if activo else None,
+    })
+
+
+@app.route("/admin/live_off", methods=["POST"])
+@login_required("admin")
+def admin_live_off():
+    """Forzar apagado del live desde el panel admin."""
+    cfg = get_config()
+    cfg["live_activo"] = False
+    cfg["ultimo_heartbeat"] = None
+    guardar_config(cfg)
+    flash("✓ Live forzado a OFF", "success")
     return redirect(url_for("admin"))
 
 

@@ -27,6 +27,26 @@
   .header .links a:hover{color:var(--txt);border-color:var(--txt2)}
   .header .links a.admin{background:var(--gold-soft);color:var(--gold);border-color:#3d3422}
 
+  /* Banner EN VIVO */
+  .live-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;
+    background:linear-gradient(135deg,#3a1015,#5a1620);border:1px solid #7a2030;
+    border-radius:12px;padding:14px 18px;margin-bottom:18px;
+    box-shadow:0 0 20px rgba(220,40,60,0.15)}
+  .live-banner .live-info{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+  .live-banner .live-dot{width:12px;height:12px;border-radius:50%;background:#ff3b50;
+    flex-shrink:0;box-shadow:0 0 8px rgba(255,59,80,0.7);
+    animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+  .live-banner .live-text{min-width:0}
+  .live-banner .live-title{font-size:14px;font-weight:700;color:#fff;letter-spacing:0.5px}
+  .live-banner .live-sub{font-size:11px;color:#e5b5bd;margin-top:1px}
+  .live-banner .live-btn{display:inline-flex;align-items:center;gap:6px;
+    padding:9px 16px;background:#fff;color:#000;border:none;border-radius:7px;
+    font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;
+    flex-shrink:0;transition:all 0.15s}
+  .live-banner .live-btn:hover{filter:brightness(0.92);transform:scale(1.02)}
+  .live-banner .live-btn:active{transform:scale(0.98)}
+
   /* Tabs */
   .tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:18px}
   .tab{flex:1;padding:12px 0;text-align:center;font-size:14px;color:var(--txt3);
@@ -81,9 +101,10 @@
 </head>
 <body>
 <script>
+// Refrescar cada 15s para detectar cambios de live + setlist en tiempo razonable
 setInterval(() => {
   if (document.visibilityState === 'visible') window.location.reload();
-}, 30000);
+}, 15000);
 </script>
 <div class="wrap">
   <div class="header">
@@ -99,6 +120,19 @@ setInterval(() => {
       <a href="{{ url_for('logout') }}">Salir</a>
     </div>
   </div>
+
+  {% if live_activo and live_ip %}
+  <div class="live-banner">
+    <div class="live-info">
+      <div class="live-dot"></div>
+      <div class="live-text">
+        <div class="live-title">EN VIVO</div>
+        <div class="live-sub">El culto está activo · Entrá al sistema local</div>
+      </div>
+    </div>
+    <a href="http://{{ live_ip }}:5050" class="live-btn">Entrar →</a>
+  </div>
+  {% endif %}
 
   <div class="tabs" role="tablist">
     <button class="tab active" data-pane="live" onclick="switchTab('live')">
