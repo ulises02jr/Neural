@@ -70,6 +70,52 @@
   .tono-tag{color:var(--gold);font-weight:700;font-size:11px;background:var(--gold-soft);padding:1px 6px;border-radius:4px;font-family:ui-monospace,Menlo,monospace}
   .pw-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:8px}
   .pw-row input{margin-bottom:0}
+
+  /* Multi-setlists UI */
+  .new-setlist-form{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center;
+    padding:12px;background:var(--raised);border:1px solid var(--line);border-radius:8px}
+  .new-setlist-form input{flex:1;min-width:140px;padding:9px 11px;background:var(--surface);
+    border:1px solid var(--line);border-radius:6px;color:var(--txt);font-family:inherit;font-size:13px;margin:0}
+  .new-setlist-form input:focus{outline:none;border-color:var(--gold)}
+
+  .setlists-wrap{display:flex;flex-direction:column;gap:10px}
+  .setlist-card{background:var(--raised);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .setlist-card summary{cursor:pointer;padding:14px 16px;list-style:none;user-select:none}
+  .setlist-card summary::-webkit-details-marker{display:none}
+  .setlist-card[open] summary{border-bottom:1px solid var(--line)}
+  .sl-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .sl-info{flex:1;min-width:0}
+  .sl-nombre{font-size:15px;font-weight:600;color:var(--txt)}
+  .sl-fecha{font-size:11px;color:var(--txt3);margin-top:3px;font-family:ui-monospace,Menlo,monospace}
+  .sl-actions{display:flex;gap:6px;flex-shrink:0}
+  .sl-body{padding:14px 16px}
+
+  .add-song-form{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .add-song-form select{flex:1;padding:8px 11px;background:var(--surface);
+    border:1px solid var(--line);border-radius:6px;color:var(--txt);font-family:inherit;font-size:13px}
+
+  /* Transpose buttons en setlist */
+  .item .transpose{display:inline-flex;align-items:stretch;gap:0;background:var(--surface);
+    border:1px solid var(--line);border-radius:6px;overflow:hidden;flex-shrink:0;margin-right:6px}
+  .item .t-btn{width:24px;height:26px;background:transparent;border:none;
+    color:var(--gold);font-size:14px;font-weight:bold;cursor:pointer;
+    font-family:inherit;line-height:1;padding:0}
+  .item .t-btn:hover{background:var(--raised)}
+  .item .t-tono{padding:0 9px;background:var(--gold);color:#000;font-weight:700;font-size:12px;
+    font-family:ui-monospace,Menlo,monospace;min-width:34px;justify-content:center;
+    border:none;border-left:1px solid var(--line);border-right:1px solid var(--line);cursor:pointer}
+  .item .t-tono:hover{filter:brightness(0.92)}
+
+  /* Modal de edición */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .modal-content{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:22px;max-width:400px;width:100%}
+  .modal-content h3{margin-bottom:14px;font-size:16px}
+  .modal-content label{display:block;font-size:12px;color:var(--txt2);margin:10px 0 4px}
+  .modal-content input{width:100%;padding:9px 11px;background:var(--raised);
+    border:1px solid var(--line);border-radius:6px;color:var(--txt);font-family:inherit;font-size:14px;margin:0}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
 </style>
 </head>
 <body>
@@ -144,68 +190,146 @@
   </div>
 
   <div class="card">
-    <h2>Setlist y biblioteca</h2>
-    <div class="setlist-cols">
-      <div>
-        <div class="col-h"><span>Biblioteca</span><span>{{ biblioteca|length }} canciones</span></div>
-        <div class="lista">
-          {% if biblioteca %}
-            {% for c in biblioteca %}
-            <div class="item">
-              <span class="num">#{{ c.numero }}</span>
-              <div class="info">
-                <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">{{ c.tono }}</span>{% endif %}</div>
-                <div class="ar">{{ c.artista or '' }}</div>
+    <h2>Setlists</h2>
+    <p class="help" style="margin:-4px 0 14px">Cada setlist tiene nombre y fecha. Los setlists con fecha pasada se eliminan automáticamente.</p>
+
+    <!-- Crear nuevo setlist -->
+    <form method="POST" action="{{ url_for('admin_setlist_crear') }}" class="new-setlist-form">
+      <input type="text" name="nombre" placeholder="Nombre (ej: Domingo mañana)" maxlength="80" required>
+      <input type="date" name="fecha" value="{{ hoy }}" required>
+      <button type="submit" class="primary">+ Crear setlist</button>
+    </form>
+
+    <!-- Lista de setlists -->
+    <div class="setlists-wrap">
+      {% if setlists %}
+        {% for s in setlists %}
+        <details class="setlist-card" {% if loop.first %}open{% endif %}>
+          <summary>
+            <div class="sl-head">
+              <div class="sl-info">
+                <div class="sl-nombre">{{ s.nombre }}</div>
+                <div class="sl-fecha">📅 {{ s.fecha }} · {{ s.canciones_resolved|length }} canción(es)</div>
               </div>
-              <div class="actions">
-                {% if c.numero in setlist %}
-                  <button class="icon-btn" disabled>✓</button>
-                {% else %}
-                  <button class="icon-btn" onclick="agregarAlSet({{ c.numero }})" title="Agregar al setlist">+</button>
-                {% endif %}
-                <form method="POST" action="{{ url_for('admin_eliminar', numero=c.numero) }}" style="display:inline"
-                      onsubmit="return confirm('¿Eliminar la canción #{{ c.numero }} - {{ c.titulo }}?')">
-                  <button type="submit" class="icon-btn danger" title="Eliminar">×</button>
+              <div class="sl-actions" onclick="event.preventDefault();event.stopPropagation();">
+                <button class="icon-btn" onclick="editarSetlist('{{ s.id }}', '{{ s.nombre|replace("'", "\\'") }}', '{{ s.fecha }}')" title="Editar nombre/fecha">✎</button>
+                <form method="POST" action="{{ url_for('admin_setlist_eliminar', setlist_id=s.id) }}" style="display:inline"
+                      onsubmit="return confirm('¿Eliminar el setlist {{ s.nombre|replace(\"'\", \"\\'\") }}?')">
+                  <button type="submit" class="icon-btn danger" title="Eliminar setlist">×</button>
                 </form>
               </div>
             </div>
-            {% endfor %}
-          {% else %}
-            <div class="vacio">Sin canciones todavía</div>
-          {% endif %}
-        </div>
-      </div>
-      <div>
-        <div class="col-h">
-          <span>En el setlist ({{ setlist|length }})</span>
-          {% if setlist %}<button class="icon-btn" onclick="limpiarSetlist()">Vaciar</button>{% endif %}
-        </div>
-        <div class="lista" id="lista-setlist">
-          {% if setlist %}
-            {% for n in setlist %}
-              {% set c = (biblioteca | selectattr('numero', 'equalto', n) | list | first) %}
-              {% if c %}
-              <div class="item en-set" data-numero="{{ c.numero }}">
-                <span class="num">{{ loop.index }}</span>
-                <div class="info">
-                  <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">{{ c.tono }}</span>{% endif %}</div>
-                  <div class="ar">#{{ c.numero }} · {{ c.artista or '' }}</div>
+          </summary>
+          <div class="sl-body">
+            <!-- Canciones del setlist -->
+            {% if s.canciones_resolved %}
+              <div class="lista">
+                {% for c in s.canciones_resolved %}
+                <div class="item en-set">
+                  <span class="num">{{ loop.index }}</span>
+                  <div class="info">
+                    <div class="nm">{{ c.titulo }}</div>
+                    <div class="ar">#{{ c.id }} · {{ c.artista }}{% if c.es_override %} · <span style="color:var(--accent);opacity:0.7">orig: {{ c.tono_original }}</span>{% endif %}</div>
+                  </div>
+                  <!-- Transposición -->
+                  <div class="transpose">
+                    <form method="POST" action="{{ url_for('admin_setlist_transponer', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+                      <input type="hidden" name="delta" value="-1">
+                      <button type="submit" class="t-btn" title="Bajar 1 semitono">−</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_setlist_resetear_tono', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+                      <button type="submit" class="t-tono" title="Volver al tono original">{{ c.tono or '—' }}</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_setlist_transponer', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+                      <input type="hidden" name="delta" value="1">
+                      <button type="submit" class="t-btn" title="Subir 1 semitono">+</button>
+                    </form>
+                  </div>
+                  <div class="actions">
+                    <form method="POST" action="{{ url_for('admin_setlist_mover', setlist_id=s.id) }}" style="display:inline">
+                      <input type="hidden" name="numero" value="{{ c.id }}">
+                      <input type="hidden" name="direccion" value="arriba">
+                      <button type="submit" class="icon-btn" {% if loop.first %}disabled{% endif %} title="Subir">↑</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_setlist_mover', setlist_id=s.id) }}" style="display:inline">
+                      <input type="hidden" name="numero" value="{{ c.id }}">
+                      <input type="hidden" name="direccion" value="abajo">
+                      <button type="submit" class="icon-btn" {% if loop.last %}disabled{% endif %} title="Bajar">↓</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('admin_setlist_quitar', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+                      <button type="submit" class="icon-btn danger" title="Quitar">×</button>
+                    </form>
+                  </div>
                 </div>
-                <div class="actions">
-                  <button class="icon-btn" onclick="moverEn({{ c.numero }}, -1)" {% if loop.first %}disabled{% endif %} title="Subir">↑</button>
-                  <button class="icon-btn" onclick="moverEn({{ c.numero }}, 1)" {% if loop.last %}disabled{% endif %} title="Bajar">↓</button>
-                  <button class="icon-btn danger" onclick="quitarDelSet({{ c.numero }})" title="Quitar">×</button>
-                </div>
+                {% endfor %}
               </div>
-              {% endif %}
-            {% endfor %}
-          {% else %}
-            <div class="vacio">Setlist vacío.<br>Agregá canciones desde la biblioteca →</div>
-          {% endif %}
-        </div>
-      </div>
+            {% else %}
+              <div class="vacio">Setlist vacío. Agregá canciones abajo.</div>
+            {% endif %}
+
+            <!-- Selector para agregar canción -->
+            <form method="POST" action="{{ url_for('admin_setlist_agregar', setlist_id=s.id) }}" class="add-song-form">
+              <select name="numero" required>
+                <option value="">+ Agregar canción...</option>
+                {% set ids_en_setlist = s.canciones_resolved|map(attribute='id')|list %}
+                {% for c in biblioteca %}
+                  {% if c.numero not in ids_en_setlist %}
+                    <option value="{{ c.numero }}">#{{ c.numero }} · {{ c.titulo }}{% if c.tono %} ({{ c.tono }}){% endif %}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+              <button type="submit" class="primary">Agregar</button>
+            </form>
+          </div>
+        </details>
+        {% endfor %}
+      {% else %}
+        <div class="vacio">No hay setlists. Creá uno arriba para empezar.</div>
+      {% endif %}
     </div>
-    <p class="help">Los cambios se guardan al hacer click en cualquier botón.</p>
+  </div>
+
+  <!-- Modal de edición -->
+  <div id="edit-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <h3>Editar setlist</h3>
+      <form id="edit-form" method="POST">
+        <label>Nombre</label>
+        <input type="text" name="nombre" id="edit-nombre" required maxlength="80">
+        <label>Fecha</label>
+        <input type="date" name="fecha" id="edit-fecha" required>
+        <div class="modal-actions">
+          <button type="button" class="icon-btn" onclick="cerrarEdicion()">Cancelar</button>
+          <button type="submit" class="primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Biblioteca</h2>
+    <p class="help" style="margin:-4px 0 10px">{{ biblioteca|length }} canción(es) disponibles.</p>
+    <div class="lista">
+      {% if biblioteca %}
+        {% for c in biblioteca %}
+        <div class="item">
+          <span class="num">#{{ c.numero }}</span>
+          <div class="info">
+            <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">{{ c.tono }}</span>{% endif %}</div>
+            <div class="ar">{{ c.artista or '' }}</div>
+          </div>
+          <div class="actions">
+            <form method="POST" action="{{ url_for('admin_eliminar', numero=c.numero) }}" style="display:inline"
+                  onsubmit="return confirm('¿Eliminar la canción #{{ c.numero }} - {{ c.titulo }}?')">
+              <button type="submit" class="icon-btn danger" title="Eliminar">×</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="vacio">Sin canciones todavía. Subí JSONs desde la sección de arriba.</div>
+      {% endif %}
+    </div>
   </div>
 
   <div class="card">
@@ -230,46 +354,23 @@
 </div>
 
 <script>
-let setlistActual = {{ setlist|tojson }};
-let procesando = false;
-
-async function postSetlist(nuevoSetlist){
-  if(procesando) return;
-  procesando = true;
-  document.body.style.opacity = '0.6';
-  document.body.style.pointerEvents = 'none';
-  try {
-    const form = new FormData();
-    form.append('setlist', nuevoSetlist.join(','));
-    await fetch("{{ url_for('admin_setlist') }}", {method: 'POST', body: form});
-    location.reload();
-  } catch(err) {
-    alert('Error al actualizar setlist: ' + err.message);
-    document.body.style.opacity = '1';
-    document.body.style.pointerEvents = 'auto';
-    procesando = false;
-  }
+function editarSetlist(id, nombre, fecha){
+  const form = document.getElementById('edit-form');
+  form.action = '/admin/setlist/' + id + '/editar';
+  document.getElementById('edit-nombre').value = nombre;
+  document.getElementById('edit-fecha').value = fecha;
+  document.getElementById('edit-modal').style.display = 'flex';
 }
-
-function agregarAlSet(num){
-  if(setlistActual.includes(num)) return;
-  postSetlist([...setlistActual, num]);
+function cerrarEdicion(){
+  document.getElementById('edit-modal').style.display = 'none';
 }
-function quitarDelSet(num){
-  postSetlist(setlistActual.filter(n => n !== num));
-}
-function moverEn(num, dir){
-  const arr = [...setlistActual];
-  const i = arr.indexOf(num);
-  if(i < 0) return;
-  const j = i + dir;
-  if(j < 0 || j >= arr.length) return;
-  [arr[i], arr[j]] = [arr[j], arr[i]];
-  postSetlist(arr);
-}
-function limpiarSetlist(){
-  if(confirm('¿Vaciar el setlist?')) postSetlist([]);
-}
+// Cerrar modal con Escape o click afuera
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') cerrarEdicion();
+});
+document.getElementById('edit-modal').addEventListener('click', e => {
+  if(e.target.id === 'edit-modal') cerrarEdicion();
+});
 </script>
 </body>
 </html>

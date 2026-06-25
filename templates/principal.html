@@ -90,6 +90,21 @@
   .setlist-item{background:#161616;border-color:#333}
   .setlist-item .num{color:var(--gold)}
 
+  /* Selector de setlist (multi-setlists) */
+  .setlist-selector{display:flex;align-items:center;gap:10px;margin-bottom:14px;
+    padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+  .setlist-selector label{font-size:12px;color:var(--txt2);font-weight:500}
+  .setlist-selector select{flex:1;padding:7px 10px;background:var(--raised);
+    border:1px solid var(--line);border-radius:6px;color:var(--txt);
+    font-family:inherit;font-size:13px;cursor:pointer}
+
+  /* Header del setlist activo */
+  .setlist-header{padding:10px 14px;background:var(--gold-soft);
+    border-left:3px solid var(--gold);border-radius:6px;margin-bottom:12px}
+  .setlist-nombre{font-size:14px;font-weight:600;color:var(--txt)}
+  .setlist-fecha{font-size:11px;color:var(--txt2);margin-top:2px;
+    font-family:ui-monospace,Menlo,monospace}
+
   .vacio{padding:32px 20px;color:var(--txt3);font-size:13px;text-align:center;
     font-style:italic;border:1px dashed var(--line);border-radius:10px}
   .vacio.no-results{padding:20px}
@@ -145,6 +160,26 @@ setInterval(() => {
 
   <!-- PANE: LIVE -->
   <div id="pane-live" class="pane active">
+    {% if setlists_disponibles and setlists_disponibles|length > 1 %}
+    <div class="setlist-selector">
+      <label>Setlist:</label>
+      <select onchange="if(this.value) window.location.href = '/?setlist_id=' + this.value">
+        {% for s in setlists_disponibles %}
+        <option value="{{ s.id }}" {% if setlist_activo and s.id == setlist_activo.id %}selected{% endif %}>
+          {{ s.nombre }} · {{ s.fecha }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    {% if setlist_activo %}
+      <div class="setlist-header">
+        <div class="setlist-nombre">{{ setlist_activo.nombre }}</div>
+        <div class="setlist-fecha">📅 {{ setlist_activo.fecha }}</div>
+      </div>
+    {% endif %}
+
     {% if setlist %}
       {% for c in setlist %}
       <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item setlist-item">

@@ -60,13 +60,12 @@ def cargar_config():
     """Carga config.json. Si no existe, lo crea con valores por defecto."""
     if not ARCHIVO_CONFIG.exists():
         # Primera ejecución: crear config con passwords por defecto
-        # IMPORTANTE: el admin debe cambiarlos después
         default = {
             "password_musicos": hash_password("musicos2026"),
             "password_admin": hash_password("admin2026"),
             "secret_key": secrets.token_hex(32),
             "live_token": secrets.token_hex(16),
-            "setlist": [],
+            "setlists": [],  # Multi-setlists: lista de {id, nombre, fecha, canciones}
             "live_activo": False,
             "mac_local_ip": None,
             "ultimo_heartbeat": None,
@@ -92,11 +91,49 @@ def cargar_config():
     if "ultimo_heartbeat" not in cfg:
         cfg["ultimo_heartbeat"] = None
         cambios = True
+    # Migración: setlist único → multi-setlists
+    if "setlists" not in cfg:
+        cfg["setlists"] = []
+        # Si había un setlist viejo, convertirlo
+        viejo = cfg.pop("setlist", None)
+        if viejo:
+            cfg["setlists"].append({
+                "id": secrets.token_hex(6),
+                "nombre": "Setlist migrado",
+                "fecha": _hoy_iso(),
+                "canciones": [
+                    {"id": n, "tono": None} if isinstance(n, int)
+                    else {"id": int(n.get("id", 0)), "tono": n.get("tono")}
+                    for n in viejo if (isinstance(n, int) or isinstance(n, dict))
+                ],
+                "creado": _ahora_iso(),
+            })
+            print(f"✓ Setlist viejo migrado a multi-setlists")
+        cambios = True
+    # Limpiar setlists con fecha pasada (más de 1 día atrás)
+    if "setlists" in cfg and cfg["setlists"]:
+        hoy = _hoy_iso()
+        antes = len(cfg["setlists"])
+        cfg["setlists"] = [s for s in cfg["setlists"] if s.get("fecha", "9999") >= hoy]
+        if len(cfg["setlists"]) < antes:
+            cambios = True
+            print(f"🗑  Eliminados {antes - len(cfg['setlists'])} setlist(s) con fecha pasada")
     if cambios:
         with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
-        print("✓ config.json migrado con campos de live")
     return cfg
+
+
+def _hoy_iso():
+    """Fecha de hoy en formato YYYY-MM-DD."""
+    from datetime import date
+    return date.today().isoformat()
+
+
+def _ahora_iso():
+    """Timestamp ISO."""
+    from datetime import datetime
+    return datetime.now().isoformat(timespec="seconds")
 
 
 def guardar_config(cfg):
@@ -188,19 +225,51 @@ def logout():
 @login_required("musico")
 def principal():
     biblioteca = cargar_biblioteca()
-    # Setlist: lista de objetos canción en el orden del setlist
-    setlist_canciones = []
-    cfg = get_config()
-    for num in cfg.get("setlist", []):
-        if num in biblioteca:
-            setlist_canciones.append(biblioteca[num])
-    # Biblioteca completa ordenada por número
     biblioteca_ordenada = sorted(biblioteca.values(), key=lambda c: c["numero"])
+    cfg = get_config()
+
+    # Ordenar setlists por fecha ASC (más próximo primero), luego por created DESC para mismo día
+    setlists_raw = cfg.get("setlists", [])
+    setlists_ordenados = sorted(
+        setlists_raw,
+        key=lambda s: (s.get("fecha", "9999"), s.get("creado", ""))
+    )
+
+    # Setlist seleccionado: ?setlist_id=xxx o el más próximo
+    setlist_id = request.args.get("setlist_id")
+    setlist_activo = None
+    if setlist_id:
+        setlist_activo = next((s for s in setlists_ordenados if s["id"] == setlist_id), None)
+    if not setlist_activo and setlists_ordenados:
+        setlist_activo = setlists_ordenados[0]  # el más próximo
+
+    # Resolver canciones del setlist activo (con tono override)
+    setlist_canciones = []
+    if setlist_activo:
+        for item in setlist_activo.get("canciones", []):
+            num = item.get("id")
+            if num in biblioteca:
+                cancion = dict(biblioteca[num])
+                # Aplicar tono override
+                if item.get("tono"):
+                    cancion["tono"] = item["tono"]
+                cancion["_es_override"] = item.get("tono") and item["tono"] != biblioteca[num].get("tono")
+                setlist_canciones.append(cancion)
+
+    # Lista resumida de TODOS los setlists para el selector
+    setlists_resumen = [
+        {"id": s["id"], "nombre": s.get("nombre", "Sin nombre"), "fecha": s.get("fecha", "")}
+        for s in setlists_ordenados
+    ]
+
     # Estado del live
     live_activo = is_live_activo(cfg)
+
     return render_template(
         "principal.html",
         setlist=setlist_canciones,
+        setlist_activo=setlist_activo,
+        setlists_disponibles=setlists_resumen,
         biblioteca=biblioteca_ordenada,
         es_admin=(session.get("rol") == "admin"),
         live_activo=live_activo,
@@ -264,14 +333,42 @@ def admin():
         segundos_atras = int(_t.time() - ultimo)
     else:
         segundos_atras = None
+    # Setlists ordenados por fecha ASC
+    setlists = sorted(
+        cfg.get("setlists", []),
+        key=lambda s: (s.get("fecha", "9999"), s.get("creado", ""))
+    )
+    # Para cada setlist, agregar info de las canciones
+    biblioteca_dict = {c["numero"]: c for c in biblioteca_ordenada}
+    setlists_full = []
+    for s in setlists:
+        canciones = []
+        for item in s.get("canciones", []):
+            num = item.get("id")
+            if num in biblioteca_dict:
+                base = biblioteca_dict[num]
+                tono_efectivo = item.get("tono") or base.get("tono", "")
+                canciones.append({
+                    "id": num,
+                    "titulo": base["titulo"],
+                    "artista": base.get("artista", ""),
+                    "tono": tono_efectivo,
+                    "tono_original": base.get("tono", ""),
+                    "es_override": bool(item.get("tono") and item["tono"] != base.get("tono", "")),
+                })
+        setlists_full.append({
+            **s,
+            "canciones_resolved": canciones,
+        })
     return render_template(
         "admin.html",
         biblioteca=biblioteca_ordenada,
-        setlist=cfg.get("setlist", []),
+        setlists=setlists_full,
         live_activo=live_activo,
         live_ip=cfg.get("mac_local_ip"),
         live_token=cfg.get("live_token", ""),
         ultimo_heartbeat_seg=segundos_atras,
+        hoy=_hoy_iso(),
     )
 
 
@@ -288,7 +385,6 @@ def admin_subir():
     if not archivo.filename.endswith(".json"):
         flash("Solo se aceptan archivos .json", "error")
         return redirect(url_for("admin"))
-    # Validar que es un JSON válido y tiene los campos requeridos
     try:
         contenido = archivo.read()
         datos = json.loads(contenido.decode("utf-8"))
@@ -298,7 +394,6 @@ def admin_subir():
     except json.JSONDecodeError:
         flash("Archivo no es JSON válido", "error")
         return redirect(url_for("admin"))
-    # Guardar
     nombre_seguro = secure_filename(archivo.filename)
     destino = CARPETA_CANCIONES / nombre_seguro
     with open(destino, "wb") as f:
@@ -314,7 +409,6 @@ def admin_eliminar(numero):
     if numero not in biblioteca:
         flash("Canción no encontrada", "error")
         return redirect(url_for("admin"))
-    # Buscar el archivo .json correspondiente
     for archivo in CARPETA_CANCIONES.glob("*.json"):
         try:
             with open(archivo, "r", encoding="utf-8") as f:
@@ -322,30 +416,168 @@ def admin_eliminar(numero):
             if datos.get("numero") == numero:
                 archivo.unlink()
                 flash(f"✓ Canción #{numero} eliminada", "success")
-                # Removerla del setlist si estaba
+                # Removerla de TODOS los setlists si estaba
                 cfg = get_config()
-                if numero in cfg.get("setlist", []):
-                    cfg["setlist"].remove(numero)
-                    guardar_config(config)
+                for s in cfg.get("setlists", []):
+                    s["canciones"] = [c for c in s.get("canciones", []) if c.get("id") != numero]
+                guardar_config(cfg)
                 break
         except Exception:
             continue
     return redirect(url_for("admin"))
 
 
-@app.route("/admin/setlist", methods=["POST"])
+# ───────── CRUD de setlists ─────────
+@app.route("/admin/setlist/crear", methods=["POST"])
 @login_required("admin")
-def admin_setlist():
-    # Recibe la lista de números en orden (form field "setlist", coma-separado)
-    setlist_str = request.form.get("setlist", "")
-    try:
-        nuevo_setlist = [int(x.strip()) for x in setlist_str.split(",") if x.strip()]
-        cfg = get_config()
-        cfg["setlist"] = nuevo_setlist
+def admin_setlist_crear():
+    nombre = request.form.get("nombre", "").strip() or "Sin nombre"
+    fecha = request.form.get("fecha", "").strip() or _hoy_iso()
+    cfg = get_config()
+    nuevo = {
+        "id": secrets.token_hex(6),
+        "nombre": nombre[:80],
+        "fecha": fecha,
+        "canciones": [],
+        "creado": _ahora_iso(),
+    }
+    cfg.setdefault("setlists", []).append(nuevo)
+    guardar_config(cfg)
+    flash(f"✓ Setlist '{nombre}' creado", "success")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/setlist/<setlist_id>/editar", methods=["POST"])
+@login_required("admin")
+def admin_setlist_editar(setlist_id):
+    nombre = request.form.get("nombre", "").strip()
+    fecha = request.form.get("fecha", "").strip()
+    cfg = get_config()
+    s = next((s for s in cfg.get("setlists", []) if s["id"] == setlist_id), None)
+    if not s:
+        flash("Setlist no encontrado", "error")
+        return redirect(url_for("admin"))
+    if nombre:
+        s["nombre"] = nombre[:80]
+    if fecha:
+        s["fecha"] = fecha
+    guardar_config(cfg)
+    flash("✓ Setlist actualizado", "success")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/setlist/<setlist_id>/eliminar", methods=["POST"])
+@login_required("admin")
+def admin_setlist_eliminar(setlist_id):
+    cfg = get_config()
+    antes = len(cfg.get("setlists", []))
+    cfg["setlists"] = [s for s in cfg.get("setlists", []) if s["id"] != setlist_id]
+    if len(cfg["setlists"]) < antes:
         guardar_config(cfg)
-        flash("✓ Setlist actualizado", "success")
+        flash("✓ Setlist eliminado", "success")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/setlist/<setlist_id>/agregar", methods=["POST"])
+@login_required("admin")
+def admin_setlist_agregar(setlist_id):
+    numero = request.form.get("numero", "").strip()
+    try:
+        numero = int(numero)
     except ValueError:
-        flash("Lista de números inválida", "error")
+        flash("Número inválido", "error")
+        return redirect(url_for("admin"))
+    biblioteca = cargar_biblioteca()
+    if numero not in biblioteca:
+        flash("Canción no encontrada", "error")
+        return redirect(url_for("admin"))
+    cfg = get_config()
+    s = next((s for s in cfg.get("setlists", []) if s["id"] == setlist_id), None)
+    if not s:
+        flash("Setlist no encontrado", "error")
+        return redirect(url_for("admin"))
+    # Evitar duplicados
+    if any(c.get("id") == numero for c in s.get("canciones", [])):
+        flash("La canción ya está en el setlist", "error")
+        return redirect(url_for("admin"))
+    s.setdefault("canciones", []).append({"id": numero, "tono": None})
+    guardar_config(cfg)
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/setlist/<setlist_id>/quitar/<int:numero>", methods=["POST"])
+@login_required("admin")
+def admin_setlist_quitar(setlist_id, numero):
+    cfg = get_config()
+    s = next((s for s in cfg.get("setlists", []) if s["id"] == setlist_id), None)
+    if s:
+        s["canciones"] = [c for c in s.get("canciones", []) if c.get("id") != numero]
+        guardar_config(cfg)
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/setlist/<setlist_id>/mover", methods=["POST"])
+@login_required("admin")
+def admin_setlist_mover(setlist_id):
+    numero = int(request.form.get("numero", 0))
+    direccion = request.form.get("direccion", "")
+    cfg = get_config()
+    s = next((s for s in cfg.get("setlists", []) if s["id"] == setlist_id), None)
+    if not s:
+        return redirect(url_for("admin"))
+    canciones = s.get("canciones", [])
+    idx = next((i for i, c in enumerate(canciones) if c.get("id") == numero), -1)
+    if idx < 0:
+        return redirect(url_for("admin"))
+    if direccion == "arriba" and idx > 0:
+        canciones[idx-1], canciones[idx] = canciones[idx], canciones[idx-1]
+    elif direccion == "abajo" and idx < len(canciones) - 1:
+        canciones[idx+1], canciones[idx] = canciones[idx], canciones[idx+1]
+    guardar_config(cfg)
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/setlist/<setlist_id>/transponer/<int:numero>", methods=["POST"])
+@login_required("admin")
+def admin_setlist_transponer(setlist_id, numero):
+    """Sube/baja N semitonos el tono de una canción en un setlist."""
+    delta = int(request.form.get("delta", 0))
+    cfg = get_config()
+    s = next((s for s in cfg.get("setlists", []) if s["id"] == setlist_id), None)
+    if not s:
+        return redirect(url_for("admin"))
+    item = next((c for c in s.get("canciones", []) if c.get("id") == numero), None)
+    if not item:
+        return redirect(url_for("admin"))
+    biblioteca = cargar_biblioteca()
+    base = biblioteca.get(numero, {})
+    tono_actual = item.get("tono") or base.get("tono", "")
+    if not tono_actual:
+        return redirect(url_for("admin"))
+    # Calcular nuevo tono (smart: bemoles/sostenidos)
+    from transposicion import transponer_acorde, usar_sostenidos
+    tono_sost = transponer_acorde(tono_actual, delta, usar_sost=True)
+    usar_sost = usar_sostenidos(tono_sost)
+    nuevo_tono = transponer_acorde(tono_actual, delta, usar_sost=usar_sost)
+    # Si vuelve al original, limpiar override
+    if nuevo_tono == base.get("tono", ""):
+        item["tono"] = None
+    else:
+        item["tono"] = nuevo_tono
+    guardar_config(cfg)
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/setlist/<setlist_id>/resetear/<int:numero>", methods=["POST"])
+@login_required("admin")
+def admin_setlist_resetear_tono(setlist_id, numero):
+    cfg = get_config()
+    s = next((s for s in cfg.get("setlists", []) if s["id"] == setlist_id), None)
+    if s:
+        item = next((c for c in s.get("canciones", []) if c.get("id") == numero), None)
+        if item:
+            item["tono"] = None
+            guardar_config(cfg)
     return redirect(url_for("admin"))
 
 
