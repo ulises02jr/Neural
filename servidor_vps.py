@@ -283,23 +283,45 @@ def ver_cancion(numero):
     biblioteca = cargar_biblioteca()
     if numero not in biblioteca:
         abort(404)
-    
-    # Soporte de transposición: ?t=N donde N es semitonos (-12 a +12)
+
+    cancion = dict(biblioteca[numero])  # copia para no mutar la biblioteca
+    cfg = get_config()
+
+    # Si viene de un setlist específico, aplicar el tono override de ese setlist
+    setlist_id = request.args.get("setlist_id")
+    if setlist_id:
+        sl = next((s for s in cfg.get("setlists", []) if s["id"] == setlist_id), None)
+        if sl:
+            item = next((c for c in sl.get("canciones", []) if c.get("id") == numero), None)
+            if item and item.get("tono") and item["tono"] != cancion.get("tono"):
+                # Calcular semitonos entre tono original y override
+                from transposicion import NOTA_A_INDICE
+                import re
+                def raiz(t):
+                    m = re.match(r'^([A-G][#b]?)', t or "")
+                    return m.group(1) if m else None
+                r_orig = raiz(cancion.get("tono", ""))
+                r_dest = raiz(item["tono"])
+                if r_orig and r_dest and r_orig in NOTA_A_INDICE and r_dest in NOTA_A_INDICE:
+                    sem = (NOTA_A_INDICE[r_dest] - NOTA_A_INDICE[r_orig]) % 12
+                    if sem != 0:
+                        cancion = transponer_cancion(cancion, sem)
+
+    # Soporte de transposición manual (botones +/-): ?t=N
     # Y origen: ?from=bib indica que se accedió desde biblioteca (se muestran botones +/-)
-    cancion = biblioteca[numero]
     try:
         semitonos = int(request.args.get("t", 0))
         if semitonos < -12 or semitonos > 12:
             semitonos = 0
     except (ValueError, TypeError):
         semitonos = 0
-    
+
     if semitonos != 0:
         cancion = transponer_cancion(cancion, semitonos)
-    
+
     # Permitir transposición solo si viene de biblioteca (no desde setlist)
     desde_biblioteca = request.args.get("from") == "bib"
-    
+
     return render_template(
         "visor.html",
         cancion=cancion,

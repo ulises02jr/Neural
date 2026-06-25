@@ -182,7 +182,7 @@ setInterval(() => {
 
     {% if setlist %}
       {% for c in setlist %}
-      <a href="{{ url_for('ver_cancion', numero=c.numero) }}" class="song-item setlist-item">
+      <a href="{{ url_for('ver_cancion', numero=c.numero) }}{% if setlist_activo %}?setlist_id={{ setlist_activo.id }}{% endif %}" class="song-item setlist-item">
         <span class="num">{{ loop.index }}</span>
         <div class="info">
           <div class="nm">
