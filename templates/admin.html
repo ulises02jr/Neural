@@ -212,9 +212,9 @@
                 <div class="sl-fecha">📅 {{ s.fecha }} · {{ s.canciones_resolved|length }} canción(es)</div>
               </div>
               <div class="sl-actions" onclick="event.preventDefault();event.stopPropagation();">
-                <button class="icon-btn" onclick="editarSetlist('{{ s.id }}', '{{ s.nombre|replace("'", "\\'") }}', '{{ s.fecha }}')" title="Editar nombre/fecha">✎</button>
+                <button class="icon-btn" data-sl-id="{{ s.id }}" data-sl-nombre="{{ s.nombre }}" data-sl-fecha="{{ s.fecha }}" onclick="editarSetlistBtn(this)" title="Editar nombre/fecha">✎</button>
                 <form method="POST" action="{{ url_for('admin_setlist_eliminar', setlist_id=s.id) }}" style="display:inline"
-                      onsubmit="return confirm('¿Eliminar el setlist {{ s.nombre|replace(\"'\", \"\\'\") }}?')">
+                      onsubmit="return confirm('¿Eliminar este setlist?')">
                   <button type="submit" class="icon-btn danger" title="Eliminar setlist">×</button>
                 </form>
               </div>
@@ -354,7 +354,10 @@
 </div>
 
 <script>
-function editarSetlist(id, nombre, fecha){
+function editarSetlistBtn(btn){
+  const id = btn.dataset.slId;
+  const nombre = btn.dataset.slNombre;
+  const fecha = btn.dataset.slFecha;
   const form = document.getElementById('edit-form');
   form.action = '/admin/setlist/' + id + '/editar';
   document.getElementById('edit-nombre').value = nombre;
@@ -368,9 +371,12 @@ function cerrarEdicion(){
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape') cerrarEdicion();
 });
-document.getElementById('edit-modal').addEventListener('click', e => {
-  if(e.target.id === 'edit-modal') cerrarEdicion();
-});
+const modalEl = document.getElementById('edit-modal');
+if(modalEl){
+  modalEl.addEventListener('click', e => {
+    if(e.target.id === 'edit-modal') cerrarEdicion();
+  });
+}
 </script>
 </body>
 </html>
