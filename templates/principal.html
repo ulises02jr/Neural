@@ -127,7 +127,7 @@ setInterval(() => {
       <img src="{{ url_for('static', filename='logo.png') }}" alt="">
       <div class="brand-text">
         <h1>Mi Iglesia Internacional</h1>
-        <div class="sub">Charts · Modo ensayo</div>
+        <div class="sub">{% if usuario %}Bienvenido, {{ usuario.nombre }} · {% endif %}Charts</div>
       </div>
     </div>
     <div class="links">

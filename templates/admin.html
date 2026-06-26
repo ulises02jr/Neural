@@ -189,6 +189,91 @@
     <p class="help">El JSON debe tener los campos <code>numero</code>, <code>titulo</code> y <code>secciones</code>.</p>
   </div>
 
+  <!-- Gestión de usuarios -->
+  <div class="card">
+    <h2>Usuarios</h2>
+    {% if not email_configurado %}
+    <div class="flash error" style="margin-bottom:14px">
+      ⚠️ El sistema de email no está configurado. Los códigos de reset no podrán enviarse.
+    </div>
+    {% endif %}
+
+    <!-- Usuarios pendientes -->
+    {% if usuarios_pendientes %}
+    <div style="margin-bottom:20px">
+      <div class="col-h"><span>⏳ Pendientes de aprobación</span><span>{{ usuarios_pendientes|length }}</span></div>
+      <div class="lista">
+        {% for u in usuarios_pendientes %}
+        <div class="item">
+          <div class="info">
+            <div class="nm">{{ u.nombre }} {{ u.apellido }}</div>
+            <div class="ar">{{ u.email }} · registrado {{ u.creado_en[:10] }}</div>
+          </div>
+          <div class="actions">
+            <form method="POST" action="{{ url_for('admin_usuario_aprobar', user_id=u.id) }}" style="display:inline">
+              <button type="submit" class="primary" style="padding:6px 12px;font-size:12px">✓ Aprobar</button>
+            </form>
+            <form method="POST" action="{{ url_for('admin_usuario_eliminar', user_id=u.id) }}" style="display:inline"
+                  onsubmit="return confirm('¿Rechazar y eliminar este usuario?')">
+              <button type="submit" class="icon-btn danger" title="Rechazar y eliminar">×</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Usuarios activos -->
+    <div style="margin-bottom:14px">
+      <div class="col-h"><span>✓ Usuarios activos</span><span>{{ usuarios_activos|length }}</span></div>
+      {% if usuarios_activos %}
+      <div class="lista">
+        {% for u in usuarios_activos %}
+        <div class="item">
+          <div class="info">
+            <div class="nm">
+              {{ u.nombre }} {{ u.apellido }}
+              {% if u.rol == 'admin' %}<span style="background:var(--gold-soft);color:var(--gold);padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">ADMIN</span>{% endif %}
+              {% if usuario_actual and usuario_actual.id == u.id %}<span style="background:rgba(134,179,106,0.15);color:var(--live);padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;margin-left:4px">VOS</span>{% endif %}
+            </div>
+            <div class="ar">{{ u.email }}</div>
+          </div>
+          <div class="actions">
+            <form method="POST" action="{{ url_for('admin_usuario_reset_password', user_id=u.id) }}" style="display:inline"
+                  onsubmit="return confirm('¿Enviar código de reset a {{ u.email }}?')">
+              <button type="submit" class="icon-btn" title="Reset password (envía email)">↻</button>
+            </form>
+            {% if not (usuario_actual and usuario_actual.id == u.id) %}
+            <form method="POST" action="{{ url_for('admin_usuario_eliminar', user_id=u.id) }}" style="display:inline"
+                  onsubmit="return confirm('¿Eliminar usuario {{ u.nombre }} {{ u.apellido }}?')">
+              <button type="submit" class="icon-btn danger" title="Eliminar">×</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="vacio">No hay usuarios activos todavía.</div>
+      {% endif %}
+    </div>
+
+    <!-- Crear admin -->
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;padding:10px 12px;background:var(--raised);border-radius:6px;font-size:13px;color:var(--txt2)">+ Crear nuevo admin</summary>
+      <form method="POST" action="{{ url_for('admin_crear_admin') }}" style="padding:14px;background:var(--raised);border-radius:6px;margin-top:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <input type="text" name="nombre" placeholder="Nombre" required maxlength="40">
+          <input type="text" name="apellido" placeholder="Apellido" required maxlength="40">
+        </div>
+        <input type="email" name="email" placeholder="email@ejemplo.com" required style="margin-bottom:8px">
+        <input type="password" name="password" placeholder="Contraseña (min 6)" required minlength="6" style="margin-bottom:8px">
+        <button type="submit" class="primary">Crear admin</button>
+      </form>
+    </details>
+  </div>
+
   <div class="card">
     <h2>Setlists</h2>
     <p class="help" style="margin:-4px 0 14px">Cada setlist tiene nombre y fecha. Los setlists con fecha pasada se eliminan automáticamente.</p>

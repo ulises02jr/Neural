@@ -42,6 +42,8 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from transposicion import transponer_cancion
+import usuarios
+import emails as emails_module
 
 
 # ───────────────────────── Configuración base ─────────────────────────
@@ -145,6 +147,9 @@ def guardar_config(cfg):
 # Cargamos config una vez para inicializar Flask
 _config_inicial = cargar_config()
 
+# Inicializar base de datos de usuarios (crea tablas si no existen)
+usuarios.init_db()
+
 app = Flask(__name__)
 app.secret_key = _config_inicial["secret_key"]
 app.permanent_session_lifetime = timedelta(days=30)
@@ -173,7 +178,12 @@ def cargar_biblioteca():
 
 
 def login_required(rol):
-    """Decorador. rol='musico' o 'admin'."""
+    """Decorador. rol='musico' o 'admin'.
+    Compatible con:
+    - Sistema viejo: session['rol'] = 'musico' o 'admin' (password compartido)
+    - Sistema nuevo: session['user_id'] + session['rol'] + session['nombre']
+    Para 'musico', admin también puede acceder.
+    """
     def wrapper(fn):
         @wraps(fn)
         def decorated(*args, **kwargs):
@@ -187,31 +197,149 @@ def login_required(rol):
     return wrapper
 
 
+def get_usuario_actual():
+    """Devuelve dict del usuario logueado o None.
+    Si es login viejo (password compartido), devuelve un dict mínimo.
+    """
+    uid = session.get("user_id")
+    if uid:
+        u = usuarios.buscar_por_id(uid)
+        if u:
+            return u
+    # Fallback: login con password compartido (admin de emergencia)
+    if session.get("rol") == "admin" and session.get("nombre") == "Admin (Emergencia)":
+        return {"nombre": "Admin", "apellido": "(Emergencia)", "email": "—", "rol": "admin", "id": None}
+    return None
+
+
 # ───────────────────────── Rutas públicas (login) ─────────────────────────
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-        cfg = get_config()
-        if hash_password(password) == cfg["password_musicos"]:
+        if not email or not password:
+            flash("Completá email y contraseña", "error")
+            return render_template("login_musicos.html")
+        # Intentar autenticar con sistema de usuarios
+        u = usuarios.autenticar(email, password)
+        if u:
             session.permanent = True
-            session["rol"] = "musico"
-            return redirect(url_for("principal"))
-        flash("Contraseña incorrecta", "error")
+            session.clear()
+            session["user_id"] = u["id"]
+            session["rol"] = u["rol"]
+            session["nombre"] = u["nombre"]
+            return redirect(url_for("admin") if u["rol"] == "admin" else url_for("principal"))
+        # Verificar si el usuario existe pero está pendiente
+        existente = usuarios.buscar_por_email(email)
+        if existente and existente["estado"] == "pendiente":
+            flash("Tu cuenta está pendiente de aprobación", "error")
+        elif existente and existente["estado"] == "rechazado":
+            flash("Tu cuenta no fue aprobada. Contactá al administrador.", "error")
+        else:
+            flash("Email o contraseña incorrectos", "error")
     return render_template("login_musicos.html")
+
+
+@app.route("/registro", methods=["GET", "POST"])
+def registro():
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip()
+        apellido = request.form.get("apellido", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        if password != password2:
+            flash("Las contraseñas no coinciden", "error")
+            return render_template("registro.html",
+                                   nombre=nombre, apellido=apellido, email=email)
+        ok, resultado = usuarios.crear_usuario(nombre, apellido, email, password, rol="musico")
+        if ok:
+            flash("✓ Cuenta creada. Esperá la aprobación del administrador para poder ingresar.", "success")
+            return redirect(url_for("login"))
+        else:
+            flash(resultado, "error")
+            return render_template("registro.html",
+                                   nombre=nombre, apellido=apellido, email=email)
+    return render_template("registro.html")
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
+    """Login para admins. Soporta:
+    - Email + password (sistema nuevo)
+    - Password de emergencia (fallback para no quedar bloqueado)
+    """
     if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-        cfg = get_config()
-        if hash_password(password) == cfg["password_admin"]:
+
+        # Si dejan email vacío → intentar password de emergencia
+        if not email and password:
+            cfg = get_config()
+            if hash_password(password) == cfg.get("password_admin", ""):
+                session.permanent = True
+                session.clear()
+                session["rol"] = "admin"
+                session["nombre"] = "Admin (Emergencia)"
+                flash("⚠️ Entraste con password de emergencia. Iniciá sesión con tu cuenta personal cuando puedas.", "success")
+                return redirect(url_for("admin"))
+            flash("Password de emergencia incorrecto", "error")
+            return render_template("login_admin.html")
+
+        # Login normal con email
+        u = usuarios.autenticar(email, password)
+        if u and u["rol"] == "admin":
             session.permanent = True
+            session.clear()
+            session["user_id"] = u["id"]
             session["rol"] = "admin"
+            session["nombre"] = u["nombre"]
             return redirect(url_for("admin"))
-        flash("Contraseña incorrecta", "error")
+        flash("Email o contraseña incorrectos (o no sos admin)", "error")
     return render_template("login_admin.html")
+
+
+@app.route("/olvide_password", methods=["GET", "POST"])
+def olvide_password():
+    """Solicitar código de reset por email."""
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        if not email:
+            flash("Ingresá tu email", "error")
+            return render_template("olvide_password.html")
+        u = usuarios.buscar_por_email(email)
+        # Por seguridad: siempre damos el mismo mensaje aunque no exista
+        if u and u["estado"] == "activo":
+            codigo = usuarios.crear_codigo_reset(u["id"])
+            nombre_completo = f"{u['nombre']} {u['apellido']}"
+            ok, _ = emails_module.enviar_email_codigo_reset(u["email"], nombre_completo, codigo)
+            if not ok:
+                print(f"⚠️  No se pudo enviar email a {email}")
+        flash("Si el email existe en nuestro sistema, te enviamos un código de reset.", "success")
+        return redirect(url_for("reset_password", email=email))
+    return render_template("olvide_password.html")
+
+
+@app.route("/reset_password", methods=["GET", "POST"])
+def reset_password():
+    """Ingresar código + nueva contraseña."""
+    email_pre = request.args.get("email", "")
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        codigo = request.form.get("codigo", "").strip()
+        nueva = request.form.get("password", "")
+        nueva2 = request.form.get("password2", "")
+        if nueva != nueva2:
+            flash("Las contraseñas no coinciden", "error")
+            return render_template("reset_password.html", email=email, codigo=codigo)
+        ok, msg = usuarios.usar_codigo_y_cambiar_password(email, codigo, nueva)
+        if ok:
+            flash("✓ Contraseña cambiada. Ya podés ingresar.", "success")
+            return redirect(url_for("login"))
+        flash(msg, "error")
+        return render_template("reset_password.html", email=email, codigo=codigo)
+    return render_template("reset_password.html", email=email_pre, codigo="")
 
 
 @app.route("/logout")
@@ -274,6 +402,7 @@ def principal():
         es_admin=(session.get("rol") == "admin"),
         live_activo=live_activo,
         live_ip=cfg.get("mac_local_ip") if live_activo else None,
+        usuario=get_usuario_actual(),
     )
 
 
@@ -391,6 +520,10 @@ def admin():
         live_token=cfg.get("live_token", ""),
         ultimo_heartbeat_seg=segundos_atras,
         hoy=_hoy_iso(),
+        usuarios_pendientes=usuarios.listar_usuarios(estado="pendiente"),
+        usuarios_activos=usuarios.listar_usuarios(estado="activo"),
+        usuario_actual=get_usuario_actual(),
+        email_configurado=emails_module.email_configurado(),
     )
 
 
@@ -688,6 +821,81 @@ def admin_live_off():
     cfg["ultimo_heartbeat"] = None
     guardar_config(cfg)
     flash("✓ Live forzado a OFF", "success")
+    return redirect(url_for("admin"))
+
+
+# ───────────────────────── Gestión de usuarios (admin) ─────────────────────────
+@app.route("/admin/usuario/<int:user_id>/aprobar", methods=["POST"])
+@login_required("admin")
+def admin_usuario_aprobar(user_id):
+    u = usuarios.buscar_por_id(user_id)
+    if not u:
+        flash("Usuario no encontrado", "error")
+        return redirect(url_for("admin"))
+    if usuarios.aprobar_usuario(user_id):
+        # Mandar email de bienvenida
+        nombre_completo = f"{u['nombre']} {u['apellido']}"
+        ok, _ = emails_module.enviar_email_bienvenida(u["email"], nombre_completo)
+        if ok:
+            flash(f"✓ {nombre_completo} aprobado y notificado por email", "success")
+        else:
+            flash(f"✓ {nombre_completo} aprobado (no se pudo mandar el email)", "success")
+    else:
+        flash("No se pudo aprobar (¿ya estaba aprobado?)", "error")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/usuario/<int:user_id>/eliminar", methods=["POST"])
+@login_required("admin")
+def admin_usuario_eliminar(user_id):
+    u = usuarios.buscar_por_id(user_id)
+    if not u:
+        flash("Usuario no encontrado", "error")
+        return redirect(url_for("admin"))
+    # No permitir borrar el último admin activo
+    if u["rol"] == "admin" and u["estado"] == "activo" and usuarios.contar_admins_activos() <= 1:
+        flash("No podés borrar el último admin activo", "error")
+        return redirect(url_for("admin"))
+    # No permitir auto-eliminación
+    if session.get("user_id") == user_id:
+        flash("No podés borrar tu propia cuenta", "error")
+        return redirect(url_for("admin"))
+    if usuarios.eliminar_usuario(user_id):
+        flash(f"✓ Usuario {u['nombre']} {u['apellido']} eliminado", "success")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/usuario/<int:user_id>/reset_password", methods=["POST"])
+@login_required("admin")
+def admin_usuario_reset_password(user_id):
+    """Admin manda manualmente un código de reset (por si el usuario no recibe el email original)."""
+    u = usuarios.buscar_por_id(user_id)
+    if not u:
+        flash("Usuario no encontrado", "error")
+        return redirect(url_for("admin"))
+    codigo = usuarios.crear_codigo_reset(user_id)
+    nombre_completo = f"{u['nombre']} {u['apellido']}"
+    ok, msg = emails_module.enviar_email_codigo_reset(u["email"], nombre_completo, codigo)
+    if ok:
+        flash(f"✓ Código de reset enviado a {u['email']}", "success")
+    else:
+        flash(f"⚠️ No se pudo mandar email: {msg}. Código: {codigo}", "error")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/crear_admin", methods=["POST"])
+@login_required("admin")
+def admin_crear_admin():
+    """Crear un nuevo admin desde el panel (solo otros admins pueden)."""
+    nombre = request.form.get("nombre", "").strip()
+    apellido = request.form.get("apellido", "").strip()
+    email = request.form.get("email", "").strip().lower()
+    password = request.form.get("password", "")
+    ok, resultado = usuarios.crear_usuario(nombre, apellido, email, password, rol="admin", estado="activo")
+    if ok:
+        flash(f"✓ Admin {nombre} {apellido} creado", "success")
+    else:
+        flash(f"Error: {resultado}", "error")
     return redirect(url_for("admin"))
 
 
