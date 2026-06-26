@@ -51,6 +51,19 @@ def email_configurado():
     return cfg is not None and cfg.get("user") and cfg.get("password")
 
 
+def _enviar_email_background(destino, asunto, cuerpo_html):
+    """Envía email en un thread separado para no bloquear la request HTTP."""
+    import threading
+    def _worker():
+        ok, msg = enviar_email(destino, asunto, cuerpo_html)
+        if not ok:
+            print(f"⚠️  Email background fallo: {msg}")
+        else:
+            print(f"✓ Email background enviado a {destino}")
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
 def enviar_email(destino, asunto, cuerpo_html, cuerpo_texto=None):
     """Envía un email vía SMTP de Hostinger.
 
@@ -91,8 +104,9 @@ def enviar_email(destino, asunto, cuerpo_html, cuerpo_texto=None):
         return False, f"Error enviando email: {type(e).__name__}: {e}"
 
 
-def enviar_email_codigo_reset(destino, nombre, codigo):
-    """Envía email con código de reset de contraseña."""
+def enviar_email_codigo_reset(destino, nombre, codigo, en_background=True):
+    """Envía email con código de reset de contraseña.
+    Si en_background=True, no bloquea (devuelve inmediatamente)."""
     asunto = "Código para restablecer tu contraseña - Mi Iglesia Internacional"
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;background:#f7f7f7">
@@ -121,11 +135,15 @@ def enviar_email_codigo_reset(destino, nombre, codigo):
       </div>
     </div>
     """
+    if en_background:
+        _enviar_email_background(destino, asunto, html)
+        return True, "Email programado en background"
     return enviar_email(destino, asunto, html)
 
 
-def enviar_email_bienvenida(destino, nombre):
-    """Email que avisa que la cuenta fue aprobada."""
+def enviar_email_bienvenida(destino, nombre, en_background=True):
+    """Email que avisa que la cuenta fue aprobada.
+    Si en_background=True, no bloquea."""
     asunto = "Tu cuenta fue aprobada - Mi Iglesia Internacional"
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;background:#f7f7f7">
@@ -149,6 +167,9 @@ def enviar_email_bienvenida(destino, nombre):
       </div>
     </div>
     """
+    if en_background:
+        _enviar_email_background(destino, asunto, html)
+        return True, "Email programado en background"
     return enviar_email(destino, asunto, html)
 
 

@@ -224,12 +224,16 @@ def login():
         # Intentar autenticar con sistema de usuarios
         u = usuarios.autenticar(email, password)
         if u:
+            # Si es admin, redirigir al login de admin (separación de pantallas)
+            if u["rol"] == "admin":
+                flash("Sos administrador. Usá el acceso de administrador.", "error")
+                return redirect(url_for("admin_login"))
             session.permanent = True
             session.clear()
             session["user_id"] = u["id"]
             session["rol"] = u["rol"]
             session["nombre"] = u["nombre"]
-            return redirect(url_for("admin") if u["rol"] == "admin" else url_for("principal"))
+            return redirect(url_for("principal"))
         # Verificar si el usuario existe pero está pendiente
         existente = usuarios.buscar_por_email(email)
         if existente and existente["estado"] == "pendiente":
