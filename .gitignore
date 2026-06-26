@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 config.json
+secrets.json
 canciones/*.json
 venv/
 .DS_Store
