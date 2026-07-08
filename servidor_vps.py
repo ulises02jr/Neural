@@ -29,6 +29,10 @@ Configuración: archivo config.json con:
 
 import os
 import json
+import re
+import subprocess
+import threading
+import logging
 import hashlib
 import secrets
 from functools import wraps
@@ -153,7 +157,7 @@ usuarios.init_db()
 app = Flask(__name__)
 app.secret_key = _config_inicial["secret_key"]
 app.permanent_session_lifetime = timedelta(days=30)
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB max por archivo
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 5 MB max por archivo
 
 
 def get_config():
@@ -904,6 +908,462 @@ def admin_crear_admin():
 
 
 # ───────────────────────── Main ─────────────────────────
+# ---- Reproductor de practica (stems / modo ensayo) ----
+CARPETA_PISTAS = BASE_DIR / "pistas"
+CARPETA_PISTAS.mkdir(exist_ok=True)
+_EXT_AUDIO_ENSAYO = (".mp3", ".m4a", ".ogg", ".wav")
+
+
+def _carpeta_tono(numero, n):
+    if n == 0:
+        return CARPETA_PISTAS / str(numero)
+    return CARPETA_PISTAS / str(numero) / ("tono_" + str(n))
+
+
+def _stems_originales(numero):
+    d = CARPETA_PISTAS / str(numero)
+    if not d.is_dir():
+        return []
+    return sorted([f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO])
+
+
+def _tono_listo(numero, n):
+    if n == 0:
+        return len(_stems_originales(numero)) > 0
+    d = _carpeta_tono(numero, n)
+    if not d.is_dir() or (d / ".lock").exists():
+        return False
+    orig = _stems_originales(numero)
+    if not orig:
+        return False
+    hechos = set(f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO)
+    return all(o in hechos for o in orig)
+
+
+def _render_tono(numero, n):
+    d = _carpeta_tono(numero, n)
+    d.mkdir(parents=True, exist_ok=True)
+    lock = d / ".lock"
+    orig = _stems_originales(numero)
+    ratio = 2 ** (n / 12.0)
+    try:
+        lock.write_text("0/" + str(len(orig)))
+        hechos = 0
+        for nombre in orig:
+            entrada = CARPETA_PISTAS / str(numero) / nombre
+            salida = d / nombre
+            if not salida.exists():
+                subprocess.run(
+                    ["nice", "-n", "19", "ffmpeg", "-y", "-i", str(entrada),
+                     "-af", "rubberband=pitch=" + repr(ratio), "-b:a", "192k", str(salida)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+            hechos += 1
+            try:
+                lock.write_text(str(hechos) + "/" + str(len(orig)))
+            except Exception:
+                pass
+    except Exception as e:
+        logging.error("render tono %s/%s: %s", numero, n, e)
+    finally:
+        try:
+            lock.unlink()
+        except Exception:
+            pass
+
+
+@app.route("/api/pistas/<int:numero>")
+@login_required("musico")
+def api_pistas(numero):
+    try:
+        n = int(request.args.get("t", "0"))
+    except ValueError:
+        n = 0
+    listo = _tono_listo(numero, n)
+    stems = []
+    fam_guardadas = _leer_familias(numero)
+    if listo:
+        for f in sorted(_carpeta_tono(numero, n).iterdir()):
+            if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
+                stems.append({"name": f.stem, "file": f.name,
+                              "familia": fam_guardadas.get(f.name) or _familia_auto(f.stem)})
+    return jsonify({"numero": numero, "tono": n, "listo": listo,
+                    "hay_pistas": len(_stems_originales(numero)) > 0,
+                    "stems": stems, "secciones": _leer_secciones(numero)})
+
+
+@app.route("/api/pistas/<int:numero>/render/<n>", methods=["POST"])
+@login_required("musico")
+def api_render(numero, n):
+    try:
+        n = int(n)
+    except ValueError:
+        return jsonify({"error": "tono invalido"}), 400
+    if _tono_listo(numero, n):
+        return jsonify({"listo": True})
+    if not _stems_originales(numero):
+        return jsonify({"listo": False, "error": "sin pistas"})
+    d = _carpeta_tono(numero, n)
+    if not (d.exists() and (d / ".lock").exists()):
+        threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
+    return jsonify({"listo": False, "estado": "procesando"})
+
+
+@app.route("/api/pistas/<int:numero>/render/<n>/estado")
+@login_required("musico")
+def api_render_estado(numero, n):
+    try:
+        n = int(n)
+    except ValueError:
+        return jsonify({"listo": False})
+    if _tono_listo(numero, n):
+        return jsonify({"listo": True})
+    prog = ""
+    lock = _carpeta_tono(numero, n) / ".lock"
+    if lock.exists():
+        try:
+            prog = lock.read_text().strip()
+        except Exception:
+            prog = ""
+    return jsonify({"listo": False, "progreso": prog})
+
+
+@app.route("/pista/<int:numero>/<path:archivo>")
+@login_required("musico")
+def servir_pista(numero, archivo):
+    try:
+        n = int(request.args.get("t", "0"))
+    except ValueError:
+        n = 0
+    base = _carpeta_tono(numero, n).resolve()
+    ruta = (base / archivo).resolve()
+    try:
+        dentro = os.path.commonpath([str(base), str(ruta)]) == str(base)
+    except ValueError:
+        dentro = False
+    if not dentro or not ruta.is_file():
+        abort(404)
+    return send_file(str(ruta))
+
+
+# ---- Admin: gestion de pistas de ensayo ----
+@app.route("/admin/pistas")
+@login_required("admin")
+def admin_pistas():
+    biblioteca = cargar_biblioteca()
+    songs = []
+    for numero in sorted(biblioteca.keys()):
+        c = biblioteca[numero]
+        carpeta = CARPETA_PISTAS / str(numero)
+        n = 0
+        if carpeta.is_dir():
+            n = sum(1 for f in carpeta.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO)
+        songs.append({"numero": numero, "titulo": c.get("titulo", ""), "artista": c.get("artista", ""), "n_pistas": n})
+    return render_template("admin_pistas.html", songs=songs)
+
+
+@app.route("/admin/pistas/subir", methods=["POST"])
+@login_required("admin")
+def admin_pistas_subir():
+    numero = request.form.get("numero", "").strip()
+    if not numero.isdigit():
+        flash("Elegi una cancion valida", "error")
+        return redirect(url_for("admin_pistas"))
+    archivos = request.files.getlist("pistas")
+    carpeta = CARPETA_PISTAS / numero
+    carpeta.mkdir(exist_ok=True)
+    guardadas = 0
+    for a in archivos:
+        if not a or a.filename == "":
+            continue
+        ext = os.path.splitext(a.filename)[1].lower()
+        if ext not in _EXT_AUDIO_ENSAYO:
+            continue
+        nombre = secure_filename(a.filename)
+        if not nombre:
+            continue
+        a.save(str(carpeta / nombre))
+        guardadas += 1
+    if guardadas:
+        flash("OK: " + str(guardadas) + " pista(s) subida(s) a la cancion #" + numero, "success")
+    else:
+        flash("No se subio ninguna pista (revisa el formato: mp3/m4a/ogg/wav)", "error")
+    return redirect(url_for("admin_pistas"))
+
+
+@app.route("/admin/pistas/eliminar/<int:numero>", methods=["POST"])
+@login_required("admin")
+def admin_pistas_eliminar(numero):
+    carpeta = CARPETA_PISTAS / str(numero)
+    borradas = 0
+    if carpeta.is_dir():
+        for f in list(carpeta.iterdir()):
+            if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
+                try:
+                    f.unlink()
+                    borradas += 1
+                except Exception:
+                    pass
+    flash("OK: " + str(borradas) + " pista(s) eliminada(s) de #" + str(numero), "success")
+    return redirect(url_for("admin_pistas"))
+
+
+# ---- Mapa de secciones (etapa 2) ----
+def _archivo_secciones(numero):
+    return CARPETA_PISTAS / str(numero) / "secciones.json"
+
+
+def _leer_secciones(numero):
+    f = _archivo_secciones(numero)
+    if f.is_file():
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+    return []
+
+
+def _parse_tiempo(txt):
+    txt = txt.strip().replace(",", ".")
+    partes = txt.split(":")
+    try:
+        nums = [float(p) for p in partes]
+    except ValueError:
+        return None
+    if len(nums) == 4:
+        h, mi, se, ms = nums; return h*3600 + mi*60 + se + ms/1000.0
+    if len(nums) == 3:
+        h, mi, se = nums; return h*3600 + mi*60 + se
+    if len(nums) == 2:
+        mi, se = nums; return mi*60 + se
+    if len(nums) == 1:
+        return nums[0]
+    return None
+
+
+def _fmt_tiempo(secs):
+    ms = int(round((secs - int(secs)) * 1000))
+    t = int(secs); h = t // 3600; mi = (t % 3600) // 60; se = t % 60
+    return "%02d:%02d:%02d:%03d" % (h, mi, se, ms)
+
+
+@app.route("/admin/pistas/<int:numero>/secciones", methods=["GET", "POST"])
+@login_required("admin")
+def admin_secciones(numero):
+    biblioteca = cargar_biblioteca()
+    cancion = biblioteca.get(numero)
+    if not cancion:
+        flash("Cancion no encontrada", "error")
+        return redirect(url_for("admin_pistas"))
+    secs_chart = cancion.get("secciones", [])
+    if request.method == "POST":
+        guardadas = []
+        for i, sec in enumerate(secs_chart):
+            tiempo = request.form.get("t_" + str(i), "").strip()
+            if not tiempo:
+                continue
+            val = _parse_tiempo(tiempo)
+            if val is None:
+                continue
+            guardadas.append({"i": i, "nombre": sec.get("tipo", "Seccion"), "t": round(val, 3)})
+        guardadas.sort(key=lambda x: x["t"])
+        carpeta = CARPETA_PISTAS / str(numero)
+        carpeta.mkdir(exist_ok=True)
+        _archivo_secciones(numero).write_text(
+            json.dumps(guardadas, ensure_ascii=False, indent=2), encoding="utf-8")
+        if request.form.get("wizard"):
+            flash("Cancion lista: chart, pistas y tiempos cuadrados", "success")
+            return redirect(url_for("admin"))
+        flash("OK: " + str(len(guardadas)) + " seccion(es) con tiempo guardada(s)", "success")
+        return redirect(url_for("admin_secciones", numero=numero))
+    guardadas = {sec["i"]: sec["t"] for sec in _leer_secciones(numero) if "i" in sec}
+    filas = []
+    for i, sec in enumerate(secs_chart):
+        filas.append({"i": i, "tipo": sec.get("tipo", "Seccion"), "nota": sec.get("nota", ""),
+                      "t": _fmt_tiempo(guardadas[i]) if i in guardadas else ""})
+    titulo = cancion.get("titulo", "Cancion #" + str(numero))
+    return render_template("admin_secciones.html", numero=numero, titulo=titulo, filas=filas,
+                           wizard=bool(request.args.get("wizard")))
+
+
+@app.route("/admin/nueva", methods=["GET", "POST"])
+@login_required("admin")
+def admin_nueva():
+    if request.method == "POST":
+        archivo = request.files.get("archivo")
+        if not archivo or archivo.filename == "":
+            flash("Selecciona el archivo JSON", "error")
+            return redirect(url_for("admin_nueva"))
+        if not archivo.filename.endswith(".json"):
+            flash("Solo se aceptan archivos .json", "error")
+            return redirect(url_for("admin_nueva"))
+        try:
+            contenido = archivo.read()
+            datos = json.loads(contenido.decode("utf-8"))
+            if "numero" not in datos or "titulo" not in datos or "secciones" not in datos:
+                flash("El JSON no tiene los campos requeridos (numero, titulo, secciones)", "error")
+                return redirect(url_for("admin_nueva"))
+        except Exception:
+            flash("Archivo no es JSON valido", "error")
+            return redirect(url_for("admin_nueva"))
+        (CARPETA_CANCIONES / secure_filename(archivo.filename)).write_bytes(contenido)
+        flash("Chart cargado: " + str(datos["titulo"]), "success")
+        return redirect(url_for("admin_nueva_pistas", numero=int(datos["numero"])))
+    return render_template("admin_nueva.html")
+
+
+@app.route("/admin/nueva/<int:numero>/pistas", methods=["GET", "POST"])
+@login_required("admin")
+def admin_nueva_pistas(numero):
+    biblioteca = cargar_biblioteca()
+    cancion = biblioteca.get(numero)
+    titulo = cancion.get("titulo", "Cancion #" + str(numero)) if cancion else "Cancion #" + str(numero)
+    if request.method == "POST":
+        carpeta = CARPETA_PISTAS / str(numero)
+        carpeta.mkdir(exist_ok=True)
+        guardadas = 0
+        for a in request.files.getlist("pistas"):
+            if not a or a.filename == "":
+                continue
+            if os.path.splitext(a.filename)[1].lower() not in _EXT_AUDIO_ENSAYO:
+                continue
+            nombre = secure_filename(a.filename)
+            if not nombre:
+                continue
+            a.save(str(carpeta / nombre))
+            guardadas += 1
+        flash("OK: " + str(guardadas) + " pista(s) subida(s)", "success")
+        return redirect(url_for("admin_secciones", numero=numero, wizard=1))
+    return render_template("admin_nueva_pistas.html", numero=numero, titulo=titulo)
+
+
+FAMILIAS = ["Voces", "Guitarras", "Teclados", "Cuerdas", "Metales", "Bajo",
+            "Percusión", "Guía", "Música original", "Click", "Otros"]
+
+
+def _familia_auto(nombre):
+    n = " " + re.sub(r"[_\-.]+", " ", nombre.lower()) + " "
+    if re.search(r"click|metr", n):
+        return "Click"
+    if re.search(r" voz | voces| vocal| coro| lead| choir| vox ", n):
+        return "Voces"
+    if re.search(r"guitarra|guit|gtr|ac.stic|el.ctric| ag | eg | ga | ge | g\d", n):
+        return "Guitarras"
+    if re.search(r"teclado| tecla|keys|piano| pad|synth| sint|organo| k\d", n):
+        return "Teclados"
+    if re.search(r"string|cuerda|viol|cello", n):
+        return "Cuerdas"
+    if re.search(r"trompeta|trumpet|sax|trombon|brass|metal", n):
+        return "Metales"
+    if re.search(r" bajo|bass", n):
+        return "Bajo"
+    if re.search(r"bater|drum|percu| perc|kick|snare| hat| tom|platillo|cymbal|shaker|conga|tambor|loop", n):
+        return "Percusión"
+    if re.search(r"guide|gu.a| cue |click.?guide", n):
+        return "Guía"
+    if re.search(r"original|mezcla|master|banda| full | todo ", n):
+        return "Música original"
+    return "Otros"
+
+
+def _leer_familias(numero):
+    f = CARPETA_PISTAS / str(numero) / "familias.json"
+    if f.is_file():
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+@app.route("/admin/pistas/<int:numero>/editar")
+@login_required("admin")
+def admin_editar(numero):
+    biblioteca = cargar_biblioteca()
+    cancion = biblioteca.get(numero)
+    if not cancion:
+        flash("Cancion no encontrada", "error")
+        return redirect(url_for("admin_pistas"))
+    fam_guardadas = _leer_familias(numero)
+    lista = []
+    for f in _stems_originales(numero):
+        base = f.rsplit(".", 1)[0]
+        lista.append({"file": f, "name": base, "familia": fam_guardadas.get(f) or _familia_auto(base)})
+    tonos = [{"n": n, "listo": _tono_listo(numero, n)} for n in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]]
+    return render_template("admin_editar.html", numero=numero, titulo=cancion.get("titulo", ""),
+                           stems=lista, familias=FAMILIAS, tonos=tonos,
+                           n_secciones=len(_leer_secciones(numero)))
+
+
+@app.route("/admin/pistas/<int:numero>/familias", methods=["POST"])
+@login_required("admin")
+def admin_familias(numero):
+    fam = {}
+    for f in _stems_originales(numero):
+        v = request.form.get("fam_" + f, "").strip()
+        if v:
+            fam[f] = v
+    (CARPETA_PISTAS / str(numero) / "familias.json").write_text(
+        json.dumps(fam, ensure_ascii=False, indent=2), encoding="utf-8")
+    flash("Familias guardadas", "success")
+    return redirect(url_for("admin_editar", numero=numero))
+
+
+@app.route("/admin/pistas/<int:numero>/agregar", methods=["POST"])
+@login_required("admin")
+def admin_editar_subir(numero):
+    carpeta = CARPETA_PISTAS / str(numero)
+    carpeta.mkdir(exist_ok=True)
+    guardadas = 0
+    for a in request.files.getlist("pistas"):
+        if not a or a.filename == "":
+            continue
+        if os.path.splitext(a.filename)[1].lower() not in _EXT_AUDIO_ENSAYO:
+            continue
+        nombre = secure_filename(a.filename)
+        if not nombre:
+            continue
+        a.save(str(carpeta / nombre))
+        guardadas += 1
+    flash("OK: " + str(guardadas) + " pista(s) agregada(s)", "success")
+    return redirect(url_for("admin_editar", numero=numero))
+
+
+@app.route("/admin/pistas/<int:numero>/borrar_una", methods=["POST"])
+@login_required("admin")
+def admin_pista_borrar_una(numero):
+    archivo = secure_filename(request.form.get("archivo", ""))
+    if archivo:
+        ruta = CARPETA_PISTAS / str(numero) / archivo
+        if ruta.is_file():
+            try:
+                ruta.unlink()
+                flash("Pista eliminada: " + archivo, "success")
+            except Exception:
+                flash("No se pudo eliminar", "error")
+    return redirect(url_for("admin_editar", numero=numero))
+
+
+@app.route("/admin/pistas/<int:numero>/pregenerar", methods=["POST"])
+@login_required("admin")
+def admin_pregenerar(numero):
+    try:
+        n = int(request.form.get("tono", "0"))
+    except ValueError:
+        n = 0
+    if n == 0 or not _stems_originales(numero):
+        flash("Tono invalido o sin pistas", "error")
+        return redirect(url_for("admin_editar", numero=numero))
+    if _tono_listo(numero, n):
+        flash("El tono " + str(n) + " ya estaba listo", "success")
+    else:
+        d = _carpeta_tono(numero, n)
+        if not (d.exists() and (d / ".lock").exists()):
+            threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
+        flash("Generando el tono " + ("+" if n > 0 else "") + str(n) +
+              " en segundo plano. Puede tardar unos minutos; refresca para ver cuando este listo.", "success")
+    return redirect(url_for("admin_editar", numero=numero))
+
+
 if __name__ == "__main__":
     # En desarrollo local (no en VPS), correr en puerto 5051
     # En VPS, esto lo manejará gunicorn o systemd

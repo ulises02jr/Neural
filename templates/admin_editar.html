@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Editar — {{ titulo }}</title>
+<style>
+  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  a.back{color:var(--muted);text-decoration:none;font-size:14px;}
+  h1{font-size:21px;margin:10px 0 4px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px;}
+  h2{font-size:15px;color:var(--gold);margin:26px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px;}
+  .card{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:16px;}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+  select{background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:13px;}
+  input[type=file]{width:100%;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px;}
+  button.primary{background:var(--gold);color:#0a0a0a;border:none;border-radius:999px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;margin-top:14px;}
+  button.mini{background:none;border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:12px;}
+  a.link{display:inline-block;color:var(--gold);border:1px solid var(--gold);border-radius:999px;padding:10px 20px;text-decoration:none;font-weight:700;font-size:14px;}
+  .tonos{display:flex;flex-wrap:wrap;gap:10px;}
+  .tono{display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .tono button{width:52px;background:#1f1f1f;border:1px solid var(--line);color:#fff;border-radius:8px;padding:9px 0;cursor:pointer;font-weight:700;font-size:14px;}
+  .tono button.listo{background:#14301a;border-color:#2a5a35;color:#8fe0a0;cursor:default;}
+  .tono small{font-size:9px;color:var(--muted);}
+  .flash{padding:11px 14px;border-radius:8px;margin-bottom:10px;font-size:14px;}
+  .flash.success{background:#14301a;color:#8fe0a0;border:1px solid #2a5a35;}
+  .flash.error{background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="{{ url_for('admin_pistas') }}">← Volver a canciones</a>
+  <h1>✏️ Editar — {{ titulo }}</h1>
+  <div class="sub">Canción #{{ numero }}</div>
+
+  {% with mensajes = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in mensajes %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  <h2>Pistas actuales (y su familia)</h2>
+  <div class="card">
+    {% if stems %}
+    <form method="POST" action="{{ url_for('admin_familias', numero=numero) }}">
+      <table>
+        <tr><th>Pista</th><th>Familia</th><th></th></tr>
+        {% for s in stems %}
+        <tr>
+          <td>{{ s.name }}</td>
+          <td>
+            <select name="fam_{{ s.file }}">
+              {% for fam in familias %}<option value="{{ fam }}" {% if fam == s.familia %}selected{% endif %}>{{ fam }}</option>{% endfor %}
+            </select>
+          </td>
+          <td>
+            <button class="mini" type="submit" name="archivo" value="{{ s.file }}"
+                    formaction="{{ url_for('admin_pista_borrar_una', numero=numero) }}" formmethod="post"
+                    onclick="return confirm('¿Borrar {{ s.name }}?')">Borrar</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      <button class="primary" type="submit">Guardar familias</button>
+    </form>
+    {% else %}
+    <div class="hint">Esta canción todavía no tiene pistas. Agregalas abajo.</div>
+    {% endif %}
+  </div>
+
+  <h2>Agregar más pistas</h2>
+  <div class="card">
+    <form method="POST" action="{{ url_for('admin_editar_subir', numero=numero) }}" enctype="multipart/form-data">
+      <input type="file" name="pistas" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple required>
+      <button class="primary" type="submit">Subir pistas</button>
+      <div class="hint">Se agregan a las existentes. El nombre del archivo = nombre de la pista.</div>
+    </form>
+  </div>
+
+  <h2>Tiempos de las secciones</h2>
+  <div class="card">
+    <div class="hint" style="margin:0 0 12px">Secciones marcadas con tiempo: <b style="color:var(--gold)">{{ n_secciones }}</b></div>
+    <a class="link" href="{{ url_for('admin_secciones', numero=numero) }}">🎼 Editar tiempos de secciones</a>
+  </div>
+
+  <h2>Pre-generar tonos</h2>
+  <div class="card">
+    <div class="hint" style="margin:0 0 12px">Generá los tonos con anticipación para que los músicos no esperen. Verde = listo.</div>
+    <div class="tonos">
+      {% for t in tonos %}
+      <div class="tono">
+        {% if t.listo %}
+          <button class="listo" type="button" title="Listo">{{ '+' if t.n > 0 else '' }}{{ t.n }}</button>
+          <small>listo</small>
+        {% else %}
+          <form method="POST" action="{{ url_for('admin_pregenerar', numero=numero) }}">
+            <input type="hidden" name="tono" value="{{ t.n }}">
+            <button type="submit" title="Generar">{{ '+' if t.n > 0 else '' }}{{ t.n }}</button>
+          </form>
+          <small>generar</small>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="hint">Cada tono tarda unos minutos en generarse (en segundo plano). Refrescá esta página para ver cuando se pongan verdes.</div>
+  </div>
+</div>
+</body>
+</html>

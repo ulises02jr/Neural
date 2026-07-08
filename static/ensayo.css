@@ -1,0 +1,56 @@
+/* ===== Modo Ensayo — reproductor de práctica (compacto) ===== */
+:root{ --ens-gold:#C9A96E; --ens-bg:#141414; --ens-line:#2a2a2a; }
+
+#ensayo-panel{
+  position:fixed; left:0; right:0; bottom:0; z-index:9999;
+  background:var(--ens-bg); border-top:1px solid var(--ens-line);
+  border-radius:18px 18px 0 0; box-shadow:0 -12px 40px rgba(0,0,0,.5);
+  padding:12px 16px calc(14px + env(safe-area-inset-bottom)); color:#fff;
+  transform:translateY(110%); transition:transform .26s ease;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  max-height:62vh; overflow-y:auto;
+}
+#ensayo-panel.open{ transform:translateY(0); }
+.ens-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.ens-title{ font-size:13px; font-weight:700; letter-spacing:.3px; }
+.ens-title small{ color:#8a8a8a; font-weight:400; display:block; margin-top:1px; font-size:11px; }
+.ens-close{ background:none; border:none; color:#8a8a8a; font-size:24px; cursor:pointer; line-height:1; }
+
+.ens-transport{ display:flex; align-items:center; gap:10px; margin:4px 0 8px; }
+.ens-tbtn{ width:42px; height:42px; border-radius:50%; border:1px solid var(--ens-line);
+  background:#1f1f1f; color:#fff; font-size:16px; cursor:pointer; flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center; transition:transform .12s; }
+.ens-tbtn.play{ background:var(--ens-gold); color:#0a0a0a; border-color:var(--ens-gold); width:50px; height:50px; font-size:20px; }
+.ens-tbtn:hover{ transform:scale(1.05); }
+.ens-tbtn.on{ background:var(--ens-gold); color:#0a0a0a; border-color:var(--ens-gold); }
+.ens-time{ font-variant-numeric:tabular-nums; color:#8a8a8a; font-size:12px; min-width:38px; }
+.ens-seek{ flex:1; -webkit-appearance:none; appearance:none; height:5px; border-radius:6px; background:var(--ens-line); cursor:pointer; }
+.ens-seek::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:var(--ens-gold); }
+.ens-seek::-moz-range-thumb{ width:15px; height:15px; border:none; border-radius:50%; background:var(--ens-gold); }
+
+.ens-secbar{ position:relative; height:26px; margin:2px 0 10px; border-radius:6px; overflow:hidden; background:#0f0f0f; }
+.ens-seg{ position:absolute; top:0; bottom:0; border-left:1px solid var(--ens-line); background:#1c1c1c;
+  cursor:pointer; overflow:hidden; transition:background .12s; }
+.ens-seg:first-child{ border-left:none; }
+.ens-seg span{ position:absolute; left:4px; top:50%; transform:translateY(-50%); font-size:9px; color:#b7b7b7;
+  white-space:nowrap; pointer-events:none; }
+.ens-seg.cur{ background:#3a3320; } .ens-seg.cur span{ color:#fff; }
+.ens-seg.loop{ background:var(--ens-gold); } .ens-seg.loop span{ color:#0a0a0a; font-weight:700; }
+
+/* Familias en grilla (3 por fila; se abre una a la vez) */
+.ens-fam-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+.ens-fam-b{ background:#1f1f1f; border:1px solid var(--ens-line); color:#fff; border-radius:9px;
+  padding:9px 6px; font-size:12px; font-weight:600; cursor:pointer; display:flex; flex-direction:column;
+  align-items:center; gap:2px; line-height:1.2; text-align:center; }
+.ens-fam-b .cnt{ color:#8a8a8a; font-size:10px; font-weight:400; }
+.ens-fam-b.active{ background:#3a3320; border-color:var(--ens-gold); }
+.ens-fam-chips{ display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
+
+.ens-chip{ display:inline-flex; align-items:center; gap:6px; padding:6px 7px 6px 12px; border-radius:999px;
+  border:1.5px solid var(--ens-gold); background:#2a2418; color:#fff; font-size:12px; font-weight:600;
+  cursor:pointer; user-select:none; transition:all .12s; }
+.ens-chip.off{ border-color:var(--ens-line); background:transparent; color:#8a8a8a; opacity:.55; }
+.ens-chip .s{ width:19px; height:19px; border-radius:50%; border:1px solid var(--ens-line); background:#0a0a0a;
+  color:#8a8a8a; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+.ens-chip.solo .s{ background:var(--ens-gold); color:#0a0a0a; border-color:var(--ens-gold); }
+.ens-status{ color:#8a8a8a; font-size:13px; text-align:center; padding:16px 10px; line-height:1.6; }

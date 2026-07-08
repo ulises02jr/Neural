@@ -10,6 +10,7 @@
     --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
     --gold:#C9A96E; --gold-soft:#2a2418;
     --lyric-size:18px; --chord-size:17px; --chord-min:21px;
+    --ensayo-h:0px;
   }
   body[data-size="xs"]{ --lyric-size:14px; --chord-size:13px; --chord-min:17px; }
   body[data-size="s"] { --lyric-size:16px; --chord-size:15px; --chord-min:19px; }
@@ -20,36 +21,25 @@
   html,body{height:100%;overflow:hidden}
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;line-height:1.5}
   .wrap{height:100dvh;display:flex;flex-direction:column;padding:14px;
-    padding-bottom:max(14px,env(safe-area-inset-bottom))}
+    padding-bottom:max(14px,env(safe-area-inset-bottom));transition:height .25s ease}
+  body.ensayo-abierto .wrap{height:calc(100dvh - var(--ensayo-h,320px))}
+
   .topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:10px}
-  .song-title-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .song-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .song-title{font-size:17px;font-weight:600;line-height:1.2}
   .tono-chip{display:inline-flex;align-items:center;justify-content:center;
     background:var(--gold);color:#000;font-weight:700;font-size:14px;
-    padding:2px 10px;border-radius:5px;font-family:ui-monospace,Menlo,monospace}
-
-  /* Transposición */
-  .transpose{display:inline-flex;align-items:stretch;gap:0;background:var(--surface);
-    border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-left:6px;
-    vertical-align:middle}
-  .transpose .t-btn{width:28px;height:28px;background:transparent;border:none;
-    color:var(--gold);font-size:16px;font-weight:bold;cursor:pointer;
-    font-family:inherit;line-height:1;padding:0;transition:background 0.1s}
-  .transpose .t-btn:hover{background:var(--raised)}
-  .transpose .t-btn:active{background:var(--gold-soft)}
-  .transpose .t-tono{padding:0 10px;display:flex;align-items:center;
-    background:var(--gold);color:#000;font-weight:700;font-size:13px;
-    font-family:ui-monospace,Menlo,monospace;min-width:38px;justify-content:center;
-    border-left:1px solid var(--line);border-right:1px solid var(--line);
-    text-decoration:none}
-  .transpose .t-tono:hover{filter:brightness(0.92)}
-  .transpose-hint{font-size:10px;color:var(--txt3);margin-top:2px;font-style:italic}
-  .song-meta{font-size:12px;color:var(--txt2);margin-top:2px}
-  .right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+    padding:3px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace}
+  .tono-btn{display:inline-flex;align-items:center;gap:4px;background:var(--gold);color:#000;
+    font-weight:700;font-size:14px;padding:4px 11px;border-radius:6px;border:none;cursor:pointer;
+    font-family:ui-monospace,Menlo,monospace;line-height:1}
+  .tono-btn .cx{font-size:10px;opacity:.7}
+  .song-meta{font-size:12px;color:var(--txt2);margin-top:3px}
+  .right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+  .dots-btn{width:34px;height:30px;border-radius:7px;background:var(--surface);border:1px solid var(--line);
+    color:var(--txt2);font-size:18px;line-height:1;cursor:pointer;font-family:inherit}
+  .dots-btn:active{background:var(--raised);color:var(--txt)}
   .pos{font-size:12px;color:var(--txt2)}
-  .back-link{font-size:12px;color:var(--txt3);text-decoration:none;padding:5px 10px;
-    border:1px solid var(--line);border-radius:7px;transition:all 0.15s}
-  .back-link:hover{color:var(--txt);border-color:var(--txt2)}
 
   .timeline-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -14px;
     padding:0 14px 6px;flex-shrink:0;scrollbar-width:none}
@@ -94,28 +84,68 @@
   .nextpreview .np-end{font-size:13px;color:var(--txt2);font-style:italic}
 
   .footer{display:flex;gap:6px;align-items:center;margin-top:10px;flex-shrink:0}
-  .btn-icon{width:48px;height:48px;border-radius:8px;background:var(--surface);
-    border:1px solid var(--line);color:var(--txt);font-size:22px;line-height:1;
+  .btn-icon{width:44px;height:46px;border-radius:8px;background:var(--surface);
+    border:1px solid var(--line);color:var(--txt);font-size:20px;line-height:1;
     cursor:pointer;font-family:inherit;flex-shrink:0;transition:all 0.15s}
   .btn-icon:hover{border-color:var(--txt2)}
   .btn-icon:active{background:var(--raised);transform:scale(0.97)}
   .btn-icon:disabled{opacity:0.3;cursor:not-allowed}
-  .btn-mid{flex:1;background:var(--raised);color:var(--txt);border:1px solid var(--line);
-    padding:13px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;font-weight:500;
-    transition:all 0.15s}
+  .btn-icon.ensayo{background:var(--gold-soft);border-color:#3d3422;font-size:19px}
+  .btn-mid{flex:1;min-width:0;background:var(--raised);color:var(--txt);border:1px solid var(--line);
+    padding:12px 8px;border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:500;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all 0.15s}
   .btn-mid:hover{border-color:var(--txt2)}
 
-  .size-ctrl{display:inline-flex;align-items:center;gap:4px;margin-top:2px}
-  .size-btn{width:28px;height:24px;border-radius:6px;background:var(--surface);
-    border:1px solid var(--line);color:var(--txt2);font-size:13px;cursor:pointer;
-    font-family:inherit;font-weight:600;padding:0;line-height:1}
-  .size-btn:active{background:var(--raised);color:var(--txt)}
-  .size-btn:disabled{opacity:0.35;cursor:default}
-  .size-label{font-size:11px;color:var(--txt3);min-width:14px;text-align:center}
+  /* Hojas (bottom sheets) */
+  .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;opacity:0;
+    pointer-events:none;transition:opacity .2s}
+  .sheet-bg.open{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:101;background:var(--surface);
+    border-top:1px solid var(--line);border-radius:20px 20px 0 0;
+    padding:18px 18px calc(22px + env(safe-area-inset-bottom));
+    transform:translateY(110%);transition:transform .25s ease;max-height:80vh;overflow-y:auto}
+  .sheet.open{transform:translateY(0)}
+  .sheet-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .sheet-t{font-size:16px;font-weight:700}
+  .sheet-sub{font-size:12px;color:var(--txt2);margin-bottom:14px}
+  .sheet-x{background:none;border:none;color:var(--gold);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+  .tono-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .tono-op{padding:14px 0;text-align:center;background:var(--raised);border:1px solid var(--line);
+    border-radius:10px;color:var(--txt);font-weight:700;font-size:16px;cursor:pointer;
+    font-family:ui-monospace,Menlo,monospace}
+  .tono-op.cur{background:var(--gold);color:#000;border-color:var(--gold)}
+  .tono-orig{margin-top:12px;width:100%;padding:12px;background:transparent;border:1px solid var(--line);
+    border-radius:10px;color:var(--txt2);font-size:13px;cursor:pointer;font-family:inherit}
+  .size-row{display:flex;align-items:center;gap:16px;justify-content:center;margin-top:8px}
+  .size-big{width:64px;height:52px;border-radius:12px;background:var(--raised);border:1px solid var(--line);
+    color:var(--txt);font-size:20px;font-weight:700;cursor:pointer;font-family:inherit}
+  .size-big:active{background:var(--gold-soft)}
+  .size-big:disabled{opacity:.35}
+  .size-lbl{font-size:16px;color:var(--gold);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
 </style>
+  <link rel="stylesheet" href="/static/ensayo.css">
 </head>
 <body>
 <div class="wrap" id="app"></div>
+
+<div class="sheet-bg" id="bg-tono" onclick="cerrarTono()"></div>
+<div class="sheet" id="sheet-tono">
+  <div class="sheet-h"><div class="sheet-t">Tonalidad</div><button class="sheet-x" onclick="cerrarTono()">Listo</button></div>
+  <div class="sheet-sub" id="tono-sub"></div>
+  <div class="tono-grid" id="tono-grid"></div>
+  <button class="tono-orig" id="tono-orig" onclick="irTono(0)">Volver al tono original</button>
+</div>
+
+<div class="sheet-bg" id="bg-ajustes" onclick="cerrarAjustes()"></div>
+<div class="sheet" id="sheet-ajustes">
+  <div class="sheet-h"><div class="sheet-t">Tamaño de letra</div><button class="sheet-x" onclick="cerrarAjustes()">Listo</button></div>
+  <div class="sheet-sub">Ajustá qué tan grande se ve la letra y los acordes.</div>
+  <div class="size-row">
+    <button class="size-big" id="size-minus" onclick="tamanoMenos()">A−</button>
+    <span class="size-lbl" id="size-label">M</span>
+    <button class="size-big" id="size-plus" onclick="tamanoMas()">A+</button>
+  </div>
+</div>
 
 <script>
 const cancion = {{ cancion|tojson }};
@@ -123,57 +153,66 @@ const permitirTransposicion = {{ permitir_transposicion|tojson }};
 const semitonosActual = {{ semitonos_actual|tojson }};
 const numeroCancion = {{ cancion.numero|tojson }};
 
-// Sección inicial: si la URL trae ?s=N, arrancar ahí (para preservar al transponer)
 const urlParams = new URLSearchParams(window.location.search);
 let idx = parseInt(urlParams.get('s') || '0', 10);
 if(isNaN(idx) || idx < 0 || idx >= cancion.secciones.length) idx = 0;
 
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
 
-function transponer(delta){
-  const nuevo = Math.max(-12, Math.min(12, semitonosActual + delta));
-  if(nuevo === semitonosActual) return;
-  // Mantener la sección actual al transponer
-  window.location.href = `/cancion/${numeroCancion}?from=bib&t=${nuevo}&s=${idx}`;
+// ---- Tonalidad ----
+const NOMBRES = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+function parseTono(t){
+  t=String(t||'C').trim();
+  const m=t.match(/^([A-Ga-g])([#b]?)(.*)$/); if(!m) return {base:0,menor:false};
+  const nat={C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1].toUpperCase()];
+  let base=nat + (m[2]==='#'?1:(m[2]==='b'?-1:0));
+  base=((base%12)+12)%12;
+  return {base, menor:/^m(?!aj)/i.test(m[3])};
 }
+const ORIG = parseTono(cancion.tono);
+function nombreTono(semis){
+  const i=((ORIG.base+semis)%12+12)%12;
+  return NOMBRES[i] + (ORIG.menor?'m':'');
+}
+function normDelta(d){ d=((d%12)+12)%12; if(d>6) d-=12; return d; }
+function irTono(t){ window.location.href = `/cancion/${numeroCancion}?from=bib&t=${t}&s=${idx}`; }
 
-function htmlTransposeChip(){
-  // Si NO es desde biblioteca, mostrar solo el tono normal
+function abrirTono(){
+  if(!permitirTransposicion) return;
+  const actualIdx = ((ORIG.base + semitonosActual)%12+12)%12;
+  document.getElementById('tono-sub').textContent = 'Actual: ' + nombreTono(semitonosActual) + ' · original: ' + nombreTono(0);
+  document.getElementById('tono-grid').innerHTML = NOMBRES.map((n,i)=>{
+    const delta = normDelta(i - ORIG.base);
+    const cur = (i===actualIdx) ? ' cur' : '';
+    const etq = n + (ORIG.menor?'m':'');
+    return `<button class="tono-op${cur}" onclick="irTono(${delta})">${etq}</button>`;
+  }).join("");
+  document.getElementById('bg-tono').classList.add('open');
+  document.getElementById('sheet-tono').classList.add('open');
+}
+function cerrarTono(){ document.getElementById('bg-tono').classList.remove('open'); document.getElementById('sheet-tono').classList.remove('open'); }
+
+function htmlTono(){
   if(!permitirTransposicion){
-    return cancion.tono ? `<span class="tono-chip">${esc(cancion.tono)}</span>` : '';
+    return cancion.tono ? `<span class="tono-chip">${esc(nombreTono(0))}</span>` : '';
   }
-  // Si es desde biblioteca: chip con +/- alrededor
-  return `<span class="transpose">
-    <button class="t-btn" onclick="transponer(-1)" title="Bajar 1 semitono" ${semitonosActual<=-12?'disabled':''}>−</button>
-    <a class="t-tono" href="/cancion/${numeroCancion}?from=bib&t=0&s=${idx}" title="Volver al tono original">${esc(cancion.tono||'?')}</a>
-    <button class="t-btn" onclick="transponer(1)" title="Subir 1 semitono" ${semitonosActual>=12?'disabled':''}>+</button>
-  </span>`;
+  return `<button class="tono-btn" onclick="abrirTono()">${esc(nombreTono(semitonosActual))}<span class="cx">▾</span></button>`;
 }
 
+// ---- Tamaño ----
 const NIVELES = ["xs","s","m","l","xl"];
 let nivelTamano = NIVELES.indexOf(localStorage.getItem("charts_tam") || "m");
 if(nivelTamano < 0) nivelTamano = 2;
-function aplicarTamano(){
-  document.body.dataset.size = NIVELES[nivelTamano];
-  localStorage.setItem("charts_tam", NIVELES[nivelTamano]);
+function aplicarTamano(){ document.body.dataset.size = NIVELES[nivelTamano]; localStorage.setItem("charts_tam", NIVELES[nivelTamano]); refrescarTam(); }
+function tamanoMenos(){ if(nivelTamano>0){ nivelTamano--; aplicarTamano(); } }
+function tamanoMas(){ if(nivelTamano<NIVELES.length-1){ nivelTamano++; aplicarTamano(); } }
+function refrescarTam(){
+  const lb=document.getElementById("size-label"); if(lb) lb.textContent=NIVELES[nivelTamano].toUpperCase();
+  const bm=document.getElementById("size-minus"); if(bm) bm.disabled=(nivelTamano===0);
+  const bp=document.getElementById("size-plus"); if(bp) bp.disabled=(nivelTamano===NIVELES.length-1);
 }
-function tamanoMenos(){ if(nivelTamano > 0){ nivelTamano--; aplicarTamano(); refrescarBotonesTamano(); }}
-function tamanoMas(){ if(nivelTamano < NIVELES.length-1){ nivelTamano++; aplicarTamano(); refrescarBotonesTamano(); }}
-function refrescarBotonesTamano(){
-  const bm = document.getElementById("size-minus");
-  const bp = document.getElementById("size-plus");
-  const lb = document.getElementById("size-label");
-  if(bm) bm.disabled = (nivelTamano === 0);
-  if(bp) bp.disabled = (nivelTamano === NIVELES.length-1);
-  if(lb) lb.textContent = NIVELES[nivelTamano].toUpperCase();
-}
-function htmlBotonesTamano(){
-  return `<div class="size-ctrl">
-    <button class="size-btn" id="size-minus" onclick="tamanoMenos()" ${nivelTamano===0?'disabled':''}>A−</button>
-    <span class="size-label" id="size-label">${NIVELES[nivelTamano].toUpperCase()}</span>
-    <button class="size-btn" id="size-plus" onclick="tamanoMas()" ${nivelTamano===NIVELES.length-1?'disabled':''}>A+</button>
-  </div>`;
-}
+function abrirAjustes(){ refrescarTam(); document.getElementById('bg-ajustes').classList.add('open'); document.getElementById('sheet-ajustes').classList.add('open'); }
+function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
 aplicarTamano();
 
 function renderLines(lines){
@@ -185,7 +224,6 @@ function renderLines(lines){
       </div>`).join("")}
     </div>`).join("")}</div>`;
 }
-
 function renderBody(sec){
   if(sec.inst && sec.prog){
     return `<div class="inst-label">Instrumental</div>
@@ -193,33 +231,18 @@ function renderBody(sec){
   }
   return renderLines(sec.lines);
 }
-
 function renderNextPreview(sigSec){
-  if(!sigSec){
-    return `<div class="nextpreview">
-      <div class="np-tag">Sigue</div>
-      <div class="np-end">Fin de la canción</div>
-    </div>`;
-  }
+  if(!sigSec){ return `<div class="nextpreview"><div class="np-tag">Sigue</div><div class="np-end">Fin de la canción</div></div>`; }
   let contenido;
   if(sigSec.inst && sigSec.prog){
-    const acordes = sigSec.prog.slice(0, 4).map(a => esc(a)).join("  ");
-    contenido = `<div class="np-inst">${acordes}${sigSec.prog.length > 4 ? "  ..." : ""}</div>`;
-  } else if(sigSec.lines && sigSec.lines.length > 0){
+    const acordes = sigSec.prog.slice(0,4).map(a=>esc(a)).join("  ");
+    contenido = `<div class="np-inst">${acordes}${sigSec.prog.length>4?"  ...":""}</div>`;
+  } else if(sigSec.lines && sigSec.lines.length>0){
     const primeraLinea = sigSec.lines[0] || [];
-    contenido = `<div class="np-line">${primeraLinea.map(tok => `
-      <div class="np-tok">
-        <span class="np-chord">${esc(tok[0])}</span>
-        <span class="np-lyric">${esc(tok[1])}</span>
-      </div>`).join("")}</div>`;
-  } else {
-    contenido = `<div class="np-end">(sin contenido)</div>`;
-  }
-  return `<div class="nextpreview">
-    <div class="np-tag">Sigue</div>
-    <div class="np-name">${esc(sigSec.tipo)}</div>
-    ${contenido}
-  </div>`;
+    contenido = `<div class="np-line">${primeraLinea.map(tok=>`
+      <div class="np-tok"><span class="np-chord">${esc(tok[0])}</span><span class="np-lyric">${esc(tok[1])}</span></div>`).join("")}</div>`;
+  } else { contenido = `<div class="np-end">(sin contenido)</div>`; }
+  return `<div class="nextpreview"><div class="np-tag">Sigue</div><div class="np-name">${esc(sigSec.tipo)}</div>${contenido}</div>`;
 }
 
 function render(){
@@ -230,14 +253,13 @@ function render(){
       <div style="min-width:0;flex:1">
         <div class="song-title-row">
           <div class="song-title">${esc(cancion.titulo)}</div>
-          ${htmlTransposeChip()}
+          ${htmlTono()}
         </div>
-        <div class="song-meta">${cancion.tempo} BPM · ${esc(cancion.compas)} · ${esc(cancion.artista||'')}${semitonosActual!==0?' · <span style="color:var(--gold)">'+(semitonosActual>0?'+':'')+semitonosActual+' semitono'+(Math.abs(semitonosActual)>1?'s':'')+'</span>':''}</div>
+        <div class="song-meta">${cancion.tempo} BPM · ${esc(cancion.compas)}${semitonosActual!==0?' · <span style="color:var(--gold)">'+(semitonosActual>0?'+':'')+semitonosActual+' st</span>':''}</div>
       </div>
       <div class="right">
-        <a href="${permitirTransposicion ? '/?tab=biblioteca' : '/'}" class="back-link">← Volver</a>
-        <span class="pos">Sección ${idx+1} / ${cancion.secciones.length}</span>
-        ${htmlBotonesTamano()}
+        <button class="dots-btn" onclick="abrirAjustes()" title="Ajustes">⋯</button>
+        <span class="pos">${idx+1} / ${cancion.secciones.length}</span>
       </div>
     </div>
     <div class="timeline-wrap">
@@ -255,6 +277,7 @@ function render(){
       <button class="btn-icon" onclick="prev()" ${idx===0?'disabled':''}>‹</button>
       <button class="btn-mid" onclick="window.location.href='/'">Volver al setlist</button>
       <button class="btn-icon" onclick="next()" ${idx===cancion.secciones.length-1?'disabled':''}>›</button>
+      <button class="btn-icon ensayo" id="ensayo-fab" title="Modo ensayo">🎧</button>
     </div>`;
   const active = document.querySelector(".pill.active");
   if(active) active.scrollIntoView({inline:"center",block:"nearest"});
@@ -274,5 +297,6 @@ document.addEventListener("keydown", e => {
 const app = document.getElementById("app");
 render();
 </script>
+  <script src="/static/ensayo.js"></script>
 </body>
 </html>

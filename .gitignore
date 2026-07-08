@@ -5,3 +5,9 @@ secrets.json
 canciones/*.json
 venv/
 .DS_Store
+pistas/
+*.bak
+*.bak-*
+*.bak*
+*.db
+usuarios.db

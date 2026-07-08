@@ -181,16 +181,15 @@
   </div>
 
   <div class="card">
-    <h2>Subir canción (JSON)</h2>
-    <form method="POST" action="{{ url_for('admin_subir') }}" enctype="multipart/form-data">
-      <input type="file" name="archivo" accept=".json" required>
-      <button type="submit" class="primary">Subir JSON</button>
-    </form>
-    <p class="help">El JSON debe tener los campos <code>numero</code>, <code>titulo</code> y <code>secciones</code>.</p>
+    <h2>Canciones</h2>
+    <p style="margin:2px 0 14px;color:#8a8a8a;font-size:13px">Agregá una canción nueva (chart + pistas + tiempos) o editá las existentes.</p>
+    <a href="{{ url_for('admin_nueva') }}" style="display:inline-block;background:var(--gold,#C9A96E);color:#0a0a0a;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:700;font-size:15px;margin:0 8px 8px 0">➕ Cargar nueva canción</a>
+    <a href="{{ url_for('admin_pistas') }}" style="display:inline-block;background:transparent;color:var(--gold,#C9A96E);border:1px solid var(--gold,#C9A96E);text-decoration:none;padding:11px 22px;border-radius:999px;font-weight:700;font-size:15px">✏️ Editar canciones</a>
   </div>
 
   <!-- Gestión de usuarios -->
   <div class="card">
+
     <h2>Usuarios</h2>
     {% if not email_configurado %}
     <div class="flash error" style="margin-bottom:14px">

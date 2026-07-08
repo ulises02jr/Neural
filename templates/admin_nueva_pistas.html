@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cargar canción — Paso 2</title>
+<style>
+  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;}
+  .wrap{max-width:620px;margin:0 auto;}
+  a.back{color:var(--muted);text-decoration:none;font-size:14px;}
+  h1{font-size:22px;margin:10px 0 16px;}
+  .steps{display:flex;gap:8px;margin-bottom:22px;font-size:12px;}
+  .step{flex:1;text-align:center;padding:8px 6px;border-radius:8px;background:var(--raised);border:1px solid var(--line);color:var(--muted);}
+  .step.active{background:var(--gold);color:#0a0a0a;border-color:var(--gold);font-weight:700;}
+  .step.done{color:#8fe0a0;border-color:#2a5a35;}
+  .card{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:20px;}
+  h2{font-size:16px;margin:0 0 6px;}
+  .desc{color:var(--muted);font-size:13px;margin-bottom:16px;line-height:1.5;}
+  .song{background:#0f0f0f;border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:14px;}
+  .song b{color:var(--gold);}
+  input[type=file]{width:100%;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:14px;}
+  button.primary{background:var(--gold);color:#0a0a0a;border:none;border-radius:999px;padding:12px 26px;font-size:15px;font-weight:700;cursor:pointer;margin-top:16px;}
+  a.skip{display:inline-block;margin-top:16px;margin-left:12px;color:var(--muted);font-size:13px;text-decoration:none;}
+  .flash{padding:11px 14px;border-radius:8px;margin-bottom:12px;font-size:14px;}
+  .flash.success{background:#14301a;color:#8fe0a0;border:1px solid #2a5a35;}
+  .flash.error{background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;}
+  .help{color:var(--muted);font-size:12px;margin-top:12px;line-height:1.5;}
+  .help b{color:var(--gold);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="{{ url_for('admin') }}">← Volver al panel</a>
+  <h1>➕ Cargar nueva canción</h1>
+  <div class="steps">
+    <div class="step done">✓ Chart</div>
+    <div class="step active">② Pistas</div>
+    <div class="step">③ Tiempos</div>
+  </div>
+
+  {% with mensajes = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in mensajes %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  <div class="card">
+    <h2>Paso 2 — Subir las pistas</h2>
+    <div class="song">🎵 Canción #{{ numero }} — <b>{{ titulo }}</b></div>
+    <div class="desc">Elegí todas las pistas (stems) de esta canción — podés seleccionar varias a la vez. El nombre del archivo será el nombre de la pista.</div>
+    <form method="POST" action="{{ url_for('admin_nueva_pistas', numero=numero) }}" enctype="multipart/form-data">
+      <input type="file" name="pistas" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple required>
+      <button type="submit" class="primary">Subir y continuar →</button>
+      <a class="skip" href="{{ url_for('admin_secciones', numero=numero, wizard=1) }}">Omitir por ahora</a>
+    </form>
+    <div class="help">Formatos: MP3, M4A, OGG, WAV (recomendado MP3 192). Ej: <b>Bajo.mp3</b>, <b>Guitarra 1.mp3</b>, <b>Bateria.mp3</b>, <b>Click.mp3</b>.</div>
+  </div>
+</div>
+</body>
+</html>

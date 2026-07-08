@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Editar canciones — Admin</title>
+<style>
+  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  a.back{color:var(--muted);text-decoration:none;font-size:14px;}
+  h1{font-size:22px;margin:10px 0 4px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px;}
+  .flash{padding:11px 14px;border-radius:8px;margin-bottom:10px;font-size:14px;}
+  .flash.success{background:#14301a;color:#8fe0a0;border:1px solid #2a5a35;}
+  .flash.error{background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+  .tit{font-weight:600;}
+  .n{color:var(--gold);font-weight:700;} .n0{color:var(--muted);}
+  a.edit{display:inline-block;background:var(--gold);color:#0a0a0a;text-decoration:none;border-radius:999px;padding:8px 18px;font-weight:700;font-size:13px;white-space:nowrap;}
+  .empty{color:var(--muted);text-align:center;padding:30px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="{{ url_for('admin') }}">← Volver al panel</a>
+  <h1>✏️ Editar canciones</h1>
+  <div class="sub">Editá pistas, familias, tiempos de secciones y pre-generá tonos.</div>
+
+  {% with mensajes = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in mensajes %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  {% if songs %}
+  <table>
+    <tr><th>#</th><th>Canción</th><th>Pistas</th><th></th></tr>
+    {% for s in songs %}
+    <tr>
+      <td>{{ s.numero }}</td>
+      <td class="tit">{{ s.titulo }}{% if s.artista %}<br><span style="color:var(--muted);font-weight:400;font-size:12px">{{ s.artista }}</span>{% endif %}</td>
+      <td class="{% if s.n_pistas %}n{% else %}n0{% endif %}">{{ s.n_pistas }}</td>
+      <td><a class="edit" href="{{ url_for('admin_editar', numero=s.numero) }}">✏️ Editar</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">Todavía no hay canciones. Cargá una desde el panel con “➕ Cargar nueva canción”.</div>
+  {% endif %}
+</div>
+</body>
+</html>
