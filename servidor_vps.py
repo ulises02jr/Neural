@@ -31,6 +31,7 @@ import os
 import json
 import re
 import subprocess
+import shutil
 import threading
 import logging
 import hashlib
@@ -453,6 +454,8 @@ def ver_cancion(numero):
     except (ValueError, TypeError):
         semitonos = 0
 
+    tono_original = cancion.get("tono", "C")
+
     if semitonos != 0:
         cancion = transponer_cancion(cancion, semitonos)
 
@@ -465,6 +468,7 @@ def ver_cancion(numero):
         es_admin=(session.get("rol") == "admin"),
         permitir_transposicion=desde_biblioteca,
         semitonos_actual=semitonos,
+        tono_original=tono_original,
     )
 
 
@@ -912,6 +916,7 @@ def admin_crear_admin():
 CARPETA_PISTAS = BASE_DIR / "pistas"
 CARPETA_PISTAS.mkdir(exist_ok=True)
 _EXT_AUDIO_ENSAYO = (".mp3", ".m4a", ".ogg", ".wav")
+FAMILIAS_FIJAS = {"Percusión", "Guía", "Click"}
 
 
 def _carpeta_tono(numero, n):
@@ -949,14 +954,19 @@ def _render_tono(numero, n):
     try:
         lock.write_text("0/" + str(len(orig)))
         hechos = 0
+        fam_map = _leer_familias(numero)
         for nombre in orig:
             entrada = CARPETA_PISTAS / str(numero) / nombre
             salida = d / nombre
             if not salida.exists():
-                subprocess.run(
-                    ["nice", "-n", "19", "ffmpeg", "-y", "-i", str(entrada),
-                     "-af", "rubberband=pitch=" + repr(ratio), "-b:a", "192k", str(salida)],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+                fam = fam_map.get(nombre) or _familia_auto(Path(nombre).stem)
+                if fam in FAMILIAS_FIJAS:
+                    shutil.copy2(str(entrada), str(salida))
+                else:
+                    subprocess.run(
+                        ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
+                         "-af", "rubberband=pitch=" + repr(ratio), "-b:a", "192k", str(salida)],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
             hechos += 1
             try:
                 lock.write_text(str(hechos) + "/" + str(len(orig)))

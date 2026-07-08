@@ -51,8 +51,8 @@
   .pill.done{color:var(--txt3)}
   .pill.active{color:#000;background:var(--txt);border-color:var(--txt);font-weight:600}
 
-  .stage{flex:1;overflow-y:auto;background:var(--surface);border:1px solid var(--line);
-    border-radius:12px;padding:14px 16px;-webkit-overflow-scrolling:touch}
+  .stage{flex:1;overflow-y:auto;background:transparent;border:none;
+    border-radius:0;padding:2px 0 0;-webkit-overflow-scrolling:touch}
   .eyebrow{font-size:11px;color:var(--gold);font-weight:600;letter-spacing:1.8px;
     text-transform:uppercase;margin-bottom:8px}
   .perfnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:14px;
@@ -68,6 +68,14 @@
     font-weight:700;color:var(--gold);background:var(--gold-soft);
     padding:8px 16px;border-radius:8px;border:1px solid #3d3422}
   .inst-label{font-size:15px;color:var(--txt2);margin-bottom:14px}
+  .sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 16px;margin-bottom:12px}
+  .sec:last-child{margin-bottom:2px}
+  .sec.active{border-color:var(--gold)}
+  .sechead{display:inline-flex;align-items:center;background:var(--raised);
+    border-left:3px solid var(--line);border-radius:7px;padding:7px 13px;margin-bottom:10px;
+    font-size:11px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--txt3)}
+  .sec.active .sechead{color:var(--gold);border-left-color:var(--gold)}
+  .secnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:12px}
 
   .nextpreview{flex-shrink:0;margin-top:8px;padding:9px 13px;background:var(--raised);
     border:1px solid var(--line);border-radius:8px;border-left:2px solid var(--gold);
@@ -169,7 +177,7 @@ function parseTono(t){
   base=((base%12)+12)%12;
   return {base, menor:/^m(?!aj)/i.test(m[3])};
 }
-const ORIG = parseTono(cancion.tono);
+const ORIG = parseTono({{ tono_original|tojson }});
 function nombreTono(semis){
   const i=((ORIG.base+semis)%12+12)%12;
   return NOMBRES[i] + (ORIG.menor?'m':'');
@@ -255,7 +263,7 @@ function render(){
           <div class="song-title">${esc(cancion.titulo)}</div>
           ${htmlTono()}
         </div>
-        <div class="song-meta">${cancion.tempo} BPM · ${esc(cancion.compas)}${semitonosActual!==0?' · <span style="color:var(--gold)">'+(semitonosActual>0?'+':'')+semitonosActual+' st</span>':''}</div>
+        <div class="song-meta">${cancion.tempo} BPM · ${esc(cancion.compas)}</div>
       </div>
       <div class="right">
         <button class="dots-btn" onclick="abrirAjustes()" title="Ajustes">⋯</button>
@@ -267,27 +275,62 @@ function render(){
         ${cancion.secciones.map((s,i)=>`<span class="pill ${i===idx?'active':(i<idx?'done':'')}" onclick="jump(${i})">${esc(s.tipo)}</span>`).join("")}
       </div>
     </div>
-    <div class="stage">
-      <div class="eyebrow">${esc(sec.tipo)}</div>
-      ${sec.nota?`<div class="perfnote">${esc(sec.nota)}</div>`:`<div style="height:14px"></div>`}
-      ${renderBody(sec)}
+    <div class="stage" id="stage">
+      ${cancion.secciones.map((s,i)=>`
+        <div class="sec" id="sec-${i}" data-idx="${i}">
+          <div class="sechead">${esc(s.tipo)}</div>
+          ${s.nota?`<div class="secnote">${esc(s.nota)}</div>`:``}
+          ${renderBody(s)}
+        </div>`).join("")}
     </div>
-    ${renderNextPreview(nextSec)}
     <div class="footer">
-      <button class="btn-icon" onclick="prev()" ${idx===0?'disabled':''}>‹</button>
+      <button class="btn-icon" id="btn-prev" onclick="prev()" ${idx===0?'disabled':''}>‹</button>
       <button class="btn-mid" onclick="window.location.href='/'">Volver al setlist</button>
-      <button class="btn-icon" onclick="next()" ${idx===cancion.secciones.length-1?'disabled':''}>›</button>
+      <button class="btn-icon" id="btn-next" onclick="next()" ${idx===cancion.secciones.length-1?'disabled':''}>›</button>
       <button class="btn-icon ensayo" id="ensayo-fab" title="Modo ensayo">🎧</button>
     </div>`;
-  const active = document.querySelector(".pill.active");
-  if(active) active.scrollIntoView({inline:"center",block:"nearest"});
-  const stage = document.querySelector(".stage");
-  if(stage) stage.scrollTop = 0;
+  const st = document.getElementById("stage");
+  if(st) st.addEventListener("scroll", onStageScroll, {passive:true});
+  requestAnimationFrame(()=>setActive(idx, false));
 }
 
-function jump(i){ idx = i; render(); }
-function next(){ if(idx < cancion.secciones.length-1){ idx++; render(); } }
-function prev(){ if(idx > 0){ idx--; render(); } }
+let programmaticScroll = false, scrollSyncTimer = null;
+
+function paintActive(){
+  document.querySelectorAll(".pill").forEach((pl,pi)=>{ pl.classList.toggle("active", pi===idx); pl.classList.toggle("done", pi<idx); });
+  document.querySelectorAll(".sec").forEach((sc,si)=> sc.classList.toggle("active", si===idx));
+  const pos=document.querySelector(".pos"); if(pos) pos.textContent=(idx+1)+" / "+cancion.secciones.length;
+  const bp=document.getElementById("btn-prev"); if(bp) bp.disabled=(idx===0);
+  const bn=document.getElementById("btn-next"); if(bn) bn.disabled=(idx===cancion.secciones.length-1);
+  const ap=document.querySelector(".pill.active"); if(ap) ap.scrollIntoView({inline:"center",block:"nearest"});
+}
+
+function setActive(i, smooth){
+  if(i<0) i=0; if(i>=cancion.secciones.length) i=cancion.secciones.length-1;
+  idx=i; paintActive();
+  const stage=document.getElementById("stage"), target=document.getElementById("sec-"+idx);
+  if(stage && target){
+    const base = stage.firstElementChild ? stage.firstElementChild.offsetTop : 0;
+    programmaticScroll = true;
+    stage.scrollTo({ top: target.offsetTop - base, behavior: smooth?"smooth":"auto" });
+    clearTimeout(scrollSyncTimer);
+    scrollSyncTimer = setTimeout(()=>{ programmaticScroll=false; }, smooth?500:60);
+  }
+}
+
+function onStageScroll(){
+  if(programmaticScroll) return;
+  const stage=document.getElementById("stage"); if(!stage) return;
+  const base = stage.firstElementChild ? stage.firstElementChild.offsetTop : 0;
+  const y = stage.scrollTop + 10;
+  let cur=0; const secs=document.querySelectorAll(".sec");
+  for(let i=0;i<secs.length;i++){ if(secs[i].offsetTop - base <= y) cur=i; else break; }
+  if(cur!==idx){ idx=cur; paintActive(); }
+}
+
+function jump(i){ setActive(i, true); }
+function next(){ if(idx < cancion.secciones.length-1) setActive(idx+1, true); }
+function prev(){ if(idx > 0) setActive(idx-1, true); }
 
 document.addEventListener("keydown", e => {
   if(e.key === "ArrowRight" || e.key === " "){ next(); e.preventDefault(); }
