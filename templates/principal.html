@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Setlist · Mi Iglesia Internacional</title>
+<title>Setlist · {{ org_nombre }}</title>
 <style>
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
@@ -124,9 +124,9 @@ setInterval(() => {
 <div class="wrap">
   <div class="header">
     <div class="brand">
-      <img src="{{ url_for('static', filename='logo.png') }}" alt="">
+      <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="">
       <div class="brand-text">
-        <h1>Mi Iglesia Internacional</h1>
+        <h1>{{ org_nombre }}</h1>
         <div class="sub">{% if usuario %}Bienvenido {{ usuario.nombre }}{% else %}Charts{% endif %}</div>
       </div>
     </div>

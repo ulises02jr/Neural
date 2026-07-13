@@ -220,6 +220,42 @@ def usar_codigo_y_cambiar_password(email, codigo, nueva_password):
     return True, "Contraseña cambiada correctamente"
 
 
+def cambiar_password_directo(user_id, nueva_password):
+    """Cambia directamente la contraseña (hash) de una cuenta. Devuelve (ok, msg)."""
+    if len(nueva_password) < 6:
+        return False, "La contraseña debe tener al menos 6 caracteres"
+    with _conexion() as conn:
+        cur = conn.execute(
+            "UPDATE usuarios SET password_hash = ? WHERE id = ?",
+            (hash_password(nueva_password), user_id),
+        )
+        if cur.rowcount == 0:
+            return False, "Usuario no encontrado"
+    return True, "Contraseña actualizada"
+
+
+def actualizar_perfil(user_id, nombre, apellido, email):
+    """Actualiza nombre, apellido y email de una cuenta. Devuelve (ok, msg)."""
+    nombre = (nombre or "").strip()
+    apellido = (apellido or "").strip()
+    email = (email or "").strip().lower()
+    if not nombre or not apellido or not email:
+        return False, "Nombre, apellido y email son obligatorios"
+    if "@" not in email or "." not in email:
+        return False, "Email inválido"
+    with _conexion() as conn:
+        row = conn.execute("SELECT id FROM usuarios WHERE email = ? AND id != ?", (email, user_id)).fetchone()
+        if row:
+            return False, "Ya existe otra cuenta con ese email"
+        cur = conn.execute(
+            "UPDATE usuarios SET nombre = ?, apellido = ?, email = ? WHERE id = ?",
+            (nombre, apellido, email, user_id),
+        )
+        if cur.rowcount == 0:
+            return False, "Usuario no encontrado"
+    return True, "Perfil actualizado"
+
+
 def contar_admins_activos():
     """Cuántos admins activos hay (para evitar quedar sin admins)."""
     with _conexion() as conn:

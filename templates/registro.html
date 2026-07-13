@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Crear cuenta · Mi Iglesia Internacional</title>
+<title>Crear cuenta · {{ org_nombre }}</title>
 <style>
   :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;
     --txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--accent:#ffffff;
@@ -37,9 +37,9 @@
 </head>
 <body>
 <div class="card">
-  <img src="{{ url_for('static', filename='logo.png') }}" alt="" class="logo">
+  <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="" class="logo">
   <h1>Crear cuenta</h1>
-  <p class="sub">Mi Iglesia Internacional · Charts</p>
+  <p class="sub">{{ org_nombre }} · Charts</p>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, msg in messages %}

@@ -60,7 +60,7 @@
   .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
   .lyrics .tok{display:inline-flex;flex-direction:column}
   .chord{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    font-size:var(--chord-size);font-weight:700;color:var(--gold);
+    font-size:var(--chord-size);font-weight:var(--chord-weight,700);color:var(--chord-color,var(--gold));
     min-height:var(--chord-min);line-height:var(--chord-min);white-space:pre}
   .lyric{font-size:var(--lyric-size);color:var(--txt);line-height:1.35;white-space:pre}
   .inst{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 0}
@@ -130,6 +130,25 @@
   .size-big:active{background:var(--gold-soft)}
   .size-big:disabled{opacity:.35}
   .size-lbl{font-size:16px;color:var(--gold);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
+  /* Tema claro (modo día) del visor */
+  body.claro{--bg:#f4f4f6;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95}
+  body.claro .pill.active{background:var(--gold);border-color:var(--gold);color:#000}
+  /* Mostrar solo acordes / solo letra */
+  body.solo-acordes .lyric{display:none}
+  body.solo-letra .chord{display:none}
+  /* Grosor de acordes (pesos bien distintos + refuerzo de trazo) */
+  body[data-grosor="fino"] .chord{font-weight:400;-webkit-text-stroke:0}
+  body[data-grosor="normal"] .chord{font-weight:700;-webkit-text-stroke:0}
+  body[data-grosor="grueso"] .chord{font-weight:800;-webkit-text-stroke:0.45px currentColor}
+  /* Controles del panel de ajustes */
+  .aj-lbl{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1.2px;font-weight:600;margin:16px 0 8px}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{flex:1;min-width:72px;background:var(--raised);border:1px solid var(--line);color:var(--txt);
+    padding:11px 10px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600}
+  .seg button.active{background:var(--gold);color:#000;border-color:var(--gold)}
+  .seg.colores{gap:9px}
+  .seg.colores button{flex:0 0 auto;min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
+  .seg.colores button.active{border-color:var(--txt)}
 </style>
   <link rel="stylesheet" href="/static/ensayo.css">
 </head>
@@ -146,12 +165,43 @@
 
 <div class="sheet-bg" id="bg-ajustes" onclick="cerrarAjustes()"></div>
 <div class="sheet" id="sheet-ajustes">
-  <div class="sheet-h"><div class="sheet-t">Tamaño de letra</div><button class="sheet-x" onclick="cerrarAjustes()">Listo</button></div>
-  <div class="sheet-sub">Ajustá qué tan grande se ve la letra y los acordes.</div>
+  <div class="sheet-h"><div class="sheet-t">Ajustes de vista</div><button class="sheet-x" onclick="cerrarAjustes()">Listo</button></div>
+
+  <div class="aj-lbl">Tamaño de letra</div>
   <div class="size-row">
     <button class="size-big" id="size-minus" onclick="tamanoMenos()">A−</button>
     <span class="size-lbl" id="size-label">M</span>
     <button class="size-big" id="size-plus" onclick="tamanoMas()">A+</button>
+  </div>
+
+  <div class="aj-lbl">Tema</div>
+  <div class="seg" id="seg-tema">
+    <button data-val="oscuro" onclick="setVista('tema','oscuro')">🌙 Oscuro</button>
+    <button data-val="claro" onclick="setVista('tema','claro')">☀️ Día</button>
+  </div>
+
+  <div class="aj-lbl">Mostrar</div>
+  <div class="seg" id="seg-modo">
+    <button data-val="ambos" onclick="setVista('modo','ambos')">Ambos</button>
+    <button data-val="acordes" onclick="setVista('modo','acordes')">Solo acordes</button>
+    <button data-val="letra" onclick="setVista('modo','letra')">Solo letra</button>
+  </div>
+
+  <div class="aj-lbl">Color de acordes</div>
+  <div class="seg colores" id="seg-color">
+    <button data-val="" onclick="setVista('color','')" title="Por defecto" style="background:var(--gold)"></button>
+    <button data-val="#ffffff" onclick="setVista('color','#ffffff')" title="Blanco" style="background:#ffffff"></button>
+    <button data-val="#ffd23f" onclick="setVista('color','#ffd23f')" title="Amarillo" style="background:#ffd23f"></button>
+    <button data-val="#8fd3ff" onclick="setVista('color','#8fd3ff')" title="Celeste" style="background:#8fd3ff"></button>
+    <button data-val="#8fe0a0" onclick="setVista('color','#8fe0a0')" title="Verde" style="background:#8fe0a0"></button>
+    <button data-val="#ff9d5c" onclick="setVista('color','#ff9d5c')" title="Naranja" style="background:#ff9d5c"></button>
+  </div>
+
+  <div class="aj-lbl">Grosor de acordes</div>
+  <div class="seg" id="seg-grosor">
+    <button data-val="fino" onclick="setVista('grosor','fino')">Fino</button>
+    <button data-val="normal" onclick="setVista('grosor','normal')">Normal</button>
+    <button data-val="grueso" onclick="setVista('grosor','grueso')">Grueso</button>
   </div>
 </div>
 
@@ -223,6 +273,34 @@ function abrirAjustes(){ refrescarTam(); document.getElementById('bg-ajustes').c
 function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
 aplicarTamano();
 
+// ---- Preferencias de vista (tema, modo, color y grosor de acordes) ----
+const VISTA = { tema:'oscuro', modo:'ambos', color:'', grosor:'700' };
+function cargarVista(){
+  try{
+    VISTA.tema = localStorage.getItem('charts_tema') || 'oscuro';
+    VISTA.modo = localStorage.getItem('charts_modo') || 'ambos';
+    VISTA.color = localStorage.getItem('charts_color') || '';
+    VISTA.grosor = localStorage.getItem('charts_grosor') || 'normal';
+    if(['fino','normal','grueso'].indexOf(VISTA.grosor) < 0) VISTA.grosor = 'normal';
+  }catch(e){}
+  aplicarVista();
+}
+function aplicarVista(){
+  document.body.classList.toggle('claro', VISTA.tema==='claro');
+  document.body.classList.toggle('solo-acordes', VISTA.modo==='acordes');
+  document.body.classList.toggle('solo-letra', VISTA.modo==='letra');
+  if(VISTA.color){ document.body.style.setProperty('--chord-color', VISTA.color); }
+  else { document.body.style.removeProperty('--chord-color'); }
+  document.body.dataset.grosor = VISTA.grosor;
+  marcarV('seg-tema', VISTA.tema);
+  marcarV('seg-modo', VISTA.modo);
+  marcarV('seg-color', VISTA.color);
+  marcarV('seg-grosor', VISTA.grosor);
+}
+function marcarV(id,val){ const s=document.getElementById(id); if(!s) return; s.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.val===val)); }
+function setVista(clave,val){ VISTA[clave]=val; try{ localStorage.setItem('charts_'+clave, val); }catch(e){} aplicarVista(); }
+cargarVista();
+
 function renderLines(lines){
   return `<div class="lyrics">${(lines||[]).map(line => `
     <div class="line">
@@ -285,7 +363,7 @@ function render(){
     </div>
     <div class="footer">
       <button class="btn-icon" id="btn-prev" onclick="prev()" ${idx===0?'disabled':''}>‹</button>
-      <button class="btn-mid" onclick="window.location.href='/'">Volver al setlist</button>
+      <button class="btn-mid" onclick="window.location.href='{{ volver_url }}'">← Atrás</button>
       <button class="btn-icon" id="btn-next" onclick="next()" ${idx===cancion.secciones.length-1?'disabled':''}>›</button>
       <button class="btn-icon ensayo" id="ensayo-fab" title="Modo ensayo">🎧</button>
     </div>`;

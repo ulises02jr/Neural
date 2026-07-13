@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Acceso · Mi Iglesia Internacional</title>
+<title>Acceso · {{ org_nombre }}</title>
 <style>
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
@@ -48,9 +48,8 @@
 </head>
 <body>
 <div class="card">
-  <img src="{{ url_for('static', filename='logo.png') }}" alt="Mi Iglesia Internacional" class="logo">
-  <h1>Mi Iglesia Internacional</h1>
-  <p class="sub">Charts · Modo ensayo</p>
+  <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="{{ org_nombre }}" class="logo">
+  <h1>{{ org_nombre }}</h1>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, msg in messages %}

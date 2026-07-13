@@ -98,6 +98,9 @@ def cargar_config():
     if "ultimo_heartbeat" not in cfg:
         cfg["ultimo_heartbeat"] = None
         cambios = True
+    if "org_nombre" not in cfg:
+        cfg["org_nombre"] = "Mi Iglesia Internacional"
+        cambios = True
     # Migración: setlist único → multi-setlists
     if "setlists" not in cfg:
         cfg["setlists"] = []
@@ -159,6 +162,19 @@ app = Flask(__name__)
 app.secret_key = _config_inicial["secret_key"]
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 5 MB max por archivo
+
+
+@app.context_processor
+def inject_org():
+    try:
+        nombre = get_config().get("org_nombre", "Mi Iglesia Internacional")
+    except Exception:
+        nombre = "Mi Iglesia Internacional"
+    try:
+        logo_ver = int((BASE_DIR / "static" / "logo.png").stat().st_mtime)
+    except Exception:
+        logo_ver = 0
+    return {"org_nombre": nombre, "logo_ver": logo_ver}
 
 
 def get_config():
@@ -462,6 +478,13 @@ def ver_cancion(numero):
     # Permitir transposición solo si viene de biblioteca (no desde setlist)
     desde_biblioteca = request.args.get("from") == "bib"
 
+    if desde_biblioteca:
+        volver_url = url_for("principal") + "?tab=biblioteca"
+    elif setlist_id:
+        volver_url = url_for("principal", setlist_id=setlist_id)
+    else:
+        volver_url = url_for("principal")
+
     return render_template(
         "visor.html",
         cancion=cancion,
@@ -469,6 +492,7 @@ def ver_cancion(numero):
         permitir_transposicion=desde_biblioteca,
         semitonos_actual=semitonos,
         tono_original=tono_original,
+        volver_url=volver_url,
     )
 
 
@@ -533,7 +557,7 @@ def admin():
         ultimo_heartbeat_seg=segundos_atras,
         hoy=_hoy_iso(),
         usuarios_pendientes=usuarios.listar_usuarios(estado="pendiente"),
-        usuarios_activos=usuarios.listar_usuarios(estado="activo"),
+        usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo") if u.get("rol") != "admin"],
         usuario_actual=get_usuario_actual(),
         email_configurado=emails_module.email_configurado(),
     )
@@ -892,6 +916,80 @@ def admin_usuario_reset_password(user_id):
         flash(f"✓ Código de reset enviado a {u['email']}", "success")
     else:
         flash(f"⚠️ No se pudo mandar email: {msg}. Código: {codigo}", "error")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/org/nombre", methods=["POST"])
+@login_required("admin")
+def admin_org_nombre():
+    nombre = request.form.get("org_nombre", "").strip()
+    if not nombre:
+        flash("El nombre no puede estar vacío", "error")
+        return redirect(url_for("admin"))
+    cfg = get_config()
+    cfg["org_nombre"] = nombre[:80]
+    guardar_config(cfg)
+    flash("✓ Nombre de la organización actualizado", "success")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/org/logo", methods=["POST"])
+@login_required("admin")
+def admin_org_logo():
+    f = request.files.get("logo")
+    if not f or not f.filename:
+        flash("Elegí una imagen", "error")
+        return redirect(url_for("admin"))
+    ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else ""
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        flash("Formato no válido (usá PNG, JPG o WEBP)", "error")
+        return redirect(url_for("admin"))
+    try:
+        f.save(str(BASE_DIR / "static" / "logo.png"))
+        flash("✓ Logo actualizado", "success")
+    except Exception as e:
+        flash("No se pudo guardar el logo: %s" % e, "error")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/perfil", methods=["POST"])
+@login_required("admin")
+def admin_perfil():
+    uid = session.get("user_id")
+    if not uid:
+        flash("No hay una cuenta asociada a esta sesión (acceso de emergencia).", "error")
+        return redirect(url_for("admin"))
+    ok, msg = usuarios.actualizar_perfil(
+        uid,
+        request.form.get("nombre", ""),
+        request.form.get("apellido", ""),
+        request.form.get("email", ""),
+    )
+    if ok:
+        session["nombre"] = request.form.get("nombre", "").strip()
+        flash("✓ Perfil actualizado", "success")
+    else:
+        flash(msg, "error")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/mi_password", methods=["POST"])
+@login_required("admin")
+def admin_cambiar_mi_password():
+    """El admin en sesión cambia su propia contraseña de cuenta."""
+    uid = session.get("user_id")
+    if not uid:
+        flash("No hay una cuenta asociada a esta sesión (acceso de emergencia).", "error")
+        return redirect(url_for("admin"))
+    nueva = request.form.get("nueva", "")
+    if not nueva or len(nueva) < 6:
+        flash("La contraseña debe tener al menos 6 caracteres", "error")
+        return redirect(url_for("admin"))
+    ok, msg = usuarios.cambiar_password_directo(uid, nueva)
+    if ok:
+        flash("✓ Tu contraseña fue actualizada", "success")
+    else:
+        flash(msg, "error")
     return redirect(url_for("admin"))
 
 

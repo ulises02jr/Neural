@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin · Mi Iglesia Internacional</title>
+<title>Admin · {{ org_nombre }}</title>
 <style>
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
@@ -116,20 +116,62 @@
   .modal-content input{width:100%;padding:9px 11px;background:var(--raised);
     border:1px solid var(--line);border-radius:6px;color:var(--txt);font-family:inherit;font-size:14px;margin:0}
   .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+  .launcher{min-height:calc(100vh - 130px);display:flex;align-items:center;justify-content:center}
+  .iconnav{display:flex;justify-content:center;flex-wrap:wrap;gap:18px;max-width:660px}
+  .navicon{display:flex;flex-direction:column;align-items:center;gap:11px;cursor:pointer;text-decoration:none;
+    color:var(--txt2);width:124px;padding:10px 6px;border-radius:18px;transition:color .15s}
+  .navicon:hover{color:var(--txt)}
+  .ni-ico{width:78px;height:78px;border-radius:22px;display:flex;align-items:center;justify-content:center;
+    background:var(--surface);border:1px solid var(--line);color:var(--txt2);transition:all .18s}
+  .navicon:hover .ni-ico{border-color:var(--gold);background:var(--gold-soft);color:var(--gold);transform:translateY(-3px)}
+  .ni-ico svg{width:34px;height:34px}
+  .ni-lbl{font-size:12px;font-weight:600;letter-spacing:.3px;text-align:center;line-height:1.25}
+  .sec-card{display:none}
+  .back-btn{background:var(--raised);border:1px solid var(--line);color:var(--txt2);
+    padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;margin-bottom:14px}
+  .back-btn:hover{border-color:var(--txt2);color:var(--txt)}
+  a.icon-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+  /* Personalización: tamaño de iconos */
+  body[data-iconsize="sm"] .ni-ico{width:60px;height:60px;border-radius:16px}
+  body[data-iconsize="sm"] .ni-ico svg{width:26px;height:26px}
+  body[data-iconsize="sm"] .navicon{width:104px}
+  body[data-iconsize="sm"] .ni-lbl{font-size:11px}
+  body[data-iconsize="lg"] .ni-ico{width:98px;height:98px;border-radius:26px}
+  body[data-iconsize="lg"] .ni-ico svg{width:44px;height:44px}
+  body[data-iconsize="lg"] .navicon{width:150px}
+  body[data-iconsize="lg"] .ni-lbl{font-size:13px}
+  /* Personalización: tema claro (modo día) */
+  body.tema-claro{--bg:#f2f2f5;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95;--accent:#C9A96E;--gold-soft:#f3ead9}
+  /* Personalización: menú en barras */
+  body.nav-barras .launcher{align-items:flex-start;padding-top:24px;min-height:auto}
+  body.nav-barras .iconnav{flex-direction:column;flex-wrap:nowrap;gap:10px;max-width:460px;width:100%;margin:0 auto}
+  body.nav-barras .navicon{flex-direction:row;justify-content:flex-start;width:100%;gap:14px;padding:12px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  body.nav-barras .navicon:hover{border-color:var(--gold)}
+  body.nav-barras .navicon:hover .ni-ico{transform:none}
+  body.nav-barras .ni-ico{width:42px;height:42px;border-radius:10px}
+  body.nav-barras .ni-ico svg{width:22px;height:22px}
+  body.nav-barras .ni-lbl{font-size:14px;text-align:left}
+  /* Control segmentado */
+  .seg{display:inline-flex;gap:6px;flex-wrap:wrap}
+  .seg button{background:var(--raised);border:1px solid var(--line);color:var(--txt2);padding:9px 16px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px}
+  .seg button.active{background:var(--gold);color:#000;border-color:var(--gold);font-weight:600}
+  .seg.colores{gap:9px}
+  .seg.colores button{min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
+  .seg.colores button.active{border-color:var(--txt)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
     <div class="brand">
-      <img src="{{ url_for('static', filename='logo.png') }}" alt="">
+      <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="">
       <div class="brand-text">
-        <h1>Mi Iglesia Internacional</h1>
-        <div class="sub">Admin · Charts</div>
+        <h1>{{ org_nombre }}</h1>
+        <div class="sub">Panel de Administración</div>
       </div>
     </div>
     <div class="links">
-      <a href="{{ url_for('principal') }}">Ver setlist</a>
       <a href="{{ url_for('logout') }}">Salir</a>
     </div>
   </div>
@@ -140,9 +182,24 @@
     {% endfor %}
   {% endwith %}
 
-  <!-- Estado del Live (Mac local) -->
-  <div class="card">
-    <h2>Estado del Live</h2>
+  <button id="back-btn" class="back-btn" style="display:none" onclick="backToMenu()">‹ Volver al menú</button>
+
+  <div id="launcher" class="launcher">
+  <nav class="iconnav">
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('live')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg></span><span class="ni-lbl">Software Live</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('canciones')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span><span class="ni-lbl">Importar canciones</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('usuarios')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="ni-lbl">Usuarios</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('repertorios')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span class="ni-lbl">Repertorios</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('biblioteca')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span class="ni-lbl">Biblioteca</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('organizacion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span><span class="ni-lbl">Información de Organización</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="proximo('Suscripción')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span><span class="ni-lbl">Suscripción</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('personalizacion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.4L22 18l-2.1.6L19 21l-.9-2.4L16 18l2.1-.6z"/></svg></span><span class="ni-lbl">Personalización</span></a>
+  </nav>
+  </div>
+
+  <!-- Live (Mac local) -->
+  <div class="card sec-card" id="live">
+    <h2>Live</h2>
     {% if live_activo %}
       <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;background:rgba(220,40,60,0.1);border:1px solid rgba(220,40,60,0.3);border-radius:8px;margin-bottom:12px">
         <div style="width:12px;height:12px;border-radius:50%;background:#ff3b50;box-shadow:0 0 8px rgba(255,59,80,0.7)"></div>
@@ -180,17 +237,16 @@
     {% endif %}
   </div>
 
-  <div class="card">
-    <h2>Canciones</h2>
-    <p style="margin:2px 0 14px;color:#8a8a8a;font-size:13px">Agregá una canción nueva (chart + pistas + tiempos) o editá las existentes.</p>
+  <div class="card sec-card" id="canciones">
+    <h2>Importar canciones</h2>
+    <p style="margin:2px 0 14px;color:#8a8a8a;font-size:13px">Agregá una canción nueva (chart + pistas + tiempos). Para editar una existente, entrá a Biblioteca.</p>
     <a href="{{ url_for('admin_nueva') }}" style="display:inline-block;background:var(--gold,#C9A96E);color:#0a0a0a;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:700;font-size:15px;margin:0 8px 8px 0">➕ Cargar nueva canción</a>
-    <a href="{{ url_for('admin_pistas') }}" style="display:inline-block;background:transparent;color:var(--gold,#C9A96E);border:1px solid var(--gold,#C9A96E);text-decoration:none;padding:11px 22px;border-radius:999px;font-weight:700;font-size:15px">✏️ Editar canciones</a>
   </div>
 
   <!-- Gestión de usuarios -->
-  <div class="card">
+  <div class="card sec-card" id="usuarios">
 
-    <h2>Usuarios</h2>
+    <h2>Usuarios de Organización</h2>
     {% if not email_configurado %}
     <div class="flash error" style="margin-bottom:14px">
       ⚠️ El sistema de email no está configurado. Los códigos de reset no podrán enviarse.
@@ -239,10 +295,6 @@
             <div class="ar">{{ u.email }}</div>
           </div>
           <div class="actions">
-            <form method="POST" action="{{ url_for('admin_usuario_reset_password', user_id=u.id) }}" style="display:inline"
-                  onsubmit="return confirm('¿Enviar código de reset a {{ u.email }}?')">
-              <button type="submit" class="icon-btn" title="Reset password (envía email)">↻</button>
-            </form>
             {% if not (usuario_actual and usuario_actual.id == u.id) %}
             <form method="POST" action="{{ url_for('admin_usuario_eliminar', user_id=u.id) }}" style="display:inline"
                   onsubmit="return confirm('¿Eliminar usuario {{ u.nombre }} {{ u.apellido }}?')">
@@ -258,23 +310,83 @@
       {% endif %}
     </div>
 
-    <!-- Crear admin -->
-    <details style="margin-top:14px">
-      <summary style="cursor:pointer;padding:10px 12px;background:var(--raised);border-radius:6px;font-size:13px;color:var(--txt2)">+ Crear nuevo admin</summary>
-      <form method="POST" action="{{ url_for('admin_crear_admin') }}" style="padding:14px;background:var(--raised);border-radius:6px;margin-top:8px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-          <input type="text" name="nombre" placeholder="Nombre" required maxlength="40">
-          <input type="text" name="apellido" placeholder="Apellido" required maxlength="40">
-        </div>
-        <input type="email" name="email" placeholder="email@ejemplo.com" required style="margin-bottom:8px">
-        <input type="password" name="password" placeholder="Contraseña (min 6)" required minlength="6" style="margin-bottom:8px">
-        <button type="submit" class="primary">Crear admin</button>
-      </form>
-    </details>
   </div>
 
-  <div class="card">
-    <h2>Setlists</h2>
+  <!-- Información de Organización -->
+  <div class="card sec-card" id="organizacion">
+    <h2>Información de Organización</h2>
+
+    <div style="margin-bottom:18px">
+      <div class="col-h"><span>Nombre de la organización</span></div>
+      <form method="POST" action="{{ url_for('admin_org_nombre') }}">
+        <div class="pw-row">
+          <input type="text" name="org_nombre" value="{{ org_nombre }}" maxlength="80" required>
+          <button type="submit" class="primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+
+    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Logo / foto de perfil</span></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="" style="width:56px;height:56px;border-radius:50%;background:#fff;padding:2px;object-fit:contain;flex-shrink:0">
+        <form method="POST" action="{{ url_for('admin_org_logo') }}" enctype="multipart/form-data" style="flex:1">
+          <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required style="margin-bottom:10px">
+          <button type="submit" class="primary">Subir logo</button>
+        </form>
+      </div>
+      <p class="help" style="margin-top:8px">PNG, JPG o WEBP. Se recomienda una imagen cuadrada.</p>
+    </div>
+
+    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Mi perfil de administrador</span></div>
+      {% if usuario_actual %}
+      <form method="POST" action="{{ url_for('admin_perfil') }}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <input type="text" name="nombre" value="{{ usuario_actual.nombre }}" placeholder="Nombre" required maxlength="40">
+          <input type="text" name="apellido" value="{{ usuario_actual.apellido }}" placeholder="Apellido" required maxlength="40">
+        </div>
+        <input type="email" name="email" value="{{ usuario_actual.email }}" placeholder="email@ejemplo.com" required style="margin-bottom:8px">
+        <button type="submit" class="primary">Guardar perfil</button>
+      </form>
+      {% else %}
+      <p class="help">Entraste con acceso de emergencia. Iniciá sesión con tu cuenta para editar tu perfil.</p>
+      {% endif %}
+    </div>
+
+    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>🔑 Cambiar mi contraseña</span></div>
+      {% if usuario_actual %}
+      <form method="POST" action="{{ url_for('admin_cambiar_mi_password') }}">
+        <div class="pw-row">
+          <input type="password" name="nueva" placeholder="Mínimo 6 caracteres" required minlength="6">
+          <button type="submit" class="primary">Actualizar</button>
+        </div>
+      </form>
+      {% else %}
+      <p class="help">Entraste con acceso de emergencia. Iniciá sesión con tu cuenta para cambiar tu contraseña.</p>
+      {% endif %}
+    </div>
+
+    <div style="padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Administradores</span></div>
+      <details>
+        <summary style="cursor:pointer;padding:10px 12px;background:var(--raised);border-radius:6px;font-size:13px;color:var(--txt2)">+ Crear nuevo admin</summary>
+        <form method="POST" action="{{ url_for('admin_crear_admin') }}" style="padding:14px;background:var(--raised);border-radius:6px;margin-top:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <input type="text" name="nombre" placeholder="Nombre" required maxlength="40">
+            <input type="text" name="apellido" placeholder="Apellido" required maxlength="40">
+          </div>
+          <input type="email" name="email" placeholder="email@ejemplo.com" required style="margin-bottom:8px">
+          <input type="password" name="password" placeholder="Contraseña (min 6)" required minlength="6" style="margin-bottom:8px">
+          <button type="submit" class="primary">Crear admin</button>
+        </form>
+      </details>
+    </div>
+  </div>
+
+  <div class="card sec-card" id="repertorios">
+    <h2>Repertorios</h2>
     <p class="help" style="margin:-4px 0 14px">Cada setlist tiene nombre y fecha. Los setlists con fecha pasada se eliminan automáticamente.</p>
 
     <!-- Crear nuevo setlist -->
@@ -373,6 +485,49 @@
     </div>
   </div>
 
+  <!-- Personalización -->
+  <div class="card sec-card" id="personalizacion">
+    <h2>Personalización</h2>
+
+    <div style="margin-bottom:18px">
+      <div class="col-h"><span>Tamaño de los iconos</span></div>
+      <div class="seg" id="seg-iconsize">
+        <button type="button" data-val="sm" onclick="setPref('iconsize','sm')">Pequeño</button>
+        <button type="button" data-val="md" onclick="setPref('iconsize','md')">Mediano</button>
+        <button type="button" data-val="lg" onclick="setPref('iconsize','lg')">Grande</button>
+      </div>
+    </div>
+
+    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Tema de colores</span></div>
+      <div class="seg" id="seg-tema">
+        <button type="button" data-val="oscuro" onclick="setPref('tema','oscuro')">🌙 Oscuro</button>
+        <button type="button" data-val="claro" onclick="setPref('tema','claro')">☀️ Día</button>
+      </div>
+    </div>
+
+    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Color de acento</span></div>
+      <div class="seg colores" id="seg-acento">
+        <button type="button" data-val="" onclick="setPref('acento','')" title="Por defecto" style="background:#C9A96E"></button>
+        <button type="button" data-val="#5B8DEF" onclick="setPref('acento','#5B8DEF')" title="Azul" style="background:#5B8DEF"></button>
+        <button type="button" data-val="#3FB950" onclick="setPref('acento','#3FB950')" title="Verde" style="background:#3FB950"></button>
+        <button type="button" data-val="#A371F7" onclick="setPref('acento','#A371F7')" title="Morado" style="background:#A371F7"></button>
+        <button type="button" data-val="#E5534B" onclick="setPref('acento','#E5534B')" title="Rojo" style="background:#E5534B"></button>
+        <button type="button" data-val="#2DB7A3" onclick="setPref('acento','#2DB7A3')" title="Turquesa" style="background:#2DB7A3"></button>
+      </div>
+    </div>
+
+    <div style="padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Estilo del menú de inicio</span></div>
+      <div class="seg" id="seg-nav">
+        <button type="button" data-val="iconos" onclick="setPref('nav','iconos')">Iconos</button>
+        <button type="button" data-val="barras" onclick="setPref('nav','barras')">Barra de opciones</button>
+      </div>
+      <p class="help" style="margin-top:10px">Cambiá si el inicio se ve como iconos grandes o como una lista de barras.</p>
+    </div>
+  </div>
+
   <!-- Modal de edición -->
   <div id="edit-modal" class="modal" style="display:none">
     <div class="modal-content">
@@ -390,7 +545,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card sec-card" id="biblioteca">
     <h2>Biblioteca</h2>
     <p class="help" style="margin:-4px 0 10px">{{ biblioteca|length }} canción(es) disponibles.</p>
     <div class="lista">
@@ -403,10 +558,7 @@
             <div class="ar">{{ c.artista or '' }}</div>
           </div>
           <div class="actions">
-            <form method="POST" action="{{ url_for('admin_eliminar', numero=c.numero) }}" style="display:inline"
-                  onsubmit="return confirm('¿Eliminar la canción #{{ c.numero }} - {{ c.titulo }}?')">
-              <button type="submit" class="icon-btn danger" title="Eliminar">×</button>
-            </form>
+            <a class="icon-btn" href="{{ url_for('admin_editar', numero=c.numero) }}" title="Editar canción"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;vertical-align:middle"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></a>
           </div>
         </div>
         {% endfor %}
@@ -416,25 +568,6 @@
     </div>
   </div>
 
-  <div class="card">
-    <h2>Cambiar contraseñas</h2>
-    <form method="POST" action="{{ url_for('admin_cambiar_password') }}" style="margin-bottom:14px">
-      <input type="hidden" name="cual" value="musicos">
-      <label>Nueva contraseña para músicos</label>
-      <div class="pw-row">
-        <input type="password" name="nueva" placeholder="Mínimo 6 caracteres" required>
-        <button type="submit" class="primary">Actualizar</button>
-      </div>
-    </form>
-    <form method="POST" action="{{ url_for('admin_cambiar_password') }}">
-      <input type="hidden" name="cual" value="admin">
-      <label>Nueva contraseña de admin</label>
-      <div class="pw-row">
-        <input type="password" name="nueva" placeholder="Mínimo 6 caracteres" required>
-        <button type="submit" class="primary">Actualizar</button>
-      </div>
-    </form>
-  </div>
 </div>
 
 <script>
@@ -461,6 +594,68 @@ if(modalEl){
     if(e.target.id === 'edit-modal') cerrarEdicion();
   });
 }
+
+// ── Navegación por iconos: inicio = solo iconos, cada card se abre al tocar ──
+function proximo(n){ alert(n + ' — próximamente 🙌'); }
+
+// ── Personalización (guardada en el navegador) ──
+var PREFS = { iconsize:'md', tema:'oscuro', nav:'iconos', acento:'' };
+function hexRgba(hex, a){
+  var h = hex.replace('#',''); if(h.length===3){ h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; }
+  var r=parseInt(h.substr(0,2),16), g=parseInt(h.substr(2,2),16), b=parseInt(h.substr(4,2),16);
+  return 'rgba('+r+','+g+','+b+','+a+')';
+}
+function cargarPrefs(){
+  try{
+    PREFS.iconsize = localStorage.getItem('adm_iconsize') || 'md';
+    PREFS.tema = localStorage.getItem('adm_tema') || 'oscuro';
+    PREFS.nav = localStorage.getItem('adm_nav') || 'iconos';
+    PREFS.acento = localStorage.getItem('adm_acento') || '';
+  }catch(e){}
+  aplicarPrefs();
+}
+function aplicarPrefs(){
+  document.body.dataset.iconsize = PREFS.iconsize;
+  document.body.classList.toggle('tema-claro', PREFS.tema === 'claro');
+  document.body.classList.toggle('nav-barras', PREFS.nav === 'barras');
+  if(PREFS.acento){ document.body.style.setProperty('--gold', PREFS.acento); document.body.style.setProperty('--gold-soft', hexRgba(PREFS.acento, 0.16)); }
+  else { document.body.style.removeProperty('--gold'); document.body.style.removeProperty('--gold-soft'); }
+  marcarSeg('seg-iconsize', PREFS.iconsize);
+  marcarSeg('seg-tema', PREFS.tema);
+  marcarSeg('seg-nav', PREFS.nav);
+  marcarSeg('seg-acento', PREFS.acento);
+}
+function marcarSeg(id, val){
+  var seg = document.getElementById(id); if(!seg) return;
+  seg.querySelectorAll('button').forEach(function(b){ b.classList.toggle('active', b.dataset.val === val); });
+}
+function setPref(clave, val){
+  PREFS[clave] = val;
+  try{ localStorage.setItem('adm_' + clave, val); }catch(e){}
+  aplicarPrefs();
+}
+cargarPrefs();
+function showSection(id){
+  const l=document.getElementById('launcher'); if(l) l.style.display='none';
+  document.querySelectorAll('.sec-card').forEach(c=>c.style.display='none');
+  const el=document.getElementById(id); if(el) el.style.display='block';
+  const b=document.getElementById('back-btn'); if(b) b.style.display='inline-block';
+  try{ sessionStorage.setItem('admin_sec', id); }catch(e){}
+  window.scrollTo(0,0);
+}
+function backToMenu(){
+  document.querySelectorAll('.sec-card').forEach(c=>c.style.display='none');
+  const b=document.getElementById('back-btn'); if(b) b.style.display='none';
+  const l=document.getElementById('launcher'); if(l) l.style.display='flex';
+  try{ sessionStorage.removeItem('admin_sec'); }catch(e){}
+  window.scrollTo(0,0);
+}
+// Tras una acción (hay flash) volvemos a la sección donde estabas; si no, al menú
+(function(){
+  const hayFlash = document.querySelector('.flash') !== null;
+  let sec=null; try{ sec=sessionStorage.getItem('admin_sec'); }catch(e){}
+  if(hayFlash && sec && document.getElementById(sec)){ showSection(sec); } else { backToMenu(); }
+})();
 </script>
 </body>
 </html>

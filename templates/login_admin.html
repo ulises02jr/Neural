@@ -41,10 +41,9 @@
 </head>
 <body>
 <div class="card">
-  <img src="{{ url_for('static', filename='logo.png') }}" alt="" class="logo">
+  <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="" class="logo">
   <div class="badge">ADMINISTRADOR</div>
-  <h1>Acceso restringido</h1>
-  <p class="sub">Mi Iglesia Internacional · Charts</p>
+  <h1>{{ org_nombre }}</h1>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, msg in messages %}

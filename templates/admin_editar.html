@@ -35,7 +35,7 @@
 </head>
 <body>
 <div class="wrap">
-  <a class="back" href="{{ url_for('admin_pistas') }}">← Volver a canciones</a>
+  <a class="back" href="{{ url_for('admin') }}">← Volver al panel</a>
   <h1>✏️ Editar — {{ titulo }}</h1>
   <div class="sub">Canción #{{ numero }}</div>
 
@@ -107,6 +107,15 @@
       {% endfor %}
     </div>
     <div class="hint">Cada tono tarda unos minutos en generarse (en segundo plano). Refrescá esta página para ver cuando se pongan verdes.</div>
+  </div>
+
+  <h2>Eliminar canción</h2>
+  <div class="card">
+    <div class="hint" style="margin:0 0 12px">Borra la canción completa (chart, pistas y tonos). Esta acción no se puede deshacer.</div>
+    <form method="POST" action="{{ url_for('admin_eliminar', numero=numero) }}"
+          onsubmit="return confirm('¿Eliminar definitivamente la canción #{{ numero }} — {{ titulo }}? Se borra todo.')">
+      <button type="submit" style="background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;border-radius:999px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer">🗑 Eliminar canción</button>
+    </form>
   </div>
 </div>
 </body>
