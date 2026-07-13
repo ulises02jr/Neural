@@ -192,7 +192,7 @@
     <a class="navicon" href="javascript:void(0)" onclick="showSection('repertorios')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span class="ni-lbl">Repertorios</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('biblioteca')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span class="ni-lbl">Biblioteca</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('organizacion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span><span class="ni-lbl">Información de Organización</span></a>
-    <a class="navicon" href="javascript:void(0)" onclick="proximo('Suscripción')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span><span class="ni-lbl">Suscripción</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('suscripcion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span><span class="ni-lbl">Suscripción</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('personalizacion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.4L22 18l-2.1.6L19 21l-.9-2.4L16 18l2.1-.6z"/></svg></span><span class="ni-lbl">Personalización</span></a>
   </nav>
   </div>
@@ -482,6 +482,38 @@
       {% else %}
         <div class="vacio">No hay setlists. Creá uno arriba para empezar.</div>
       {% endif %}
+    </div>
+  </div>
+
+  <!-- Suscripción -->
+  <div class="card sec-card" id="suscripcion">
+    <h2>Suscripción</h2>
+
+    <div style="margin-bottom:18px">
+      <div class="col-h"><span>Plan actual</span></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
+        <div style="flex:1">
+          <div style="font-size:20px;font-weight:700;color:var(--gold)">$6.00 <span style="font-size:13px;color:var(--txt2);font-weight:500">/ mes</span></div>
+          <div style="font-size:13px;color:var(--txt2);margin-top:3px">1 vCPU &middot; 1 GB RAM &middot; 25 GB SSD &middot; 1000 GB de transferencia</div>
+        </div>
+        <span style="background:rgba(134,179,106,0.15);color:var(--live);padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap">&#9679; Activo</span>
+      </div>
+    </div>
+
+    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Servidor (Droplet)</span></div>
+      <div class="lista">
+        <div class="item"><div class="info"><div class="nm">Nombre</div><div class="ar">MIWorship-s-1vcpu-1gb-nyc1</div></div></div>
+        <div class="item"><div class="info"><div class="nm">Proveedor</div><div class="ar">DigitalOcean &middot; NYC1</div></div></div>
+        <div class="item"><div class="info"><div class="nm">Sistema</div><div class="ar">Linux &middot; Ubuntu 24.04 LTS</div></div></div>
+        <div class="item"><div class="info"><div class="nm">IP para acceder al servidor</div><div class="ar" style="font-family:ui-monospace,Menlo,monospace;color:var(--gold)">64.227.10.28</div></div></div>
+        <div class="item"><div class="info"><div class="nm">IP privada</div><div class="ar" style="font-family:ui-monospace,Menlo,monospace">10.116.0.2</div></div></div>
+      </div>
+    </div>
+
+    <div style="padding-top:16px;border-top:1px solid var(--line)">
+      <a href="https://cloud.digitalocean.com/droplets" target="_blank" rel="noopener" style="display:inline-block;background:var(--gold);color:#000;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:700;font-size:14px">Gestionar suscripción &#8599;</a>
+      <p class="help" style="margin-top:10px">La suscripción y el tamaño del servidor se editan directamente en DigitalOcean.</p>
     </div>
   </div>
 
