@@ -1492,6 +1492,63 @@ def _construir_midi_secciones(numero):
     return header + b"MTrk" + len(track).to_bytes(4, "big") + bytes(track)
 
 
+def _texto_a_lines(texto):
+    """Convierte texto con acordes en corchetes -> lineas de tokens [acorde, letra]."""
+    lines = []
+    for raw in (texto or "").split("\n"):
+        tokens = []
+        matches = list(re.finditer(r"\[([^\]]*)\]", raw))
+        if not matches:
+            if raw != "":
+                tokens.append(["", raw])
+            lines.append(tokens)
+            continue
+        if matches[0].start() > 0:
+            tokens.append(["", raw[:matches[0].start()]])
+        for i, m in enumerate(matches):
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(raw)
+            tokens.append([m.group(1), raw[m.end():end]])
+        lines.append(tokens)
+    return lines
+
+
+def _lines_a_texto(lines):
+    """Convierte lineas de tokens [acorde, letra] -> texto con corchetes."""
+    out = []
+    for line in (lines or []):
+        seg = ""
+        for tok in line:
+            ch = tok[0] if len(tok) > 0 else ""
+            ly = tok[1] if len(tok) > 1 else ""
+            if ch:
+                seg += "[" + ch + "]"
+            seg += ly
+        out.append(seg)
+    return "\n".join(out)
+
+
+def _cifrado_para_editor(cancion):
+    out = []
+    for sec in (cancion or {}).get("secciones", []):
+        if sec.get("inst") and sec.get("prog") is not None:
+            texto = " ".join("[" + str(c) + "]" for c in sec.get("prog", []))
+        else:
+            texto = _lines_a_texto(sec.get("lines", []))
+        out.append({"tipo": sec.get("tipo", ""), "nota": sec.get("nota", ""), "texto": texto})
+    return out
+
+
+def _archivo_cancion(numero):
+    for f in CARPETA_CANCIONES.glob("*.json"):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            if int(d.get("numero", -1)) == int(numero):
+                return f
+        except Exception:
+            continue
+    return None
+
+
 def _familia_auto(nombre):
     n = " " + re.sub(r"[_\-.]+", " ", nombre.lower()) + " "
     if re.search(r"click|metr", n):
@@ -1557,6 +1614,7 @@ def admin_editar(numero):
     return render_template("admin_editar.html", numero=numero, titulo=cancion.get("titulo", ""),
                            stems=lista, familias=FAMILIAS, tonos=tonos, filas=filas,
                            midi=_leer_midi(numero),
+                           cifrado=_cifrado_para_editor(cancion),
                            n_secciones=len(_leer_secciones(numero)))
 
 
@@ -1657,6 +1715,47 @@ def admin_midi(numero):
         return send_file(str(tmp), as_attachment=True, download_name=nombre + ".mid", mimetype="audio/midi")
     flash("MIDI guardado", "success")
     return redirect(url_for("admin_editar", numero=numero) + "?tab=midi")
+
+
+@app.route("/admin/pistas/<int:numero>/cifrado", methods=["POST"])
+@login_required("admin")
+def admin_cifrado(numero):
+    f = _archivo_cancion(numero)
+    if not f:
+        flash("Cancion no encontrada", "error")
+        return redirect(url_for("admin_pistas"))
+    try:
+        datos = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        flash("No se pudo leer la cancion", "error")
+        return redirect(url_for("admin_editar", numero=numero) + "?tab=cifrado")
+    try:
+        secs_in = json.loads(request.form.get("cifrado_json", "[]"))
+        if not isinstance(secs_in, list):
+            secs_in = []
+    except Exception:
+        secs_in = []
+    nuevas = []
+    for it in secs_in:
+        if not isinstance(it, dict):
+            continue
+        tipo = str(it.get("tipo", "")).strip() or "Seccion"
+        nota = str(it.get("nota", "")).strip()
+        lineas = _texto_a_lines(it.get("texto", ""))
+        tiene_letra = any((len(t) > 1 and str(t[1]).strip()) for ln in lineas for t in ln)
+        sec = {"tipo": tipo}
+        if nota:
+            sec["nota"] = nota
+        if not tiene_letra:
+            sec["inst"] = True
+            sec["prog"] = [str(t[0]) for ln in lineas for t in ln if len(t) > 0 and str(t[0]).strip()]
+        else:
+            sec["lines"] = lineas
+        nuevas.append(sec)
+    datos["secciones"] = nuevas
+    f.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+    flash("Cifrado guardado", "success")
+    return redirect(url_for("admin_editar", numero=numero) + "?tab=cifrado")
 
 
 @app.route("/admin/pistas/<int:numero>/borrar_tono/<n>", methods=["POST"])

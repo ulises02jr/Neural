@@ -55,6 +55,22 @@
   #midi-body td{padding:6px 6px;vertical-align:middle;}
   #midi-body input[type=text],#midi-body input[type=number]{background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;width:100%;}
   #midi-body input.mi-t{min-width:110px;}
+  /* Editor de cifrado */
+  .cif-sec{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;background:#151515;}
+  .cif-head{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
+  .cif-tipo{flex:1;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:14px;font-weight:600;}
+  .cif-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:680px){.cif-grid{grid-template-columns:1fr;}}
+  .cif-texto{width:100%;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px;font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.55;resize:vertical;}
+  .cif-texto:focus{border-color:var(--gold);outline:none;}
+  .cif-nota{width:100%;margin-top:8px;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px;}
+  .cif-prev{background:#0a0a0a;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;min-height:90px;}
+  .cif-prev .cline{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px;}
+  .cif-prev .ctok{display:inline-flex;flex-direction:column;}
+  .cif-prev .cchord{font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700;color:var(--gold);min-height:18px;white-space:pre;}
+  .cif-prev .clyr{font-size:14px;color:#fff;white-space:pre;}
+  .cif-prev .cprog{display:flex;flex-wrap:wrap;gap:8px;}
+  .cif-prev .cchip{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--gold);background:#2a2418;border:1px solid #3d3422;padding:5px 12px;border-radius:7px;font-size:13px;}
   .danger-box{background:#3a1414;border:1px solid #5a2a2a;border-radius:12px;padding:18px;}
   .danger-box h3{margin:0 0 8px;color:#e08f8f;font-size:16px;}
   .danger-box p{margin:0 0 14px;color:#e0b3b3;font-size:14px;line-height:1.55;}
@@ -122,7 +138,15 @@
   <div class="panel" id="p-cifrado">
     <div class="card">
       <h2>Cifrado</h2>
-      <div class="hint">Esta sección se configurará más adelante. Aquí vas a poder editar el cifrado (acordes y letra) de la canción.</div>
+      <div class="hint">Editá la canción sección por sección. Escribí los acordes entre corchetes dentro de la letra, ej: <b>¿Cómo [C]expresar[D] tu amor por [G]mí?</b>. La vista previa muestra los acordes sobre la letra. El tiempo de cada sección se pone en "Time de Secciones".</div>
+      <form method="POST" action="{{ url_for('admin_cifrado', numero=numero) }}" onsubmit="return serializarCifrado()" style="margin-top:14px">
+        <input type="hidden" name="cifrado_json" id="cifrado_json">
+        <div id="cifrado-body"></div>
+        <button type="button" class="mini" onclick="agregarSeccion()" style="margin-top:6px">＋ Agregar sección</button>
+        <div style="margin-top:18px">
+          <button type="submit" class="primary" style="margin:0">Guardar cifrado</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -286,6 +310,74 @@ function serializarMidi(){
   return true;
 }
 (function(){ if(MIDI && MIDI.length){ MIDI.forEach(filaMidi); } else { filaMidi({}); } })();
+
+const CIFRADO = {{ cifrado|tojson }};
+function escC(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s){ return escC(s).replace(/"/g,'&quot;'); }
+function parseBrackets(texto){
+  var lines=[];
+  (texto==null?'':String(texto)).split('\n').forEach(function(raw){
+    var toks=[]; var curChord=''; var curText=''; var k=0; var n=raw.length;
+    while(k<n){
+      if(raw.charAt(k)==='['){
+        var close=raw.indexOf(']',k);
+        if(close===-1){ curText+=raw.slice(k); k=n; break; }
+        toks.push([curChord,curText]);
+        curChord=raw.slice(k+1,close); curText=''; k=close+1;
+      } else { curText+=raw.charAt(k); k++; }
+    }
+    toks.push([curChord,curText]);
+    if(toks.length>1 && toks[0][0]==='' && toks[0][1]===''){ toks.shift(); }
+    lines.push(toks);
+  });
+  return lines;
+}
+function renderCifPrev(texto){
+  var lines=parseBrackets(texto);
+  var tieneLetra=lines.some(function(l){ return l.some(function(t){ return (t[1]||'').trim(); }); });
+  if(!tieneLetra){
+    var chords=[]; lines.forEach(function(l){ l.forEach(function(t){ if((t[0]||'').trim()) chords.push(t[0]); }); });
+    if(!chords.length) return '<span style="color:var(--muted);font-size:12px">Vista previa…</span>';
+    return '<div class="cprog">'+chords.map(function(c){ return '<span class="cchip">'+escC(c)+'</span>'; }).join('')+'</div>';
+  }
+  return lines.map(function(l){
+    return '<div class="cline">'+l.map(function(t){
+      return '<div class="ctok"><span class="cchord">'+escC(t[0]||'')+'</span><span class="clyr">'+escC(t[1]||'')+'</span></div>';
+    }).join('')+'</div>';
+  }).join('');
+}
+function previewCif(ta){
+  var prev=ta.closest('.cif-sec').querySelector('.cif-prev');
+  if(prev) prev.innerHTML=renderCifPrev(ta.value);
+}
+function seccionCif(sc){
+  sc=sc||{};
+  var div=document.createElement('div'); div.className='cif-sec';
+  div.innerHTML=
+    '<div class="cif-head"><input class="cif-tipo" type="text" placeholder="Tipo (Verso, Coro, Intro…)" value="'+escAttr(sc.tipo||'')+'"><button type="button" class="mini" onclick="quitarSeccion(this)">×</button></div>'+
+    '<div class="cif-grid">'+
+      '<div><textarea class="cif-texto" rows="5" oninput="previewCif(this)" placeholder="¿Cómo [C]expresar[D] tu amor por [G]mí?">'+escC(sc.texto||'')+'</textarea>'+
+      '<input class="cif-nota" type="text" placeholder="Notas del DM (Director Musical)" value="'+escAttr(sc.nota||'')+'"></div>'+
+      '<div class="cif-prev"></div>'+
+    '</div>';
+  document.getElementById('cifrado-body').appendChild(div);
+  previewCif(div.querySelector('.cif-texto'));
+}
+function agregarSeccion(){ seccionCif({tipo:'',nota:'',texto:''}); }
+function quitarSeccion(b){ var d=b.closest('.cif-sec'); if(d) d.remove(); }
+function serializarCifrado(){
+  var arr=[];
+  document.querySelectorAll('#cifrado-body .cif-sec').forEach(function(d){
+    arr.push({
+      tipo: d.querySelector('.cif-tipo').value.trim(),
+      nota: d.querySelector('.cif-nota').value.trim(),
+      texto: d.querySelector('.cif-texto').value
+    });
+  });
+  document.getElementById('cifrado_json').value=JSON.stringify(arr);
+  return true;
+}
+(function(){ if(CIFRADO && CIFRADO.length){ CIFRADO.forEach(seccionCif); } else { seccionCif({}); } })();
 </script>
 </body>
 </html>
