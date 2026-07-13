@@ -159,7 +159,12 @@
   .seg.colores{gap:9px}
   .seg.colores button{min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
   .seg.colores button.active{border-color:var(--txt)}
+  .seg.colores input[type=color]{width:34px;height:34px;border:2px solid var(--line);border-radius:50%;padding:0;background:none;cursor:pointer}
+  .seg.colores input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+  .seg.colores input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
+  .seg.colores input[type=color]::-moz-color-swatch{border:none;border-radius:50%}
 </style>
+<script>/*mw-acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');}}catch(e){}})();</script>
 </head>
 <body>
 <div class="wrap">
@@ -547,6 +552,11 @@
         <button type="button" data-val="#A371F7" onclick="setPref('acento','#A371F7')" title="Morado" style="background:#A371F7"></button>
         <button type="button" data-val="#E5534B" onclick="setPref('acento','#E5534B')" title="Rojo" style="background:#E5534B"></button>
         <button type="button" data-val="#2DB7A3" onclick="setPref('acento','#2DB7A3')" title="Turquesa" style="background:#2DB7A3"></button>
+        <button type="button" data-val="#9CA3AF" onclick="setPref('acento','#9CA3AF')" title="Gris claro" style="background:#9CA3AF"></button>
+        <button type="button" data-val="#6B7280" onclick="setPref('acento','#6B7280')" title="Gris" style="background:#6B7280"></button>
+        <button type="button" data-val="#4B5563" onclick="setPref('acento','#4B5563')" title="Gris oscuro" style="background:#4B5563"></button>
+        <button type="button" data-val="#FFFFFF" onclick="setPref('acento','#FFFFFF')" title="Blanco" style="background:#FFFFFF"></button>
+        <input type="color" id="acento-custom" title="Color personalizado" onchange="setPref('acento', this.value)">
       </div>
     </div>
 
@@ -642,7 +652,7 @@ function cargarPrefs(){
     PREFS.iconsize = localStorage.getItem('adm_iconsize') || 'md';
     PREFS.tema = localStorage.getItem('adm_tema') || 'oscuro';
     PREFS.nav = localStorage.getItem('adm_nav') || 'iconos';
-    PREFS.acento = localStorage.getItem('adm_acento') || '';
+    PREFS.acento = localStorage.getItem('mw_acento') || '';
   }catch(e){}
   aplicarPrefs();
 }
@@ -656,6 +666,7 @@ function aplicarPrefs(){
   marcarSeg('seg-tema', PREFS.tema);
   marcarSeg('seg-nav', PREFS.nav);
   marcarSeg('seg-acento', PREFS.acento);
+  var _ci=document.getElementById('acento-custom'); if(_ci){ _ci.value = (PREFS.acento && /^#[0-9a-fA-F]{6}$/.test(PREFS.acento)) ? PREFS.acento : '#C9A96E'; }
 }
 function marcarSeg(id, val){
   var seg = document.getElementById(id); if(!seg) return;
@@ -663,7 +674,7 @@ function marcarSeg(id, val){
 }
 function setPref(clave, val){
   PREFS[clave] = val;
-  try{ localStorage.setItem('adm_' + clave, val); }catch(e){}
+  try{ localStorage.setItem(clave==='acento' ? 'mw_acento' : 'adm_'+clave, val); }catch(e){}
   aplicarPrefs();
 }
 cargarPrefs();

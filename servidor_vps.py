@@ -1278,6 +1278,12 @@ def admin_secciones(numero):
         carpeta.mkdir(exist_ok=True)
         _archivo_secciones(numero).write_text(
             json.dumps(guardadas, ensure_ascii=False, indent=2), encoding="utf-8")
+        if request.form.get("accion") == "exportar_midi":
+            data = _construir_midi_secciones(numero)
+            nombre = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
+            tmp = Path("/tmp") / ("secciones_" + nombre + ".mid")
+            tmp.write_bytes(data)
+            return send_file(str(tmp), as_attachment=True, download_name="secciones_" + nombre + ".mid", mimetype="audio/midi")
         if request.form.get("wizard"):
             flash("Cancion lista: chart, pistas y tiempos cuadrados", "success")
             return redirect(url_for("admin"))
@@ -1350,6 +1356,142 @@ FAMILIAS = ["Voces", "Guitarras", "Teclados", "Cuerdas", "Metales", "Bajo",
             "Percusión", "Guía", "Música original", "Click", "Otros"]
 
 
+def _archivo_midi(numero):
+    return CARPETA_PISTAS / str(numero) / "midi.json"
+
+
+def _leer_midi(numero):
+    f = _archivo_midi(numero)
+    if f.is_file():
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except Exception:
+            return []
+    return []
+
+
+_NOTA_IDX = {"C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5,
+             "F#": 6, "Gb": 6, "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11}
+
+
+def _midi_varlen(n):
+    n = int(n)
+    if n < 0:
+        n = 0
+    buf = bytearray([n & 0x7F])
+    n >>= 7
+    while n:
+        buf.append((n & 0x7F) | 0x80)
+        n >>= 7
+    buf.reverse()
+    return bytes(buf)
+
+
+def _midi_note_num(nota, octava):
+    idx = _NOTA_IDX.get(str(nota), 0)
+    try:
+        oc = int(octava)
+    except Exception:
+        oc = 0
+    return max(0, min(127, (oc + 1) * 12 + idx))
+
+
+def _construir_midi(eventos):
+    TPB = 480
+    def s2t(seg):
+        return int(round(float(seg) * TPB * 2))  # 120 BPM
+    abs_ev = []
+    for e in eventos:
+        if e.get("desactivar"):
+            continue
+        seg = e.get("_seg")
+        if seg is None:
+            continue
+        note = _midi_note_num(e.get("nota", "C"), e.get("octava", 0))
+        try:
+            vel = int(e.get("velocidad", 100))
+        except Exception:
+            vel = 100
+        vel = max(1, min(127, vel))
+        on = s2t(seg)
+        abs_ev.append((on, 0x90, note, vel))
+        abs_ev.append((on + 96, 0x80, note, 0))
+    abs_ev.sort(key=lambda x: x[0])
+    track = bytearray()
+    prev = 0
+    for tick, status, note, vel in abs_ev:
+        track += _midi_varlen(tick - prev)
+        track += bytes([status, note, vel])
+        prev = tick
+    track += _midi_varlen(0) + bytes([0xFF, 0x2F, 0x00])
+    header = b"MThd" + (6).to_bytes(4, "big") + (0).to_bytes(2, "big") + (1).to_bytes(2, "big") + TPB.to_bytes(2, "big")
+    return header + b"MTrk" + len(track).to_bytes(4, "big") + bytes(track)
+
+
+def _construir_midi_secciones(numero):
+    """Genera la pista MIDI de secciones (idioma del puente / sistema local).
+    Canal 16, Program Change = numero-1, nota fantasma de precarga,
+    una nota por seccion en escalera desde C1 (36), nota de fin C0 (24)."""
+    cancion = cargar_biblioteca().get(numero, {})
+    try:
+        tempo_bpm = int(cancion.get("tempo") or 120)
+    except Exception:
+        tempo_bpm = 120
+    if tempo_bpm <= 0:
+        tempo_bpm = 120
+    try:
+        num_c, den_c = str(cancion.get("compas", "4/4")).split("/")
+        num_c = int(num_c); den_c = int(den_c)
+    except Exception:
+        num_c, den_c = 4, 4
+    TPB = 480
+    CANAL = 15          # canal 16 (0-15)
+    NOTA_BASE = 36      # C1 = seccion 1
+    NOTA_FIN = 24       # C0 = fin
+
+    def s2t(seg):
+        return int(round(float(seg) * TPB * tempo_bpm / 60.0))
+
+    secs = [x for x in _leer_secciones(numero) if "i" in x and "t" in x]
+    secs.sort(key=lambda x: x["t"])
+
+    eventos = []  # (tick_abs, bytes)
+    prog = max(0, min(127, int(numero) - 1))
+    eventos.append((0, bytes([0xC0 | CANAL, prog])))
+    tg = 2 * TPB  # beat 3 del compas 1 (precarga)
+    eventos.append((tg, bytes([0x90 | CANAL, NOTA_BASE, 80])))
+    eventos.append((tg + TPB // 4, bytes([0x80 | CANAL, NOTA_BASE, 0])))
+    ultimo = tg
+    for x in secs:
+        tick = s2t(x["t"])
+        nota = max(0, min(127, NOTA_BASE + int(x["i"])))
+        eventos.append((tick, bytes([0x90 | CANAL, nota, 100])))
+        eventos.append((tick + TPB // 4, bytes([0x80 | CANAL, nota, 0])))
+        if tick > ultimo:
+            ultimo = tick
+    if secs:
+        tick_fin = ultimo + 2 * num_c * TPB  # 2 compases despues de la ultima
+        eventos.append((tick_fin, bytes([0x90 | CANAL, NOTA_FIN, 100])))
+        eventos.append((tick_fin + TPB // 4, bytes([0x80 | CANAL, NOTA_FIN, 0])))
+    eventos.sort(key=lambda e: e[0])
+
+    track = bytearray()
+    nombre = ("Secciones - " + str(cancion.get("titulo", "")))[:120].encode("utf-8", "ignore")
+    track += _midi_varlen(0) + bytes([0xFF, 0x03]) + _midi_varlen(len(nombre)) + nombre
+    tempo_us = int(round(60000000.0 / tempo_bpm))
+    track += _midi_varlen(0) + bytes([0xFF, 0x51, 0x03]) + tempo_us.to_bytes(3, "big")
+    dd = max(0, den_c.bit_length() - 1)
+    track += _midi_varlen(0) + bytes([0xFF, 0x58, 0x04, num_c & 0xFF, dd & 0xFF, 24, 8])
+    prev = 0
+    for tick, data in eventos:
+        track += _midi_varlen(tick - prev) + data
+        prev = tick
+    track += _midi_varlen(TPB) + bytes([0xFF, 0x2F, 0x00])
+    header = b"MThd" + (6).to_bytes(4, "big") + (0).to_bytes(2, "big") + (1).to_bytes(2, "big") + TPB.to_bytes(2, "big")
+    return header + b"MTrk" + len(track).to_bytes(4, "big") + bytes(track)
+
+
 def _familia_auto(nombre):
     n = " " + re.sub(r"[_\-.]+", " ", nombre.lower()) + " "
     if re.search(r"click|metr", n):
@@ -1414,6 +1556,7 @@ def admin_editar(numero):
                       "t": _fmt_tiempo(guardadas_t[i]) if i in guardadas_t else ""})
     return render_template("admin_editar.html", numero=numero, titulo=cancion.get("titulo", ""),
                            stems=lista, familias=FAMILIAS, tonos=tonos, filas=filas,
+                           midi=_leer_midi(numero),
                            n_secciones=len(_leer_secciones(numero)))
 
 
@@ -1464,6 +1607,56 @@ def admin_pista_borrar_una(numero):
             except Exception:
                 flash("No se pudo eliminar", "error")
     return redirect(url_for("admin_editar", numero=numero))
+
+
+@app.route("/admin/pistas/<int:numero>/midi", methods=["POST"])
+@login_required("admin")
+def admin_midi(numero):
+    biblioteca = cargar_biblioteca()
+    cancion = biblioteca.get(numero)
+    if not cancion:
+        flash("Cancion no encontrada", "error")
+        return redirect(url_for("admin_pistas"))
+    try:
+        eventos = json.loads(request.form.get("midi_json", "[]"))
+        if not isinstance(eventos, list):
+            eventos = []
+    except Exception:
+        eventos = []
+    limpio = []
+    for e in eventos:
+        if not isinstance(e, dict):
+            continue
+        try:
+            oc = int(e.get("octava", 0))
+        except Exception:
+            oc = 0
+        try:
+            vel = int(e.get("velocidad", 100))
+        except Exception:
+            vel = 100
+        limpio.append({
+            "mensaje": "Nota",
+            "t": str(e.get("t", "")).strip(),
+            "nota": str(e.get("nota", "C")),
+            "octava": oc,
+            "velocidad": max(0, min(127, vel)),
+            "desactivar": bool(e.get("desactivar")),
+            "descripcion": str(e.get("descripcion", "")).strip()[:80],
+        })
+    carpeta = CARPETA_PISTAS / str(numero)
+    carpeta.mkdir(exist_ok=True)
+    _archivo_midi(numero).write_text(json.dumps(limpio, ensure_ascii=False, indent=2), encoding="utf-8")
+    if request.form.get("accion") == "exportar":
+        for e in limpio:
+            e["_seg"] = _parse_tiempo(e["t"]) if e["t"] else None
+        data = _construir_midi(limpio)
+        nombre = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
+        tmp = Path("/tmp") / (nombre + ".mid")
+        tmp.write_bytes(data)
+        return send_file(str(tmp), as_attachment=True, download_name=nombre + ".mid", mimetype="audio/midi")
+    flash("MIDI guardado", "success")
+    return redirect(url_for("admin_editar", numero=numero) + "?tab=midi")
 
 
 @app.route("/admin/pistas/<int:numero>/borrar_tono/<n>", methods=["POST"])
