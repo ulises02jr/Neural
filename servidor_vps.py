@@ -1282,6 +1282,8 @@ def admin_secciones(numero):
             flash("Cancion lista: chart, pistas y tiempos cuadrados", "success")
             return redirect(url_for("admin"))
         flash("OK: " + str(len(guardadas)) + " seccion(es) con tiempo guardada(s)", "success")
+        if request.form.get("volver") == "editar":
+            return redirect(url_for("admin_editar", numero=numero) + "?tab=tiempos")
         return redirect(url_for("admin_secciones", numero=numero))
     guardadas = {sec["i"]: sec["t"] for sec in _leer_secciones(numero) if "i" in sec}
     filas = []
@@ -1396,9 +1398,22 @@ def admin_editar(numero):
     for f in _stems_originales(numero):
         base = f.rsplit(".", 1)[0]
         lista.append({"file": f, "name": base, "familia": fam_guardadas.get(f) or _familia_auto(base)})
-    tonos = [{"n": n, "listo": _tono_listo(numero, n)} for n in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]]
+    from transposicion import transponer_acorde, usar_sostenidos
+    tono_base = cancion.get("tono", "")
+    def _nombre_tono(n):
+        if not tono_base:
+            return ("+" if n > 0 else "") + str(n)
+        tsost = transponer_acorde(tono_base, n, usar_sost=True)
+        return transponer_acorde(tono_base, n, usar_sost=usar_sostenidos(tsost))
+    tonos = [{"n": n, "listo": _tono_listo(numero, n), "nombre": _nombre_tono(n)}
+             for n in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]]
+    guardadas_t = {sec["i"]: sec["t"] for sec in _leer_secciones(numero) if "i" in sec}
+    filas = []
+    for i, sec in enumerate(cancion.get("secciones", [])):
+        filas.append({"i": i, "tipo": sec.get("tipo", "Seccion"), "nota": sec.get("nota", ""),
+                      "t": _fmt_tiempo(guardadas_t[i]) if i in guardadas_t else ""})
     return render_template("admin_editar.html", numero=numero, titulo=cancion.get("titulo", ""),
-                           stems=lista, familias=FAMILIAS, tonos=tonos,
+                           stems=lista, familias=FAMILIAS, tonos=tonos, filas=filas,
                            n_secciones=len(_leer_secciones(numero)))
 
 
@@ -1449,6 +1464,24 @@ def admin_pista_borrar_una(numero):
             except Exception:
                 flash("No se pudo eliminar", "error")
     return redirect(url_for("admin_editar", numero=numero))
+
+
+@app.route("/admin/pistas/<int:numero>/borrar_tono/<n>", methods=["POST"])
+@login_required("admin")
+def admin_borrar_tono(numero, n):
+    try:
+        n = int(n)
+    except ValueError:
+        return redirect(url_for("admin_editar", numero=numero) + "?tab=transposicion")
+    if n != 0:
+        d = _carpeta_tono(numero, n)
+        if d.is_dir():
+            try:
+                shutil.rmtree(str(d))
+                flash("Transposición eliminada", "success")
+            except Exception as e:
+                flash("No se pudo eliminar: %s" % e, "error")
+    return redirect(url_for("admin_editar", numero=numero) + "?tab=transposicion")
 
 
 @app.route("/admin/pistas/<int:numero>/pregenerar", methods=["POST"])
