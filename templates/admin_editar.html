@@ -30,7 +30,7 @@
   .hint b{color:var(--gold);}
   .sep{border:none;border-top:1px solid var(--line);margin:20px 0;}
   /* Pestañas simétricas */
-  .tabs{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:0 0 18px;}
+  .tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin:0 0 18px;}
   .tab{display:flex;align-items:center;justify-content:center;text-align:center;min-height:54px;
     padding:8px 6px;border-radius:12px;background:var(--raised);border:1px solid var(--line);
     color:var(--muted);cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;line-height:1.25;}
@@ -71,6 +71,11 @@
   .cif-prev .clyr{font-size:14px;color:#fff;white-space:pre;}
   .cif-prev .cprog{display:flex;flex-wrap:wrap;gap:8px;}
   .cif-prev .cchip{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--gold);background:#2a2418;border:1px solid #3d3422;padding:5px 12px;border-radius:7px;font-size:13px;}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;}
+  @media(max-width:560px){.info-grid{grid-template-columns:1fr;}}
+  .fld label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600;}
+  .fld input,.fld select{width:100%;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:14px;}
+  .fld input:focus,.fld select:focus{border-color:var(--gold);outline:none;}
   .danger-box{background:#3a1414;border:1px solid #5a2a2a;border-radius:12px;padding:18px;}
   .danger-box h3{margin:0 0 8px;color:#e08f8f;font-size:16px;}
   .danger-box p{margin:0 0 14px;color:#e0b3b3;font-size:14px;line-height:1.55;}
@@ -88,6 +93,7 @@
   {% endwith %}
 
   <div class="tabs">
+    <button class="tab" data-tab="info" onclick="tab('info')">Información de Canción</button>
     <button class="tab" data-tab="multitracks" onclick="tab('multitracks')">Tracks</button>
     <button class="tab" data-tab="cifrado" onclick="tab('cifrado')">Cifrado</button>
     <button class="tab" data-tab="tiempos" onclick="tab('tiempos')">Time de Secciones</button>
@@ -97,6 +103,41 @@
   </div>
 
   <!-- Stems -->
+  <!-- Información de Canción -->
+  <div class="panel" id="p-info">
+    <div class="card">
+      <h2>Información de Canción</h2>
+      <form method="POST" action="{{ url_for('admin_info', numero=numero) }}" enctype="multipart/form-data" style="margin-top:6px">
+        <div class="info-grid">
+          <div class="fld" style="grid-column:1/-1"><label>Nombre de canción *</label><input type="text" name="titulo" value="{{ info.titulo }}" required maxlength="120"></div>
+          <div class="fld"><label>Artista</label><input type="text" name="artista" value="{{ info.artista }}" maxlength="80"></div>
+          <div class="fld"><label>Álbum</label><input type="text" name="album" value="{{ info.album }}" maxlength="80"></div>
+          <div class="fld"><label>Género</label><input type="text" name="genero" value="{{ info.genero }}" maxlength="40"></div>
+          <div class="fld"><label>Tema</label><input type="text" name="tema" value="{{ info.tema }}" maxlength="40"></div>
+          <div class="fld"><label>Tono</label>
+            {% set _tonos = ['C','C#','Db','D','D#','Eb','E','F','F#','Gb','G','G#','Ab','A','A#','Bb','B','Cm','C#m','Dm','D#m','Ebm','Em','Fm','F#m','Gm','G#m','Am','A#m','Bbm','Bm'] %}
+            <select name="tono">
+              <option value="">—</option>
+              {% if info.tono and info.tono not in _tonos %}<option value="{{ info.tono }}" selected>{{ info.tono }}</option>{% endif %}
+              {% for tn in _tonos %}<option value="{{ tn }}" {% if info.tono==tn %}selected{% endif %}>{{ tn }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="fld"><label>Tempo (BPM)</label><input type="number" name="tempo" value="{{ info.tempo }}" min="0" max="400"></div>
+          <div class="fld"><label>Compás</label><input type="text" name="compas" value="{{ info.compas }}" maxlength="8" placeholder="4/4"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:16px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);flex-wrap:wrap">
+          <img src="{% if info.portada %}{{ url_for('static', filename=info.portada) }}?v={{ info.portada_ts }}{% else %}{{ url_for('static', filename='logo.png') }}{% endif %}" alt="" style="width:88px;height:88px;border-radius:12px;object-fit:cover;background:#0a0a0a;border:1px solid var(--line);flex-shrink:0">
+          <div style="flex:1;min-width:200px">
+            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600">Portada</label>
+            <input type="file" name="portada" accept="image/png,image/jpeg,image/webp">
+            <div class="hint" style="margin-top:6px">PNG, JPG o WEBP. Cuadrada se ve mejor. Aparecerá como miniatura en todas las listas.</div>
+          </div>
+        </div>
+        <div style="margin-top:18px"><button type="submit" class="primary" style="margin:0">Guardar información</button></div>
+      </form>
+    </div>
+  </div>
+
   <div class="panel" id="p-multitracks">
     <div class="card">
       {% if stems %}
@@ -141,8 +182,17 @@
       <div class="hint">Editá la canción sección por sección. Escribí los acordes entre corchetes dentro de la letra, ej: <b>¿Cómo [C]expresar[D] tu amor por [G]mí?</b>. La vista previa muestra los acordes sobre la letra. El tiempo de cada sección se pone en "Time de Secciones".</div>
       <form method="POST" action="{{ url_for('admin_cifrado', numero=numero) }}" onsubmit="return serializarCifrado()" style="margin-top:14px">
         <input type="hidden" name="cifrado_json" id="cifrado_json">
+        <datalist id="tipos-sec">
+          <option value="Intro"></option><option value="Verso"></option><option value="Verso 1"></option><option value="Verso 2"></option><option value="Verso 3"></option><option value="Verso 4"></option>
+          <option value="Pre-coro"></option><option value="Coro"></option><option value="Post-coro"></option><option value="Puente"></option><option value="Puente 1"></option><option value="Puente 2"></option>
+          <option value="Instrumental"></option><option value="Interludio"></option><option value="Vamp"></option><option value="Solo"></option><option value="Refrain"></option><option value="Repetir"></option>
+          <option value="Tag"></option><option value="Tag 1"></option><option value="Tag 2"></option><option value="Outro"></option><option value="Final"></option><option value="Baja Intensidad"></option>
+          <option value="Canales"></option><option value="Exhortación"></option><option value="Rap"></option><option value="Acapela"></option><option value="Pad"></option><option value="Clic"></option>
+        </datalist>
         <div id="cifrado-body"></div>
         <button type="button" class="mini" onclick="agregarSeccion()" style="margin-top:6px">＋ Agregar sección</button>
+        <input type="file" id="cif-json-file" accept=".json,application/json" style="display:none" onchange="cargarJsonCifrado(this)">
+        <button type="button" class="mini" onclick="document.getElementById('cif-json-file').click()" style="margin-top:6px;margin-left:6px">⤓ Cargar JSON (acordes y letras)</button>
         <div style="margin-top:18px">
           <button type="submit" class="primary" style="margin:0">Guardar cifrado</button>
         </div>
@@ -246,7 +296,7 @@
 </div>
 
 <script>
-const TABS = ['multitracks','cifrado','tiempos','transposicion','midi','eliminar'];
+const TABS = ['info','multitracks','cifrado','tiempos','transposicion','midi','eliminar'];
 let tabActual = 'multitracks';
 function tab(id){
   tabActual = id;
@@ -268,7 +318,7 @@ function tabNext(){ var i=TABS.indexOf(tabActual); if(i<TABS.length-1) tab(TABS[
   if(TABS.indexOf(q)>=0){ tab(q); return; }
   var hayFlash=document.querySelector('.flash')!==null;
   var saved=null; try{ saved=sessionStorage.getItem('editar_tab'); }catch(e){}
-  tab(hayFlash && TABS.indexOf(saved)>=0 ? saved : 'multitracks');
+  tab(hayFlash && TABS.indexOf(saved)>=0 ? saved : 'info');
 })();
 
 const NOTAS_MIDI = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -354,7 +404,7 @@ function seccionCif(sc){
   sc=sc||{};
   var div=document.createElement('div'); div.className='cif-sec';
   div.innerHTML=
-    '<div class="cif-head"><input class="cif-tipo" type="text" placeholder="Tipo (Verso, Coro, Intro…)" value="'+escAttr(sc.tipo||'')+'"><button type="button" class="mini" onclick="quitarSeccion(this)">×</button></div>'+
+    '<div class="cif-head"><input class="cif-tipo" list="tipos-sec" type="text" placeholder="Tipo (Verso, Coro, Intro…)" value="'+escAttr(sc.tipo||'')+'"><button type="button" class="mini" onclick="quitarSeccion(this)">×</button></div>'+
     '<div class="cif-grid">'+
       '<div><textarea class="cif-texto" rows="5" oninput="previewCif(this)" placeholder="¿Cómo [C]expresar[D] tu amor por [G]mí?">'+escC(sc.texto||'')+'</textarea>'+
       '<input class="cif-nota" type="text" placeholder="Notas del DM (Director Musical)" value="'+escAttr(sc.nota||'')+'"></div>'+
@@ -376,6 +426,35 @@ function serializarCifrado(){
   });
   document.getElementById('cifrado_json').value=JSON.stringify(arr);
   return true;
+}
+function linesToTextoCif(lines){
+  return (lines||[]).map(function(line){
+    return (line||[]).map(function(t){ var ch=(t&&t[0])||''; var ly=(t&&t[1])||''; return (ch?('['+ch+']'):'')+ly; }).join('');
+  }).join('\n');
+}
+function seccionATexto(sec){
+  if(sec && sec.inst && sec.prog){ return (sec.prog||[]).map(function(c){ return '['+c+']'; }).join(' '); }
+  return linesToTextoCif(sec && sec.lines);
+}
+function setCampoInfo(name,val){ var el=document.querySelector('#p-info [name="'+name+'"]'); if(el && val!==null && val!==undefined) el.value=val; }
+function cargarJsonCifrado(input){
+  var file=input.files && input.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(){
+    try{
+      var d=JSON.parse(reader.result);
+      setCampoInfo('titulo', d.titulo); setCampoInfo('artista', d.artista);
+      setCampoInfo('album', d.album); setCampoInfo('genero', d.genero); setCampoInfo('tema', d.tema);
+      setCampoInfo('tono', d.tono); setCampoInfo('tempo', d.tempo); setCampoInfo('compas', d.compas);
+      var secs=d.secciones||[];
+      var body=document.getElementById('cifrado-body'); body.innerHTML='';
+      if(secs.length){ secs.forEach(function(sx){ seccionCif({tipo:sx.tipo||'', nota:sx.nota||'', texto:seccionATexto(sx)}); }); }
+      else { seccionCif({}); }
+      alert('JSON cargado. Revisá y tocá "Guardar cifrado" (y "Guardar información" en la pestaña Información).');
+    }catch(e){ alert('No se pudo leer el JSON: '+e.message); }
+    input.value='';
+  };
+  reader.readAsText(file);
 }
 (function(){ if(CIFRADO && CIFRADO.length){ CIFRADO.forEach(seccionCif); } else { seccionCif({}); } })();
 </script>

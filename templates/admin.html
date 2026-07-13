@@ -52,6 +52,7 @@
   .item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--raised);
     border:1px solid var(--line);border-radius:8px;transition:all 0.15s}
   .item:hover{border-color:var(--txt3)}
+  .item .thumb{width:34px;height:34px;border-radius:7px;object-fit:cover;flex-shrink:0;background:var(--raised);border:1px solid var(--line)}
   .item .num{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--txt3);min-width:30px;font-weight:500}
   .item .info{flex:1;min-width:0}
   .item .nm{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -192,7 +193,6 @@
   <div id="launcher" class="launcher">
   <nav class="iconnav">
     <a class="navicon" href="javascript:void(0)" onclick="showSection('live')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg></span><span class="ni-lbl">Software Live</span></a>
-    <a class="navicon" href="javascript:void(0)" onclick="showSection('canciones')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span><span class="ni-lbl">Importar canciones</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('usuarios')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="ni-lbl">Usuarios</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('repertorios')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span class="ni-lbl">Repertorios</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('biblioteca')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span class="ni-lbl">Biblioteca</span></a>
@@ -240,12 +240,6 @@
       <code style="display:block;background:#1f1f1f;padding:10px;border-radius:6px;margin-top:8px;word-break:break-all;color:var(--gold)">{{ live_token }}</code>
     </details>
     {% endif %}
-  </div>
-
-  <div class="card sec-card" id="canciones">
-    <h2>Importar canciones</h2>
-    <p style="margin:2px 0 14px;color:#8a8a8a;font-size:13px">Agregá una canción nueva (chart + pistas + tiempos). Para editar una existente, entrá a Biblioteca.</p>
-    <a href="{{ url_for('admin_nueva') }}" style="display:inline-block;background:var(--gold,#C9A96E);color:#0a0a0a;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:700;font-size:15px;margin:0 8px 8px 0">➕ Cargar nueva canción</a>
   </div>
 
   <!-- Gestión de usuarios -->
@@ -590,10 +584,14 @@
   <div class="card sec-card" id="biblioteca">
     <h2>Biblioteca</h2>
     <p class="help" style="margin:-4px 0 10px">{{ biblioteca|length }} canción(es) disponibles.</p>
+    <form method="POST" action="{{ url_for('admin_nueva_blanca') }}" style="margin-bottom:12px">
+      <button type="submit" class="primary" style="margin:0">＋ Nueva canción</button>
+    </form>
     <div class="lista">
       {% if biblioteca %}
         {% for c in biblioteca %}
         <div class="item">
+          <img class="thumb" src="{% if c.portada %}{{ url_for('static', filename=c.portada) }}?v={{ c.portada_ts or 0 }}{% else %}{{ url_for('static', filename='logo.png') }}{% endif %}" alt="">
           <span class="num">#{{ c.numero }}</span>
           <div class="info">
             <div class="nm">{{ c.titulo }}{% if c.tono %} <span class="tono-tag">{{ c.tono }}</span>{% endif %}</div>

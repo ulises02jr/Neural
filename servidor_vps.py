@@ -1301,6 +1301,19 @@ def admin_secciones(numero):
                            wizard=bool(request.args.get("wizard")))
 
 
+@app.route("/admin/nueva_blanca", methods=["POST"])
+@login_required("admin")
+def admin_nueva_blanca():
+    bib = cargar_biblioteca()
+    nuevo = (max(bib.keys()) + 1) if bib else 1
+    datos = {"numero": nuevo, "titulo": "Nueva cancion", "artista": "",
+             "tono": "", "tempo": 120, "compas": "4/4", "secciones": []}
+    destino = CARPETA_CANCIONES / ("cancion_%03d_nueva.json" % nuevo)
+    destino.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+    flash("Cancion nueva creada. Completa su informacion.", "success")
+    return redirect(url_for("admin_editar", numero=nuevo) + "?tab=info")
+
+
 @app.route("/admin/nueva", methods=["GET", "POST"])
 @login_required("admin")
 def admin_nueva():
@@ -1615,6 +1628,11 @@ def admin_editar(numero):
                            stems=lista, familias=FAMILIAS, tonos=tonos, filas=filas,
                            midi=_leer_midi(numero),
                            cifrado=_cifrado_para_editor(cancion),
+                           info={"titulo": cancion.get("titulo", ""), "artista": cancion.get("artista", ""),
+                                 "album": cancion.get("album", ""), "genero": cancion.get("genero", ""),
+                                 "tema": cancion.get("tema", ""), "tono": cancion.get("tono", ""),
+                                 "tempo": cancion.get("tempo", ""), "compas": cancion.get("compas", ""),
+                                 "portada": cancion.get("portada", ""), "portada_ts": cancion.get("portada_ts", "")},
                            n_secciones=len(_leer_secciones(numero)))
 
 
@@ -1715,6 +1733,63 @@ def admin_midi(numero):
         return send_file(str(tmp), as_attachment=True, download_name=nombre + ".mid", mimetype="audio/midi")
     flash("MIDI guardado", "success")
     return redirect(url_for("admin_editar", numero=numero) + "?tab=midi")
+
+
+@app.route("/admin/pistas/<int:numero>/info", methods=["POST"])
+@login_required("admin")
+def admin_info(numero):
+    f = _archivo_cancion(numero)
+    if not f:
+        flash("Cancion no encontrada", "error")
+        return redirect(url_for("admin_pistas"))
+    try:
+        datos = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        flash("No se pudo leer la cancion", "error")
+        return redirect(url_for("admin_editar", numero=numero) + "?tab=info")
+    titulo = request.form.get("titulo", "").strip()
+    if titulo:
+        datos["titulo"] = titulo[:120]
+    datos["artista"] = request.form.get("artista", "").strip()[:80]
+    datos["album"] = request.form.get("album", "").strip()[:80]
+    datos["genero"] = request.form.get("genero", "").strip()[:40]
+    datos["tema"] = request.form.get("tema", "").strip()[:40]
+    tono = request.form.get("tono", "").strip()
+    if tono:
+        datos["tono"] = tono[:8]
+    tempo = request.form.get("tempo", "").strip()
+    if tempo:
+        try:
+            datos["tempo"] = int(tempo)
+        except Exception:
+            pass
+    compas = request.form.get("compas", "").strip()
+    if compas:
+        datos["compas"] = compas[:8]
+    pf = request.files.get("portada")
+    if pf and pf.filename:
+        ext = pf.filename.rsplit(".", 1)[-1].lower() if "." in pf.filename else ""
+        if ext in ("png", "jpg", "jpeg", "webp"):
+            carpeta = BASE_DIR / "static" / "portadas"
+            carpeta.mkdir(parents=True, exist_ok=True)
+            for viejo in carpeta.glob(str(numero) + ".*"):
+                try:
+                    viejo.unlink()
+                except Exception:
+                    pass
+            destino = carpeta / (str(numero) + "." + ext)
+            try:
+                pf.save(str(destino))
+                datos["portada"] = "portadas/" + str(numero) + "." + ext
+                import time as _t
+                datos["portada_ts"] = int(_t.time())
+            except Exception as e:
+                flash("No se pudo guardar la portada: %s" % e, "error")
+        else:
+            flash("Formato de portada no valido (PNG, JPG o WEBP)", "error")
+    f.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+    flash("Informacion guardada", "success")
+    return redirect(url_for("admin_editar", numero=numero) + "?tab=info")
 
 
 @app.route("/admin/pistas/<int:numero>/cifrado", methods=["POST"])
