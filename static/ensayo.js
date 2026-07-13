@@ -87,6 +87,7 @@
 
     status('Descargando pistas…');
     ctx = new (window.AudioContext || window.webkitAudioContext)(isMobile ? { sampleRate: 22050 } : {});
+    try { if (navigator.audioSession) { navigator.audioSession.type = 'playback'; } } catch(e) {}
     let descargados = [];
     try {
       descargados = await Promise.all(data.stems.map(async st => {
