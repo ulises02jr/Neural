@@ -36,6 +36,13 @@
     padding:8px 6px;border-radius:12px;background:var(--raised);border:1px solid var(--line);
     color:var(--muted);cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;line-height:1.25;}
   .tab.active{background:var(--gold);color:#0a0a0a;border-color:var(--gold);}
+  .mtabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;}
+  .mtab{padding:7px 12px;border-radius:9px;background:var(--strip);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;}
+  .mtab.active{background:var(--gold);color:#0a0a0a;border-color:var(--gold);}
+  .mtab .cnt{opacity:.7;font-size:11px;margin-left:5px;}
+  .mlane{display:none;}
+  .mlane.active{display:block;}
+  .mcanal{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
   .panel{display:none;}
   .panel.active{display:block;}
   .navbtns{display:flex;justify-content:space-between;gap:10px;margin-top:18px;}
@@ -258,22 +265,18 @@
   <div class="panel" id="p-midi">
     <div class="card">
       <h2>MIDI</h2>
-      <div class="hint">Creá notas MIDI para disparar cosas (playlist, video, luces…) en la canción. Cada nota lleva su tiempo, valor, octava, velocidad y descripción.</div>
+      <div class="hint">Varias cajas independientes de notas MIDI (como en Secuencias: Lyrics, Luces, Patches, Guitar, Aux). Cada caja tiene su propio <b>canal</b> y se exporta a su propio archivo <b>.mid</b>.</div>
       <form method="POST" action="{{ url_for('admin_midi', numero=numero) }}" onsubmit="return serializarMidi()" style="margin-top:14px">
         <input type="hidden" name="midi_json" id="midi_json">
         <input type="hidden" name="accion" id="midi_accion" value="guardar">
-        <div style="overflow-x:auto">
-          <table>
-            <thead><tr>
-              <th>Mensaje</th><th>Nota En</th><th>Valor</th><th>Octava</th><th>Velocidad</th><th>Desactivar</th><th>Descripción</th><th></th>
-            </tr></thead>
-            <tbody id="midi-body"></tbody>
-          </table>
-        </div>
-        <button type="button" class="mini" onclick="agregarNota()" style="margin-top:12px">＋ Agregar nota</button>
-        <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
-          <button type="submit" class="primary" style="margin:0" onclick="document.getElementById('midi_accion').value='guardar'">Guardar</button>
-          <button type="submit" class="primary" style="margin:0;background:transparent;color:var(--gold);border:1px solid var(--gold)" onclick="document.getElementById('midi_accion').value='exportar'">Exportar archivo .mid</button>
+        <input type="hidden" name="caja" id="midi_caja" value="lyrics">
+
+        <div class="mtabs" id="mtabs"></div>
+        <div id="mlanes"></div>
+
+        <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;align-items:center">
+          <button type="submit" class="primary" style="margin:0" onclick="document.getElementById('midi_accion').value='guardar'">Guardar todo</button>
+          <span class="hint" style="margin:0">La exportación es por caja (botón dentro de cada una).</span>
         </div>
       </form>
     </div>
@@ -325,10 +328,18 @@ function tabNext(){ var i=TABS.indexOf(tabActual); if(i<TABS.length-1) tab(TABS[
 
 const NOTAS_MIDI = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const OCTAVAS_MIDI = [-1,0,1,2,3,4,5,6,7,8];
+const CAJAS_DEF = [
+  {id:'lyrics',nombre:'Lyrics'},{id:'lights1',nombre:'Lights 1'},{id:'lights2',nombre:'Lights 2'},
+  {id:'patches1',nombre:'Patches 1'},{id:'patches2',nombre:'Patches 2'},{id:'guitar',nombre:'Guitar'},
+  {id:'aux1',nombre:'Aux 1'},{id:'aux2',nombre:'Aux 2'}
+];
+const CANAL_DEF = {lyrics:16,lights1:1,lights2:2,patches1:3,patches2:4,guitar:5,aux1:6,aux2:7};
 const MIDI = {{ midi|tojson }};
 function escA(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function opcsMidi(arr, sel){ return arr.map(function(v){ return '<option value="'+v+'"'+(String(v)===String(sel)?' selected':'')+'>'+v+'</option>'; }).join(''); }
-function filaMidi(e){
+function opcsCanal(sel){ var o=''; for(var i=1;i<=16;i++){ o+='<option value="'+i+'"'+(i==sel?' selected':'')+'>Canal '+i+'</option>'; } return o; }
+function laneDiv(id){ return document.querySelector('#mlanes .mlane[data-caja="'+id+'"]'); }
+function filaMidi(tb, e){
   e = e || {};
   var tr = document.createElement('tr');
   tr.className = 'midi-row';
@@ -341,27 +352,73 @@ function filaMidi(e){
     '<td style="text-align:center"><input class="mi-off" type="checkbox"'+(e.desactivar?' checked':'')+'></td>'+
     '<td><input class="mi-desc" type="text" value="'+escA(e.descripcion)+'" placeholder="Descripción"></td>'+
     '<td><button type="button" class="mini" onclick="quitarMidi(this)">×</button></td>';
-  document.getElementById('midi-body').appendChild(tr);
+  tb.appendChild(tr);
 }
 function quitarMidi(b){ var tr=b.closest('tr'); if(tr) tr.remove(); }
-function agregarNota(){ filaMidi({}); }
-function serializarMidi(){
-  var arr=[];
-  document.querySelectorAll('#midi-body .midi-row').forEach(function(tr){
-    arr.push({
-      mensaje:'Nota',
-      t: tr.querySelector('.mi-t').value.trim(),
-      nota: tr.querySelector('.mi-nota').value,
-      octava: parseInt(tr.querySelector('.mi-oct').value,10),
-      velocidad: parseInt(tr.querySelector('.mi-vel').value,10)||0,
-      desactivar: tr.querySelector('.mi-off').checked,
-      descripcion: tr.querySelector('.mi-desc').value.trim()
-    });
+function agregarNota(id){ filaMidi(laneDiv(id).querySelector('.mbody'), {}); }
+function mtab(id){
+  document.querySelectorAll('#mtabs .mtab').forEach(function(b){ b.classList.toggle('active', b.dataset.caja===id); });
+  document.querySelectorAll('#mlanes .mlane').forEach(function(d){ d.classList.toggle('active', d.dataset.caja===id); });
+  document.getElementById('midi_caja').value = id;
+}
+function initMidi(){
+  var tabs=document.getElementById('mtabs'), lanes=document.getElementById('mlanes');
+  if(!tabs||!lanes) return;
+  var cajas=(MIDI&&MIDI.cajas)?MIDI.cajas:{};
+  CAJAS_DEF.forEach(function(c,i){
+    var data=cajas[c.id]||{};
+    var canal=data.canal||CANAL_DEF[c.id]||1;
+    var notas=(data.notas&&data.notas.length)?data.notas:[];
+    var b=document.createElement('button');
+    b.type='button'; b.className='mtab'+(i===0?' active':''); b.dataset.caja=c.id;
+    b.innerHTML=escA(c.nombre)+(notas.length?'<span class="cnt">'+notas.length+'</span>':'');
+    b.onclick=function(){ mtab(c.id); };
+    tabs.appendChild(b);
+    var div=document.createElement('div');
+    div.className='mlane'+(i===0?' active':''); div.dataset.caja=c.id;
+    div.innerHTML=
+      '<div class="mcanal"><label style="font-size:12px;color:var(--muted)">Canal MIDI de "'+escA(c.nombre)+'"</label>'+
+        '<select class="mi-canal" style="width:auto">'+opcsCanal(canal)+'</select>'+
+        '<button type="button" class="primary" style="margin:0;background:transparent;color:var(--gold);border:1px solid var(--gold);padding:8px 16px" onclick="exportarCaja(\''+c.id+'\')">Exportar '+escA(c.nombre)+' .mid</button>'+
+      '</div>'+
+      '<div style="overflow-x:auto"><table><thead><tr>'+
+        '<th>Mensaje</th><th>Nota En</th><th>Valor</th><th>Octava</th><th>Velocidad</th><th>Desactivar</th><th>Descripción</th><th></th>'+
+      '</tr></thead><tbody class="mbody"></tbody></table></div>'+
+      '<button type="button" class="mini" onclick="agregarNota(\''+c.id+'\')" style="margin-top:12px">＋ Agregar nota</button>';
+    lanes.appendChild(div);
+    var tb=div.querySelector('.mbody');
+    (notas.length?notas:[{}]).forEach(function(e){ filaMidi(tb, e); });
   });
-  document.getElementById('midi_json').value = JSON.stringify(arr);
+}
+function serializarMidi(){
+  var out={version:2, cajas:{}};
+  CAJAS_DEF.forEach(function(c){
+    var div=laneDiv(c.id); if(!div) return;
+    var canal=parseInt(div.querySelector('.mi-canal').value,10)||1;
+    var notas=[];
+    div.querySelectorAll('.mbody .midi-row').forEach(function(tr){
+      notas.push({
+        mensaje:'Nota',
+        t: tr.querySelector('.mi-t').value.trim(),
+        nota: tr.querySelector('.mi-nota').value,
+        octava: parseInt(tr.querySelector('.mi-oct').value,10),
+        velocidad: parseInt(tr.querySelector('.mi-vel').value,10)||0,
+        desactivar: tr.querySelector('.mi-off').checked,
+        descripcion: tr.querySelector('.mi-desc').value.trim()
+      });
+    });
+    out.cajas[c.id]={canal:canal, notas:notas};
+  });
+  document.getElementById('midi_json').value = JSON.stringify(out);
   return true;
 }
-(function(){ if(MIDI && MIDI.length){ MIDI.forEach(filaMidi); } else { filaMidi({}); } })();
+function exportarCaja(id){
+  document.getElementById('midi_accion').value='exportar';
+  document.getElementById('midi_caja').value=id;
+  serializarMidi();
+  document.querySelector('#p-midi form').submit();
+}
+initMidi();
 
 const CIFRADO = {{ cifrado|tojson }};
 function escC(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

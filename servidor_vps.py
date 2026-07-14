@@ -1427,15 +1427,37 @@ def _archivo_midi(numero):
     return CARPETA_PISTAS / str(numero) / "midi.json"
 
 
+MIDI_CAJAS = [
+    ("lyrics", "Lyrics", 16), ("lights1", "Lights 1", 1), ("lights2", "Lights 2", 2),
+    ("patches1", "Patches 1", 3), ("patches2", "Patches 2", 4), ("guitar", "Guitar", 5),
+    ("aux1", "Aux 1", 6), ("aux2", "Aux 2", 7),
+]
+
+def _midi_default():
+    return {"version": 2, "cajas": {cid: {"canal": ch, "notas": []} for cid, nom, ch in MIDI_CAJAS}}
+
 def _leer_midi(numero):
     f = _archivo_midi(numero)
+    data = None
     if f.is_file():
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
         except Exception:
-            return []
-    return []
+            data = None
+    base = _midi_default()
+    if isinstance(data, list):                       # formato viejo (una sola lista) -> Lyrics
+        base["cajas"]["lyrics"]["notas"] = data
+    elif isinstance(data, dict) and isinstance(data.get("cajas"), dict):
+        for cid, nom, ch in MIDI_CAJAS:
+            c = data["cajas"].get(cid)
+            if isinstance(c, dict):
+                try:
+                    base["cajas"][cid]["canal"] = max(1, min(16, int(c.get("canal", ch))))
+                except Exception:
+                    pass
+                if isinstance(c.get("notas"), list):
+                    base["cajas"][cid]["notas"] = c["notas"]
+    return base
 
 
 _NOTA_IDX = {"C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5,
@@ -1464,7 +1486,7 @@ def _midi_note_num(nota, octava):
     return max(0, min(127, (oc + 1) * 12 + idx))
 
 
-def _construir_midi(eventos):
+def _construir_midi(eventos, canal=1):
     TPB = 480
     def s2t(seg):
         return int(round(float(seg) * TPB * 2))  # 120 BPM
@@ -1482,8 +1504,9 @@ def _construir_midi(eventos):
             vel = 100
         vel = max(1, min(127, vel))
         on = s2t(seg)
-        abs_ev.append((on, 0x90, note, vel))
-        abs_ev.append((on + 96, 0x80, note, 0))
+        st = (int(canal) - 1) & 0x0F
+        abs_ev.append((on, 0x90 | st, note, vel))
+        abs_ev.append((on + 96, 0x80 | st, note, 0))
     abs_ev.sort(key=lambda x: x[0])
     track = bytearray()
     prev = 0
@@ -1748,43 +1771,63 @@ def admin_midi(numero):
         flash("Cancion no encontrada", "error")
         return redirect(url_for("admin_pistas"))
     try:
-        eventos = json.loads(request.form.get("midi_json", "[]"))
-        if not isinstance(eventos, list):
-            eventos = []
+        payload = json.loads(request.form.get("midi_json", "{}"))
     except Exception:
-        eventos = []
-    limpio = []
-    for e in eventos:
-        if not isinstance(e, dict):
-            continue
+        payload = {}
+    cajas_in = payload.get("cajas", {}) if isinstance(payload, dict) else {}
+
+    def _limpiar_notas(lst):
+        out = []
+        if not isinstance(lst, list):
+            return out
+        for e in lst:
+            if not isinstance(e, dict):
+                continue
+            try:
+                oc = int(e.get("octava", 0))
+            except Exception:
+                oc = 0
+            try:
+                vel = int(e.get("velocidad", 100))
+            except Exception:
+                vel = 100
+            out.append({
+                "mensaje": "Nota",
+                "t": str(e.get("t", "")).strip(),
+                "nota": str(e.get("nota", "C")),
+                "octava": oc,
+                "velocidad": max(0, min(127, vel)),
+                "desactivar": bool(e.get("desactivar")),
+                "descripcion": str(e.get("descripcion", "")).strip()[:80],
+            })
+        return out
+
+    salida = {"version": 2, "cajas": {}}
+    for cid, nom, chdef in MIDI_CAJAS:
+        c = cajas_in.get(cid) if isinstance(cajas_in.get(cid), dict) else {}
         try:
-            oc = int(e.get("octava", 0))
+            canal = int(c.get("canal", chdef))
         except Exception:
-            oc = 0
-        try:
-            vel = int(e.get("velocidad", 100))
-        except Exception:
-            vel = 100
-        limpio.append({
-            "mensaje": "Nota",
-            "t": str(e.get("t", "")).strip(),
-            "nota": str(e.get("nota", "C")),
-            "octava": oc,
-            "velocidad": max(0, min(127, vel)),
-            "desactivar": bool(e.get("desactivar")),
-            "descripcion": str(e.get("descripcion", "")).strip()[:80],
-        })
+            canal = chdef
+        canal = max(1, min(16, canal))
+        salida["cajas"][cid] = {"canal": canal, "notas": _limpiar_notas(c.get("notas"))}
+
     carpeta = CARPETA_PISTAS / str(numero)
     carpeta.mkdir(exist_ok=True)
-    _archivo_midi(numero).write_text(json.dumps(limpio, ensure_ascii=False, indent=2), encoding="utf-8")
+    _archivo_midi(numero).write_text(json.dumps(salida, ensure_ascii=False, indent=2), encoding="utf-8")
+
     if request.form.get("accion") == "exportar":
-        for e in limpio:
+        cid = request.form.get("caja", "lyrics")
+        lane = salida["cajas"].get(cid) or salida["cajas"].get("lyrics")
+        nom_caja = dict((c[0], c[1]) for c in MIDI_CAJAS).get(cid, cid)
+        for e in lane["notas"]:
             e["_seg"] = _parse_tiempo(e["t"]) if e["t"] else None
-        data = _construir_midi(limpio)
-        nombre = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
-        tmp = Path("/tmp") / (nombre + ".mid")
+        data = _construir_midi(lane["notas"], canal=lane["canal"])
+        base = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
+        fn = base + "_" + (secure_filename(nom_caja) or cid) + ".mid"
+        tmp = Path("/tmp") / fn
         tmp.write_bytes(data)
-        return send_file(str(tmp), as_attachment=True, download_name=nombre + ".mid", mimetype="audio/midi")
+        return send_file(str(tmp), as_attachment=True, download_name=fn, mimetype="audio/midi")
     flash("MIDI guardado", "success")
     return redirect(url_for("admin_editar", numero=numero) + "?tab=midi")
 
