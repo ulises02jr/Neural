@@ -496,6 +496,31 @@ def ver_cancion(numero):
     )
 
 
+@app.route("/api/sync/biblioteca")
+def api_sync_biblioteca():
+    """Para el Puente local (app de escritorio): entrega toda la biblioteca de
+    canciones (JSON completo). Autenticacion por token (server-to-server)."""
+    if request.args.get("token") != get_config().get("live_token"):
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    bib = cargar_biblioteca()
+    canciones = [bib[n] for n in sorted(bib.keys())]
+    # Repertorio activo (el mas proximo por fecha) para el Puente local
+    cfg = get_config()
+    setlists = sorted(cfg.get("setlists", []),
+                      key=lambda s: (s.get("fecha", "9999"), s.get("creado", "")))
+    setlist_out = []
+    setlist_nombre = ""
+    if setlists:
+        activo = setlists[0]
+        setlist_nombre = activo.get("nombre", "")
+        for it in activo.get("canciones", []):
+            nid = it.get("id")
+            if nid in bib:
+                setlist_out.append({"id": nid, "tono": it.get("tono")})
+    return jsonify({"ok": True, "total": len(canciones), "canciones": canciones,
+                    "setlist": setlist_out, "setlist_nombre": setlist_nombre})
+
+
 @app.route("/api/cancion/<int:numero>")
 @login_required("musico")
 def api_cancion(numero):
