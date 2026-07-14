@@ -1511,7 +1511,7 @@ def _construir_midi_secciones(numero):
         if tick > ultimo:
             ultimo = tick
     if secs:
-        tick_fin = ultimo + 2 * num_c * TPB  # 2 compases despues de la ultima
+        tick_fin = ultimo + 1 * num_c * TPB  # 1 compas despues de la ultima
         eventos.append((tick_fin, bytes([0x90 | CANAL, NOTA_FIN, 100])))
         eventos.append((tick_fin + TPB // 4, bytes([0x80 | CANAL, NOTA_FIN, 0])))
     eventos.sort(key=lambda e: e[0])
