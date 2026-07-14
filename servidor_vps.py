@@ -500,7 +500,9 @@ def ver_cancion(numero):
 def api_sync_biblioteca():
     """Para el Puente local (app de escritorio): entrega toda la biblioteca de
     canciones (JSON completo). Autenticacion por token (server-to-server)."""
-    if request.args.get("token") != get_config().get("live_token"):
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:].strip() if auth[:7].lower() == "bearer " else request.args.get("token", "")
+    if token != get_config().get("live_token"):
         return jsonify({"ok": False, "error": "unauthorized"}), 403
     bib = cargar_biblioteca()
     canciones = [bib[n] for n in sorted(bib.keys())]
