@@ -432,9 +432,9 @@
               </div>
               <div class="sl-actions" onclick="event.preventDefault();event.stopPropagation();">
                 <button class="icon-btn" data-sl-id="{{ s.id }}" data-sl-nombre="{{ s.nombre }}" data-sl-fecha="{{ s.fecha }}" onclick="editarSetlistBtn(this)" title="Editar nombre/fecha">✎</button>
-                <form method="POST" action="{{ url_for('admin_setlist_eliminar', setlist_id=s.id) }}" style="display:inline"
-                      onsubmit="return confirm('¿Eliminar este setlist?')">
-                  <button type="submit" class="icon-btn danger" title="Eliminar setlist">×</button>
+                <form method="POST" action="{{ url_for('admin_setlist_eliminar', setlist_id=s.id) }}" style="display:inline">
+                  <button type="button" class="icon-btn danger" title="Eliminar repertorio"
+                    onclick="event.preventDefault();event.stopPropagation();if(confirm('¿Eliminar este repertorio?'))this.closest('form').submit();">×</button>
                 </form>
               </div>
             </div>
