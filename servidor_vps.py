@@ -533,6 +533,25 @@ def api_cancion(numero):
 
 
 # ───────────────────────── Rutas admin ─────────────────────────
+DESCARGAS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "descargas")
+ARCHIVOS_DESCARGA = {
+    "mac": "NeuralWorship-Mac.zip",
+    "windows": "NeuralWorship-Windows-Setup.exe",
+}
+
+@app.route("/admin/descargar/<plataforma>")
+@login_required("admin")
+def admin_descargar(plataforma):
+    nombre = ARCHIVOS_DESCARGA.get(plataforma)
+    if not nombre:
+        abort(404)
+    ruta = os.path.join(DESCARGAS_DIR, nombre)
+    if not os.path.exists(ruta):
+        flash("Ese instalador todavía no está disponible.", "error")
+        return redirect(url_for("admin") + "#live")
+    return send_file(ruta, as_attachment=True, download_name=nombre)
+
+
 @app.route("/admin")
 @login_required("admin")
 def admin():
@@ -587,6 +606,8 @@ def admin():
         usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo") if u.get("rol") != "admin"],
         usuario_actual=get_usuario_actual(),
         email_configurado=emails_module.email_configurado(),
+        desc_mac=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA["mac"])),
+        desc_win=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA["windows"])),
     )
 
 
