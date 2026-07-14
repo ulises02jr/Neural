@@ -1889,6 +1889,24 @@ def admin_info(numero):
     return redirect(url_for("admin_editar", numero=numero) + "?tab=info")
 
 
+def _backup_cancion(f, keep=15):
+    """Guarda un .bak de la cancion antes de sobrescribirla. Conserva las ultimas 'keep'."""
+    try:
+        import shutil, time
+        bdir = BASE_DIR / "backups_canciones"
+        bdir.mkdir(exist_ok=True)
+        dest = bdir / (f.stem + "." + time.strftime("%Y%m%d_%H%M%S") + ".bak.json")
+        shutil.copy2(str(f), str(dest))
+        viejos = sorted(bdir.glob(f.stem + ".*.bak.json"))
+        for old in viejos[:-keep]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    except Exception as e:
+        print("backup cancion fallo:", e)
+
+
 @app.route("/admin/pistas/<int:numero>/cifrado", methods=["POST"])
 @login_required("admin")
 def admin_cifrado(numero):
@@ -1925,6 +1943,7 @@ def admin_cifrado(numero):
             sec["lines"] = lineas
         nuevas.append(sec)
     datos["secciones"] = nuevas
+    _backup_cancion(f)
     f.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
     flash("Cifrado guardado", "success")
     return redirect(url_for("admin_editar", numero=numero) + "?tab=cifrado")

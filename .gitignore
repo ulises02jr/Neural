@@ -12,3 +12,4 @@ pistas/
 *.db
 usuarios.db
 descargas/
+backups_canciones/
