@@ -45,6 +45,7 @@
   .mlane.active{display:block;}
   .mcanal{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
   .lt-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+  .lt-grid .fld label{font-size:12px;min-height:30px;display:block;}
   .lt-preview{border:1px solid var(--line);border-radius:12px;padding:26px;min-height:170px;aspect-ratio:16/9;display:flex;flex-direction:column;justify-content:center;overflow:auto;}
   .panel{display:none;}
   .panel.active{display:block;}
@@ -111,7 +112,7 @@
     <button class="tab" data-tab="tiempos" onclick="tab('tiempos')">Time de Secciones</button>
     <button class="tab" data-tab="transposicion" onclick="tab('transposicion')">Transposición</button>
     <button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>
-    <button class="tab" data-tab="letras" onclick="tab('letras')">🎤 Lyrics</button>
+    <button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>
     <button class="tab" data-tab="eliminar" onclick="tab('eliminar')">Eliminar Canción</button>
   </div>
 
@@ -307,8 +308,8 @@
             </select></div>
           <div class="fld"><label>Tamaño de letra</label>
             <input type="number" name="tamano" id="lt-tam" value="40" min="10" max="120"></div>
-          <div class="fld"><label>Líneas por diapositiva (0 = toda la sección)</label>
-            <input type="number" name="lineas_por" id="lt-lin" value="4" min="0" max="20"></div>
+          <div class="fld"><label>Líneas por diapositiva</label>
+            <input type="number" name="lineas_por" id="lt-lin" value="4" min="0" max="20" title="0 = toda la sección en una diapositiva"></div>
           <div class="fld"><label>Formato de texto</label>
             <select name="caso" id="lt-caso"><option value="normal">Como está</option><option value="mayus">MAYÚSCULAS</option><option value="minus">minúsculas</option></select></div>
           <div class="fld"><label>Posición</label>
