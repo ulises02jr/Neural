@@ -1780,13 +1780,17 @@ def _letras_por_seccion(cancion):
     return out
 
 
-def _slides_letras(secciones, lineas_por, etiquetas, mayus):
+def _slides_letras(secciones, lineas_por, etiquetas, caso):
+    def _c(x):
+        if caso == "mayus":
+            return x.upper()
+        if caso == "minus":
+            return x.lower()
+        return x
     slides = []
     for sec in secciones:
-        lns = list(sec["lineas"])
-        if mayus:
-            lns = [x.upper() for x in lns]
-        etq = sec["tipo"] if etiquetas else None
+        lns = [_c(x) for x in sec["lineas"]]
+        etq = _c(sec["tipo"]) if etiquetas else None
         if lineas_por and lineas_por > 0:
             for i in range(0, len(lns), lineas_por):
                 slides.append({"etiqueta": etq if i == 0 else None, "lineas": lns[i:i + lineas_por]})
@@ -1805,7 +1809,7 @@ def _letras_txt(slides):
     return (("\n".join(out)).strip() + "\n").encode("utf-8")
 
 
-def _letras_pptx(slides, fuente, tam, alin, tema):
+def _letras_pptx(slides, fuente, tam, posicion, fondo, colorletra):
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
@@ -1815,60 +1819,68 @@ def _letras_pptx(slides, fuente, tam, alin, tema):
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     blank = prs.slide_layouts[6]
-    if tema == "oscuro":
-        bg = RGBColor(0x0a, 0x0a, 0x0a); fg = RGBColor(0xff, 0xff, 0xff)
-    else:
-        bg = RGBColor(0xff, 0xff, 0xff); fg = RGBColor(0x15, 0x15, 0x1a)
-    align = PP_ALIGN.CENTER if alin == "center" else PP_ALIGN.LEFT
+    fg = RGBColor(0, 0, 0) if colorletra == "negro" else RGBColor(0xff, 0xff, 0xff)
     for sl in slides:
         sd = prs.slides.add_slide(blank)
-        sd.background.fill.solid(); sd.background.fill.fore_color.rgb = bg
-        tb = sd.shapes.add_textbox(Inches(0.6), Inches(0.5), Inches(12.1), Inches(6.5))
+        if fondo == "negro":
+            sd.background.fill.solid(); sd.background.fill.fore_color.rgb = RGBColor(0, 0, 0)
+        elif fondo == "blanco":
+            sd.background.fill.solid(); sd.background.fill.fore_color.rgb = RGBColor(0xff, 0xff, 0xff)
+        else:
+            sd.background.fill.background()  # transparente (sin relleno)
+        if posicion == "tercio":
+            top, hgt = Inches(4.4), Inches(2.8)
+        else:
+            top, hgt = Inches(0.5), Inches(6.5)
+        tb = sd.shapes.add_textbox(Inches(0.6), top, Inches(12.1), hgt)
         tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         primero = True
         if sl["etiqueta"]:
             p = tf.paragraphs[0]; primero = False
-            p.text = sl["etiqueta"]; p.alignment = align
+            p.text = sl["etiqueta"]; p.alignment = PP_ALIGN.CENTER
             r = p.runs[0]; r.font.size = Pt(max(12, int(tam * 0.55))); r.font.name = fuente
             r.font.bold = True; r.font.color.rgb = RGBColor(0xC9, 0xA9, 0x6E)
         for ln in sl["lineas"]:
             p = tf.paragraphs[0] if primero else tf.add_paragraph(); primero = False
-            p.text = ln if ln else " "; p.alignment = align
+            p.text = ln if ln else " "; p.alignment = PP_ALIGN.CENTER
             for r in p.runs:
                 r.font.size = Pt(tam); r.font.name = fuente; r.font.color.rgb = fg
     buf = BytesIO(); prs.save(buf); return buf.getvalue()
 
 
-def _letras_pdf(slides, fuente, tam, alin, tema):
+def _letras_pdf(slides, fuente, tam, posicion, fondo, colorletra):
     from reportlab.pdfgen import canvas
     from io import BytesIO
     W, H = 960.0, 540.0
     fmap = {"Arial": "Helvetica", "Helvetica": "Helvetica", "Verdana": "Helvetica",
             "Georgia": "Times-Roman", "Times New Roman": "Times-Roman", "Times": "Times-Roman",
-            "Courier New": "Courier", "Courier": "Courier"}
+            "Courier New": "Courier", "Courier": "Courier",
+            "Lora": "Times-Roman", "Montserrat": "Helvetica", "Oswald": "Helvetica"}
     font = fmap.get(fuente, "Helvetica")
     fbold = "Times-Bold" if font == "Times-Roman" else (font + "-Bold")
-    if tema == "oscuro":
-        bgc = (10/255.0, 10/255.0, 10/255.0); fgc = (1, 1, 1)
+    fgc = (0, 0, 0) if colorletra == "negro" else (1, 1, 1)
+    # PDF no tiene transparencia util: usar fondo con contraste segun el color de letra
+    if fondo == "negro":
+        bgc = (0, 0, 0)
+    elif fondo == "blanco":
+        bgc = (1, 1, 1)
     else:
-        bgc = (1, 1, 1); fgc = (21/255.0, 21/255.0, 26/255.0)
+        bgc = (0, 0, 0) if colorletra == "blanco" else (1, 1, 1)
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=(W, H))
     for sl in slides:
         c.setFillColorRGB(*bgc); c.rect(0, 0, W, H, fill=1, stroke=0)
         lines = ([sl["etiqueta"]] if sl["etiqueta"] else []) + sl["lineas"]
         lh = tam * 1.4
-        y = (H + len(lines) * lh) / 2 - lh
+        cy = H * 0.24 if posicion == "tercio" else H * 0.5
+        y = cy + (len(lines) * lh) / 2 - lh * 0.72
         for i, ln in enumerate(lines):
             es_etq = bool(sl["etiqueta"]) and i == 0
             if es_etq:
                 c.setFillColorRGB(0xC9/255.0, 0xA9/255.0, 0x6E/255.0); c.setFont(fbold, max(12, int(tam * 0.55)))
             else:
                 c.setFillColorRGB(*fgc); c.setFont(font, tam)
-            if alin == "center":
-                c.drawCentredString(W / 2, y, ln or "")
-            else:
-                c.drawString(60, y, ln or "")
+            c.drawCentredString(W / 2, y, ln or "")
             y -= lh
         c.showPage()
     c.save(); return buf.getvalue()
@@ -1896,18 +1908,23 @@ def admin_letras(numero):
         lineas_por = 4
     lineas_por = max(0, min(20, lineas_por))
     etiquetas = request.form.get("etiquetas") == "1"
-    mayus = request.form.get("mayusculas") == "1"
-    alin = "center" if request.form.get("alineacion", "center") == "center" else "left"
-    tema = "oscuro" if request.form.get("tema", "oscuro") == "oscuro" else "claro"
+    caso = request.form.get("caso", "normal")
+    if caso not in ("normal", "mayus", "minus"):
+        caso = "normal"
+    posicion = "tercio" if request.form.get("posicion", "centro") == "tercio" else "centro"
+    fondo = request.form.get("fondo", "transparente")
+    if fondo not in ("transparente", "negro", "blanco"):
+        fondo = "transparente"
+    colorletra = "negro" if request.form.get("colorletra", "blanco") == "negro" else "blanco"
     secs = _letras_por_seccion(cancion)
-    slides = _slides_letras(secs, lineas_por, etiquetas, mayus)
+    slides = _slides_letras(secs, lineas_por, etiquetas, caso)
     base = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
     if fmt == "txt":
         data = _letras_txt(slides); ext = "txt"; mime = "text/plain; charset=utf-8"
     elif fmt == "pdf":
-        data = _letras_pdf(slides, fuente, tam, alin, tema); ext = "pdf"; mime = "application/pdf"
+        data = _letras_pdf(slides, fuente, tam, posicion, fondo, colorletra); ext = "pdf"; mime = "application/pdf"
     else:
-        data = _letras_pptx(slides, fuente, tam, alin, tema); ext = "pptx"
+        data = _letras_pptx(slides, fuente, tam, posicion, fondo, colorletra); ext = "pptx"
         mime = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     return send_file(BytesIO(data), as_attachment=True, download_name=base + "_letras." + ext, mimetype=mime)
 

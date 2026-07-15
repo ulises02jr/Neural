@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <title>Gestionar — {{ titulo }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; --field:#0a0a0a; --panel2:#151515; --strip:#1f1f1f; --chip-bg:#2a2418; --chip-bd:#3d3422; }
   body.tema-claro{ --bg:#f2f2f5; --raised:#ffffff; --line:#dcdce2; --txt:#15151a; --muted:#5b5b66; --field:#f0f0f4; --panel2:#f7f7fa; --strip:#f0f0f4; --chip-bg:#f3ead9; --chip-bd:#e6d8b8; }
@@ -43,7 +44,7 @@
   .mlane{display:none;}
   .mlane.active{display:block;}
   .mcanal{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
-  .lt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;}
+  .lt-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
   .lt-preview{border:1px solid var(--line);border-radius:12px;padding:26px;min-height:170px;aspect-ratio:16/9;display:flex;flex-direction:column;justify-content:center;overflow:auto;}
   .panel{display:none;}
   .panel.active{display:block;}
@@ -110,7 +111,7 @@
     <button class="tab" data-tab="tiempos" onclick="tab('tiempos')">Time de Secciones</button>
     <button class="tab" data-tab="transposicion" onclick="tab('transposicion')">Transposición</button>
     <button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>
-    <button class="tab" data-tab="letras" onclick="tab('letras')">🎤 Letras</button>
+    <button class="tab" data-tab="letras" onclick="tab('letras')">🎤 Lyrics</button>
     <button class="tab" data-tab="eliminar" onclick="tab('eliminar')">Eliminar Canción</button>
   </div>
 
@@ -288,7 +289,7 @@
   <!-- Letras -->
   <div class="panel" id="p-letras">
     <div class="card">
-      <h2>Exportar letras</h2>
+      <h2>Exportar Lyrics</h2>
       <div class="hint">Genera la letra para tu software de presentación (ProPresenter, EasyWorship, PowerPoint…). ProPresenter importa PPTX o TXT sin problema.</div>
       <form method="POST" action="{{ url_for('admin_letras', numero=numero) }}" style="margin-top:14px">
         <div class="lt-grid">
@@ -302,19 +303,23 @@
             <select name="fuente" id="lt-fuente">
               <option>Arial</option><option>Helvetica</option><option>Verdana</option>
               <option>Georgia</option><option>Times New Roman</option><option>Courier New</option>
+              <option>Lora</option><option>Montserrat</option><option>Oswald</option>
             </select></div>
           <div class="fld"><label>Tamaño de letra</label>
             <input type="number" name="tamano" id="lt-tam" value="40" min="10" max="120"></div>
           <div class="fld"><label>Líneas por diapositiva (0 = toda la sección)</label>
             <input type="number" name="lineas_por" id="lt-lin" value="4" min="0" max="20"></div>
-          <div class="fld"><label>Alineación</label>
-            <select name="alineacion" id="lt-alin"><option value="center">Centrado</option><option value="left">Izquierda</option></select></div>
-          <div class="fld"><label>Tema</label>
-            <select name="tema" id="lt-tema"><option value="oscuro">Oscuro (fondo negro)</option><option value="claro">Claro (fondo blanco)</option></select></div>
+          <div class="fld"><label>Formato de texto</label>
+            <select name="caso" id="lt-caso"><option value="normal">Como está</option><option value="mayus">MAYÚSCULAS</option><option value="minus">minúsculas</option></select></div>
+          <div class="fld"><label>Posición</label>
+            <select name="posicion" id="lt-pos"><option value="centro">Centro</option><option value="tercio">Tercio inferior</option></select></div>
+          <div class="fld"><label>Fondo</label>
+            <select name="fondo" id="lt-fondo"><option value="transparente">Transparente</option><option value="negro">Negro</option><option value="blanco">Blanco</option></select></div>
+          <div class="fld"><label>Color de letra</label>
+            <select name="colorletra" id="lt-color"><option value="blanco">Blanco</option><option value="negro">Negro</option></select></div>
         </div>
-        <div style="display:flex;gap:20px;margin:14px 0;flex-wrap:wrap">
+        <div style="margin:14px 0">
           <label style="display:flex;gap:7px;align-items:center;font-size:14px"><input type="checkbox" name="etiquetas" id="lt-etq" value="1"> Incluir etiqueta de sección (Verso, Coro…)</label>
-          <label style="display:flex;gap:7px;align-items:center;font-size:14px"><input type="checkbox" name="mayusculas" id="lt-may" value="1"> MAYÚSCULAS</label>
         </div>
         <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">Vista previa</div>
         <div id="lt-preview" class="lt-preview"></div>
@@ -461,14 +466,15 @@ function exportarCaja(id){
 }
 initMidi();
 
-// ── Exportar letras: vista previa en vivo ──
+// ── Exportar Lyrics: vista previa en vivo ──
 const LETRAS = {{ letras|tojson }};
 function ltGet(id){ return document.getElementById(id); }
+function ltCaso(x, caso){ x=x||''; return caso==='mayus'?x.toUpperCase():(caso==='minus'?x.toLowerCase():x); }
 function ltSlides(){
-  var lp=parseInt(ltGet('lt-lin').value,10)||0, etq=ltGet('lt-etq').checked, may=ltGet('lt-may').checked, out=[];
+  var lp=parseInt(ltGet('lt-lin').value,10)||0, etq=ltGet('lt-etq').checked, caso=ltGet('lt-caso').value, out=[];
   (LETRAS||[]).forEach(function(sec){
-    var lns=sec.lineas.slice(); if(may) lns=lns.map(function(x){return (x||'').toUpperCase();});
-    var lab=etq?sec.tipo:null;
+    var lns=sec.lineas.map(function(x){return ltCaso(x,caso);});
+    var lab=etq?ltCaso(sec.tipo,caso):null;
     if(lp>0){ for(var i=0;i<lns.length;i+=lp){ out.push({etiqueta:i===0?lab:null,lineas:lns.slice(i,i+lp)}); } }
     else { out.push({etiqueta:lab,lineas:lns}); }
   });
@@ -476,19 +482,25 @@ function ltSlides(){
 }
 function ltPreview(){
   var box=ltGet('lt-preview'); if(!box) return;
-  var slides=ltSlides(), tema=ltGet('lt-tema').value, alin=ltGet('lt-alin').value, fuente=ltGet('lt-fuente').value, tam=parseInt(ltGet('lt-tam').value,10)||40;
-  box.style.background=tema==='oscuro'?'#0a0a0a':'#ffffff';
-  box.style.color=tema==='oscuro'?'#ffffff':'#15151a';
-  box.style.textAlign=alin==='center'?'center':'left';
-  box.style.fontFamily=fuente;
-  if(!slides.length){ box.innerHTML='<div style="opacity:.55;font-size:14px">Esta canción todavía no tiene letra capturada (pestaña Cifrado).</div>'; return; }
+  var slides=ltSlides(), fondo=ltGet('lt-fondo').value, color=ltGet('lt-color').value, pos=ltGet('lt-pos').value, fuente=ltGet('lt-fuente').value, tam=parseInt(ltGet('lt-tam').value,10)||40;
+  box.style.backgroundImage='none';
+  if(fondo==='negro'){ box.style.background='#000'; }
+  else if(fondo==='blanco'){ box.style.background='#fff'; }
+  else { box.style.background='#c9c9c9';
+    box.style.backgroundImage='linear-gradient(45deg,#b3b3b3 25%,transparent 25%),linear-gradient(-45deg,#b3b3b3 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#b3b3b3 75%),linear-gradient(-45deg,transparent 75%,#b3b3b3 75%)';
+    box.style.backgroundSize='18px 18px'; box.style.backgroundPosition='0 0,0 9px,9px -9px,-9px 0'; }
+  box.style.color = color==='negro' ? '#000' : '#fff';
+  box.style.fontFamily = fuente;
+  box.style.textAlign = 'center';
+  box.style.justifyContent = pos==='tercio' ? 'flex-end' : 'center';
+  if(!slides.length){ box.innerHTML='<div style="opacity:.6;font-size:14px">Esta canción todavía no tiene letra capturada (pestaña Cifrado).</div>'; return; }
   var sl=slides[0], sc=0.5, h='';
   if(sl.etiqueta){ h+='<div style="color:#C9A96E;font-weight:700;font-size:'+Math.max(11,Math.round(tam*0.55*sc))+'px;margin-bottom:10px">'+escA(sl.etiqueta)+'</div>'; }
   h+=sl.lineas.map(function(l){ return '<div style="font-size:'+Math.round(tam*sc)+'px;line-height:1.35">'+(l?escA(l):'&nbsp;')+'</div>'; }).join('');
-  h+='<div style="opacity:.5;font-size:11px;margin-top:12px;text-align:center">Diapositiva 1 de '+slides.length+'</div>';
+  h+='<div style="opacity:.55;font-size:11px;margin-top:12px">Diapositiva 1 de '+slides.length+'</div>';
   box.innerHTML=h;
 }
-['lt-fuente','lt-tam','lt-lin','lt-alin','lt-tema','lt-etq','lt-may'].forEach(function(id){var e=ltGet(id);if(e){e.addEventListener('change',ltPreview);e.addEventListener('input',ltPreview);}});
+['lt-fuente','lt-tam','lt-lin','lt-caso','lt-pos','lt-fondo','lt-color','lt-etq'].forEach(function(id){var e=ltGet(id);if(e){e.addEventListener('change',ltPreview);e.addEventListener('input',ltPreview);}});
 ltPreview();
 
 const CIFRADO = {{ cifrado|tojson }};
