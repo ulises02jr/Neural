@@ -236,7 +236,6 @@
           <button class="primary" type="submit" style="margin:0">Guardar tiempos</button>
           <button class="primary" type="submit" name="accion" value="exportar_midi" style="margin:0;background:transparent;color:var(--gold);border:1px solid var(--gold)">Exportar secciones .mid</button>
         </div>
-        <div class="hint">El .mid de secciones es la pista de control para el sistema local (arrastrala a Logic, canal 16): carga la canción y va cambiando las secciones del chart en vivo.</div>
       </form>
     </div>
   </div>
@@ -282,7 +281,7 @@
 
         <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;align-items:center">
           <button type="submit" class="primary" style="margin:0" onclick="document.getElementById('midi_accion').value='guardar'">Guardar todo</button>
-          <span class="hint" style="margin:0">La exportación es por caja (botón dentro de cada una).</span>
+          <button type="button" class="primary" style="margin:0;background:transparent;color:var(--gold);border:1px solid var(--gold)" onclick="exportarCajaActual()">Exportar .mid de esta caja</button>
         </div>
       </form>
     </div>
@@ -427,7 +426,6 @@ function initMidi(){
     div.innerHTML=
       '<div class="mcanal"><label style="font-size:12px;color:var(--muted)">Canal MIDI de "'+escA(c.nombre)+'"</label>'+
         '<select class="mi-canal" style="width:auto">'+opcsCanal(canal)+'</select>'+
-        '<button type="button" class="primary" style="margin:0;background:transparent;color:var(--gold);border:1px solid var(--gold);padding:8px 16px" onclick="exportarCaja(\''+c.id+'\')">Exportar '+escA(c.nombre)+' .mid</button>'+
       '</div>'+
       '<div style="overflow-x:auto"><table><thead><tr>'+
         '<th>Mensaje</th><th>Nota En</th><th>Valor</th><th>Octava</th><th>Velocidad</th><th>Desactivar</th><th>Descripción</th><th></th>'+
@@ -460,6 +458,7 @@ function serializarMidi(){
   document.getElementById('midi_json').value = JSON.stringify(out);
   return true;
 }
+function exportarCajaActual(){ exportarCaja(document.getElementById('midi_caja').value || 'lyrics'); }
 function exportarCaja(id){
   document.getElementById('midi_accion').value='exportar';
   document.getElementById('midi_caja').value=id;
