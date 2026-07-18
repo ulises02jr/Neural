@@ -623,7 +623,7 @@ def api_live_pista(numero, archivo):
         n = int(request.args.get("t", "0"))
     except ValueError:
         n = 0
-    base = _carpeta_tono(numero, n).resolve()
+    base = _carpeta_stems(numero, n).resolve()
     ruta = (base / archivo).resolve()
     try:
         dentro = os.path.commonpath([str(base), str(ruta)]) == str(base)
@@ -1206,6 +1206,13 @@ def _tono_listo(numero, n):
         return False
     hechos = set(f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO)
     return all(o in hechos for o in orig)
+
+
+def _carpeta_stems(numero, n):
+    """Carpeta con los stems: originales (pistas/N/) si n==0, si no la del tono."""
+    if n == 0:
+        return CARPETA_PISTAS / str(numero)
+    return _carpeta_tono(numero, n)
 
 
 def _tono_en_proceso(numero, n):
