@@ -70,8 +70,9 @@
   .fr-btn[disabled]{cursor:default;opacity:.8;}
   /* Eliminar */
   #midi-body td{padding:6px 6px;vertical-align:middle;}
-  #midi-body input[type=text],#midi-body input[type=number]{background:var(--field);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;width:100%;}
-  #midi-body input.mi-t{min-width:110px;}
+  #mlanes input[type=text],#mlanes input[type=number],#mlanes select{background:var(--field);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px;width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;}
+  #mlanes input:focus,#mlanes select:focus{border-color:var(--gold);outline:none;}
+  #mlanes input.mi-t{min-width:110px;}
   /* Editor de cifrado */
   .cif-sec{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;background:var(--panel2);}
   .cif-head{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
