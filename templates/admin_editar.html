@@ -414,9 +414,8 @@ function tabNext(){ var i=TABS.indexOf(tabActual); if(i<TABS.length-1) tab(TABS[
   var params=new URLSearchParams(window.location.search);
   var q=params.get('tab');
   if(TABS.indexOf(q)>=0){ tab(q); return; }
-  var hayFlash=document.querySelector('.flash')!==null;
   var saved=null; try{ saved=sessionStorage.getItem('editar_tab'); }catch(e){}
-  tab(hayFlash && TABS.indexOf(saved)>=0 ? saved : 'info');
+  tab(TABS.indexOf(saved)>=0 ? saved : 'info');
 })();
 
 const NOTAS_MIDI = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];

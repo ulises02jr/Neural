@@ -1105,6 +1105,15 @@ def _tono_en_proceso(numero, n):
     return d.is_dir() and (d / ".lock").exists()
 
 
+def _nombre_base_export(cancion, numero):
+    """Titulo_Artista para nombrar los .mid (sin partes vacias)."""
+    titulo = (cancion.get("titulo") or "").strip()
+    artista = (cancion.get("artista") or "").strip()
+    partes = [p for p in (titulo, artista) if p]
+    base = secure_filename("_".join(partes)) if partes else ""
+    return base or ("cancion_%d" % numero)
+
+
 def _render_tono(numero, n):
     d = _carpeta_tono(numero, n)
     d.mkdir(parents=True, exist_ok=True)
@@ -1344,10 +1353,10 @@ def admin_secciones(numero):
             return jsonify({"ok": True})
         if request.form.get("accion") == "exportar_midi":
             data = _construir_midi_secciones(numero)
-            nombre = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
-            tmp = Path("/tmp") / ("secciones_" + nombre + ".mid")
+            fn = _nombre_base_export(cancion, numero) + "_CHART.mid"
+            tmp = Path("/tmp") / fn
             tmp.write_bytes(data)
-            return send_file(str(tmp), as_attachment=True, download_name="secciones_" + nombre + ".mid", mimetype="audio/midi")
+            return send_file(str(tmp), as_attachment=True, download_name=fn, mimetype="audio/midi")
         if request.form.get("wizard"):
             flash("Cambios guardados", "success")
             return redirect(url_for("admin"))
@@ -2000,7 +2009,7 @@ def admin_midi(numero):
         for e in lane["notas"]:
             e["_seg"] = _parse_tiempo(e["t"]) if e["t"] else None
         data = _construir_midi(lane["notas"], canal=lane["canal"])
-        base = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
+        base = _nombre_base_export(cancion, numero)
         fn = base + "_" + (secure_filename(nom_caja) or cid) + ".mid"
         tmp = Path("/tmp") / fn
         tmp.write_bytes(data)
