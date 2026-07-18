@@ -137,7 +137,7 @@
               {% for tn in _tonos %}<option value="{{ tn }}" {% if info.tono==tn %}selected{% endif %}>{{ tn }}</option>{% endfor %}
             </select>
           </div>
-          <div class="fld"><label>Tempo (BPM)</label><input type="number" name="tempo" value="{{ info.tempo }}" min="0" max="400"></div>
+          <div class="fld"><label>Tempo (BPM)</label><input type="number" name="tempo" value="{{ info.tempo }}" min="0" max="400" step="any"></div>
           <div class="fld"><label>Compás</label><input type="text" name="compas" value="{{ info.compas }}" maxlength="8" placeholder="4/4"></div>
         </div>
         <div style="display:flex;align-items:center;gap:16px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line);flex-wrap:wrap">

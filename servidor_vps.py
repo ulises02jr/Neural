@@ -1525,7 +1525,7 @@ def _construir_midi_secciones(numero):
     una nota por seccion en escalera desde C1 (36), nota de fin C0 (24)."""
     cancion = cargar_biblioteca().get(numero, {})
     try:
-        tempo_bpm = int(cancion.get("tempo") or 120)
+        tempo_bpm = float(cancion.get("tempo") or 120)
     except Exception:
         tempo_bpm = 120
     if tempo_bpm <= 0:
@@ -2024,7 +2024,8 @@ def admin_info(numero):
     tempo = request.form.get("tempo", "").strip()
     if tempo:
         try:
-            datos["tempo"] = int(tempo)
+            _t = float(tempo.replace(",", "."))
+            datos["tempo"] = int(_t) if _t == int(_t) else round(_t, 3)
         except Exception:
             pass
     compas = request.form.get("compas", "").strip()
