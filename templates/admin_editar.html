@@ -356,6 +356,16 @@ function uiSubiendoPistas(form){
   var a=document.getElementById('subiendo-aviso'); if(a){ a.style.display='block'; }
   return true;
 }
+// Auto-formato de tiempos (HH:MM:SS:mmm): los ":" se ponen solos
+(function(){
+  document.querySelectorAll('#p-tiempos input.t').forEach(function(inp){
+    inp.addEventListener('input', function(){
+      var raw=this.value.replace(/\D/g,'').slice(0,9), out='';
+      for(var i=0;i<raw.length;i++){ if(i===2||i===4||i===6) out+=':'; out+=raw[i]; }
+      this.value=out;
+    });
+  });
+})();
 function tab(id){
   tabActual = id;
   TABS.forEach(function(t){
