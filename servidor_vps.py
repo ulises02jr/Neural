@@ -1339,9 +1339,9 @@ def admin_secciones(numero):
             tmp.write_bytes(data)
             return send_file(str(tmp), as_attachment=True, download_name="secciones_" + nombre + ".mid", mimetype="audio/midi")
         if request.form.get("wizard"):
-            flash("Cancion lista: chart, pistas y tiempos cuadrados", "success")
+            flash("Cambios guardados", "success")
             return redirect(url_for("admin"))
-        flash("OK: " + str(len(guardadas)) + " seccion(es) con tiempo guardada(s)", "success")
+        flash("Cambios guardados", "success")
         if request.form.get("volver") == "editar":
             return redirect(url_for("admin_editar", numero=numero) + "?tab=tiempos")
         return redirect(url_for("admin_secciones", numero=numero))

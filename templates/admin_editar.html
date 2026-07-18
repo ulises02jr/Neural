@@ -221,7 +221,7 @@
     <div class="card">
       <h2>Time de Secciones</h2>
       <div class="hint">El tiempo va en formato de Logic <b>H:MIN:S:MS</b> (ej. 00:00:41:500) o simple <b>M:SS</b>. Dejá en blanco las secciones que no quieras marcar. Copiá el tiempo directo de Logic.</div>
-      <form method="POST" action="{{ url_for('admin_secciones', numero=numero) }}" style="margin-top:14px">
+      <form method="POST" action="{{ url_for('admin_secciones', numero=numero) }}" style="margin-top:14px" onsubmit="return validarTiempos(this)">
         <input type="hidden" name="volver" value="editar">
         <table>
           <tr><th>#</th><th>Sección del chart</th><th>Tiempo de inicio</th></tr>
@@ -233,6 +233,7 @@
           </tr>
           {% endfor %}
         </table>
+        <div id="tiempos-error" style="display:none;margin:12px 0;padding:11px 14px;background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;border-radius:8px;font-size:14px"></div>
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
           <button class="primary" type="submit" style="margin:0">Guardar tiempos</button>
           <button class="primary" type="submit" name="accion" value="exportar_midi" style="margin:0;background:transparent;color:var(--gold);border:1px solid var(--gold)">Exportar secciones .mid</button>
@@ -356,16 +357,28 @@ function uiSubiendoPistas(form){
   var a=document.getElementById('subiendo-aviso'); if(a){ a.style.display='block'; }
   return true;
 }
-// Auto-formato de tiempos (HH:MM:SS:mmm): los ":" se ponen solos
-(function(){
-  document.querySelectorAll('#p-tiempos input.t').forEach(function(inp){
-    inp.addEventListener('input', function(){
-      var raw=this.value.replace(/\D/g,'').slice(0,9), out='';
-      for(var i=0;i<raw.length;i++){ if(i===2||i===4||i===6) out+=':'; out+=raw[i]; }
-      this.value=out;
-    });
+// Auto-formato de tiempos (HH:MM:SS:mmm) por delegación + validación
+function _fmtTiempo(raw){
+  raw=(raw||'').replace(/\D/g,'').slice(0,9); var out='';
+  for(var i=0;i<raw.length;i++){ if(i===2||i===4||i===6) out+=':'; out+=raw[i]; }
+  return out;
+}
+document.addEventListener('input', function(e){
+  var t=e.target;
+  if(t && t.classList && t.classList.contains('t') && t.closest && t.closest('#p-tiempos')){
+    var f=_fmtTiempo(t.value); if(t.value!==f) t.value=f;
+  }
+});
+function validarTiempos(form){
+  var box=document.getElementById('tiempos-error'); var malos=0, primero=null;
+  form.querySelectorAll('input.t').forEach(function(inp){
+    inp.style.borderColor='';
+    var v=(inp.value||'').trim();
+    if(v && !/^\d{1,2}(:\d{1,3}){0,3}$/.test(v)){ malos++; inp.style.borderColor='#e5534b'; if(!primero) primero=inp; }
   });
-})();
+  if(malos){ box.textContent='⚠ Hay '+malos+' tiempo(s) mal escrito(s), marcados en rojo. Formato: HH:MM:SS:mmm (o M:SS).'; box.style.display='block'; if(primero) primero.focus(); return false; }
+  if(box) box.style.display='none'; return true;
+}
 function tab(id){
   tabActual = id;
   TABS.forEach(function(t){
