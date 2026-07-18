@@ -1106,11 +1106,9 @@ def _tono_en_proceso(numero, n):
 
 
 def _nombre_base_export(cancion, numero):
-    """Titulo_Artista para nombrar los .mid (sin partes vacias)."""
+    """Solo el titulo para nombrar los .mid."""
     titulo = (cancion.get("titulo") or "").strip()
-    artista = (cancion.get("artista") or "").strip()
-    partes = [p for p in (titulo, artista) if p]
-    base = secure_filename("_".join(partes)) if partes else ""
+    base = secure_filename(titulo) if titulo else ""
     return base or ("cancion_%d" % numero)
 
 

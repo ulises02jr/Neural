@@ -463,7 +463,7 @@ function initMidi(){
     var notas=(data.notas&&data.notas.length)?data.notas:[];
     var b=document.createElement('button');
     b.type='button'; b.className='mtab'+(i===0?' active':''); b.dataset.caja=c.id;
-    b.innerHTML=escA(c.nombre)+(notas.length?'<span class="cnt">'+notas.length+'</span>':'');
+    b.innerHTML=escA(c.nombre);
     b.onclick=function(){ mtab(c.id); };
     tabs.appendChild(b);
     var div=document.createElement('div');
