@@ -182,10 +182,11 @@
       {% endif %}
       <hr class="sep">
       <h2>Agregar más pistas</h2>
-      <form method="POST" action="{{ url_for('admin_editar_subir', numero=numero) }}" enctype="multipart/form-data">
+      <form method="POST" action="{{ url_for('admin_editar_subir', numero=numero) }}" enctype="multipart/form-data" onsubmit="return uiSubiendoPistas(this)">
         <input type="file" name="pistas" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple required>
         <button class="primary" type="submit">Subir pistas</button>
         <div class="hint">Se agregan a las existentes. El nombre del archivo = nombre de la pista.</div>
+        <div id="subiendo-aviso" style="display:none;margin-top:12px;padding:12px 14px;background:var(--strip);border:1px solid var(--line);border-radius:8px;color:var(--gold);font-size:14px">⏳ Subiendo las pistas… puede tardar según el tamaño y tu internet. <b>No cierres ni recargues la página.</b></div>
       </form>
     </div>
   </div>
@@ -350,6 +351,11 @@
 <script>
 const TABS = ['info','multitracks','cifrado','tiempos','transposicion','midi','letras','eliminar'];
 let tabActual = 'multitracks';
+function uiSubiendoPistas(form){
+  var b=form.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='Subiendo…'; }
+  var a=document.getElementById('subiendo-aviso'); if(a){ a.style.display='block'; }
+  return true;
+}
 function tab(id){
   tabActual = id;
   TABS.forEach(function(t){
