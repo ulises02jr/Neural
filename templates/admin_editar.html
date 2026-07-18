@@ -220,7 +220,7 @@
   <div class="panel" id="p-tiempos">
     <div class="card">
       <h2>Time de Secciones</h2>
-      <div class="hint">El tiempo va en formato de Logic <b>H:MIN:S:MS</b> (ej. 00:00:41:500) o simple <b>M:SS</b>. Dejá en blanco las secciones que no quieras marcar. Copiá el tiempo directo de Logic.</div>
+      <div class="hint">El tiempo va como <b>código de tiempo (SMPTE)</b> en formato <b>HH:MM:SS:mmm</b> (ej. 00:00:41:500), o simple <b>M:SS</b>. Los <b>:</b> se ponen solos al escribir. Dejá en blanco las secciones que no quieras marcar.</div>
       <form method="POST" action="{{ url_for('admin_secciones', numero=numero) }}" style="margin-top:14px" onsubmit="return validarTiempos(this)">
         <input type="hidden" name="volver" value="editar">
         <table>
@@ -365,7 +365,7 @@ function _fmtTiempo(raw){
 }
 document.addEventListener('input', function(e){
   var t=e.target;
-  if(t && t.classList && t.classList.contains('t') && t.closest && t.closest('#p-tiempos')){
+  if(t && t.classList && ((t.classList.contains('t') && t.closest && t.closest('#p-tiempos')) || t.classList.contains('mi-t'))){
     var f=_fmtTiempo(t.value); if(t.value!==f) t.value=f;
   }
 });
@@ -421,10 +421,10 @@ function filaMidi(tb, e){
   tr.className = 'midi-row';
   tr.innerHTML =
     '<td><span style="font-size:12px;color:var(--muted)">Nota</span></td>'+
-    '<td><input class="mi-t" type="text" value="'+escA(e.t||'00:00:000')+'" placeholder="00:00:000"></td>'+
+    '<td><input class="mi-t" type="text" value="'+escA(e.t||'00:00:00:000')+'" placeholder="00:00:00:000"></td>'+
     '<td><select class="mi-nota">'+opcsMidi(NOTAS_MIDI, e.nota||'C')+'</select></td>'+
-    '<td><select class="mi-oct">'+opcsMidi(OCTAVAS_MIDI, (e.octava!==undefined?e.octava:2))+'</select></td>'+
-    '<td><input class="mi-vel" type="number" min="0" max="127" value="'+(e.velocidad!==undefined?e.velocidad:100)+'"></td>'+
+    '<td><select class="mi-oct">'+opcsMidi(OCTAVAS_MIDI, (e.octava!==undefined?e.octava:-1))+'</select></td>'+
+    '<td><input class="mi-vel" type="number" min="0" max="127" value="'+(e.velocidad!==undefined?e.velocidad:1)+'"></td>'+
     '<td style="text-align:center"><input class="mi-off" type="checkbox"'+(e.desactivar?' checked':'')+'></td>'+
     '<td><input class="mi-desc" type="text" value="'+escA(e.descripcion)+'" placeholder="Descripción"></td>'+
     '<td><button type="button" class="mini" onclick="quitarMidi(this)">×</button></td>';
