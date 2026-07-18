@@ -568,6 +568,72 @@ def api_sync_biblioteca():
                     "setlist": setlist_out, "setlist_nombre": setlist_nombre})
 
 
+def _token_ok():
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:].strip() if auth[:7].lower() == "bearer " else request.args.get("token", "")
+    return bool(token) and token == get_config().get("live_token")
+
+
+@app.route("/api/live/setlists")
+def api_live_setlists():
+    """NeuralPlay: lista de repertorios (setlists) + indice liviano de canciones. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    cfg = get_config()
+    bib = cargar_biblioteca()
+    idx = {}
+    for n, c in bib.items():
+        idx[str(n)] = {"id": n, "titulo": c.get("titulo", ""), "artista": c.get("artista", ""),
+                       "tono": c.get("tono", ""), "tempo": c.get("tempo"),
+                       "compas": c.get("compas", ""), "portada": c.get("portada", ""),
+                       "portada_ts": c.get("portada_ts")}
+    return jsonify({"ok": True, "setlists": cfg.get("setlists", []), "canciones": idx})
+
+
+@app.route("/api/live/pistas/<int:numero>")
+def api_live_pistas(numero):
+    """NeuralPlay: stems + tiempos de seccion de una cancion a un tono. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    try:
+        n = int(request.args.get("t", "0"))
+    except ValueError:
+        n = 0
+    listo = _tono_listo(numero, n)
+    stems = []
+    fam = _leer_familias(numero)
+    if listo:
+        for f in sorted(_carpeta_tono(numero, n).iterdir()):
+            if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
+                stems.append({"name": f.stem, "file": f.name,
+                              "familia": fam.get(f.name) or _familia_auto(f.stem)})
+    cancion = cargar_biblioteca().get(numero, {})
+    return jsonify({"numero": numero, "tono": n, "listo": listo,
+                    "hay_pistas": len(_stems_originales(numero)) > 0,
+                    "tempo": cancion.get("tempo"), "compas": cancion.get("compas", ""),
+                    "stems": stems, "secciones": _leer_secciones(numero)})
+
+
+@app.route("/api/live/pista/<int:numero>/<path:archivo>")
+def api_live_pista(numero, archivo):
+    """NeuralPlay: descarga de un stem. Token."""
+    if not _token_ok():
+        abort(403)
+    try:
+        n = int(request.args.get("t", "0"))
+    except ValueError:
+        n = 0
+    base = _carpeta_tono(numero, n).resolve()
+    ruta = (base / archivo).resolve()
+    try:
+        dentro = os.path.commonpath([str(base), str(ruta)]) == str(base)
+    except ValueError:
+        dentro = False
+    if not dentro or not ruta.is_file():
+        abort(404)
+    return send_file(str(ruta))
+
+
 @app.route("/api/cancion/<int:numero>")
 @login_required("musico")
 def api_cancion(numero):
