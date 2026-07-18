@@ -1097,6 +1097,14 @@ def _tono_listo(numero, n):
     return all(o in hechos for o in orig)
 
 
+def _tono_en_proceso(numero, n):
+    """True si el tono se esta renderizando ahora mismo (existe .lock)."""
+    if n == 0:
+        return False
+    d = _carpeta_tono(numero, n)
+    return d.is_dir() and (d / ".lock").exists()
+
+
 def _render_tono(numero, n):
     d = _carpeta_tono(numero, n)
     d.mkdir(parents=True, exist_ok=True)
@@ -1694,7 +1702,7 @@ def admin_editar(numero):
             return ("+" if n > 0 else "") + str(n)
         tsost = transponer_acorde(tono_base, n, usar_sost=True)
         return transponer_acorde(tono_base, n, usar_sost=usar_sostenidos(tsost))
-    tonos = [{"n": n, "listo": _tono_listo(numero, n), "nombre": _nombre_tono(n)}
+    tonos = [{"n": n, "listo": _tono_listo(numero, n), "en_proceso": _tono_en_proceso(numero, n), "nombre": _nombre_tono(n)}
              for n in [-5, -4, -3, -2, -1, 1, 2, 3, 4, 5]]
     guardadas_t = {sec["i"]: sec["t"] for sec in _leer_secciones(numero) if "i" in sec}
     filas = []

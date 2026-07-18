@@ -64,6 +64,10 @@
   .fr-btn.gen{background:var(--gold);color:#0a0a0a;}
   .fr-btn.del{background:transparent;border:1px solid #5a2a2a;color:#e08f8f;}
   .fr-btn.del:hover{background:rgba(229,83,75,0.12);}
+  .franja.proc{background:#2e2410;border-color:#5a4a1e;}
+  .franja.proc .fr-tono{color:#e0c07a;}
+  .fr-btn.proc{background:transparent;border:1px solid #5a4a1e;color:#e0c07a;}
+  .fr-btn[disabled]{cursor:default;opacity:.8;}
   /* Eliminar */
   #midi-body td{padding:6px 6px;vertical-align:middle;}
   #midi-body input[type=text],#midi-body input[type=number]{background:var(--field);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;width:100%;}
@@ -249,15 +253,17 @@
       <div class="hint">Generá los tonos con anticipación para que los músicos no esperen. Cada tono tarda unos minutos en generarse (en segundo plano); refrescá esta página para ver cuando cambie de color.</div>
       <div class="franjas">
         {% for t in tonos %}
-        <div class="franja {% if t.listo %}on{% endif %}">
+        <div class="franja {% if t.listo %}on{% elif t.en_proceso %}proc{% endif %}">
           <span class="fr-tono">{{ t.nombre }}</span>
           <span class="fr-sp"></span>
           {% if t.listo %}
           <form method="POST" action="{{ url_for('admin_borrar_tono', numero=numero, n=t.n) }}" onsubmit="return confirm('¿Eliminar la transposición en {{ t.nombre }}?')">
             <button type="submit" class="fr-btn del">Eliminar</button>
           </form>
+          {% elif t.en_proceso %}
+          <button type="button" class="fr-btn proc" disabled>Generando…</button>
           {% else %}
-          <form method="POST" action="{{ url_for('admin_pregenerar', numero=numero) }}">
+          <form method="POST" action="{{ url_for('admin_pregenerar', numero=numero) }}" onsubmit="return uiGenerando(this)">
             <input type="hidden" name="tono" value="{{ t.n }}">
             <button type="submit" class="fr-btn gen">Generar</button>
           </form>
@@ -352,6 +358,15 @@
 <script>
 const TABS = ['info','multitracks','cifrado','tiempos','transposicion','midi','letras','eliminar'];
 let tabActual = 'multitracks';
+function uiGenerando(form){ var b=form.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='Generando…'; } return true; }
+document.addEventListener('DOMContentLoaded', function(){
+  if(document.querySelector('.franja.proc')){
+    setInterval(function(){
+      var p=document.getElementById('p-transposicion');
+      if(p && p.offsetParent !== null && p.querySelector('.franja.proc')){ location.reload(); }
+    }, 15000);
+  }
+});
 function uiSubiendoPistas(form){
   var b=form.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='Subiendo…'; }
   var a=document.getElementById('subiendo-aviso'); if(a){ a.style.display='block'; }
