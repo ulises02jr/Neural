@@ -215,6 +215,7 @@
         <button type="button" class="mini" onclick="document.getElementById('cif-json-file').click()" style="margin-top:6px;margin-left:6px">⤓ Cargar JSON (acordes y letras)</button>
         <div style="margin-top:18px">
           <button type="submit" class="primary" style="margin:0">Guardar cifrado</button>
+          <span id="cif-autosave" style="margin-left:12px;font-size:12px;color:var(--muted);opacity:0;transition:opacity .4s"></span>
         </div>
       </form>
     </div>
@@ -240,6 +241,7 @@
         <div id="tiempos-error" style="display:none;margin:12px 0;padding:11px 14px;background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;border-radius:8px;font-size:14px"></div>
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
           <button class="primary" type="submit" style="margin:0">Guardar tiempos</button>
+          <span id="tiempos-autosave" style="font-size:12px;color:var(--muted);opacity:0;transition:opacity .4s;align-self:center"></span>
           <button class="primary" type="submit" name="accion" value="exportar_midi" style="margin:0;background:transparent;color:var(--gold);border:1px solid var(--gold)">Exportar secciones .mid</button>
         </div>
       </form>
@@ -278,7 +280,7 @@
   <div class="panel" id="p-midi">
     <div class="card">
       <h2>MIDI</h2>
-      <div class="hint">Varias cajas independientes de notas MIDI (como en Secuencias: Lyrics, Luces, Patches, Guitar, Aux). Cada caja tiene su propio <b>canal</b> y se exporta a su propio archivo <b>.mid</b>.</div>
+      <div class="hint">Varias cajas independientes de notas MIDI (como en Secuencias: Lyrics, Luces, Patches, Guitar, Aux). Cada caja se exporta a su propio archivo <b>.mid</b>.</div>
       <form method="POST" action="{{ url_for('admin_midi', numero=numero) }}" onsubmit="return serializarMidi()" style="margin-top:14px">
         <input type="hidden" name="midi_json" id="midi_json">
         <input type="hidden" name="accion" id="midi_accion" value="guardar">
@@ -436,7 +438,7 @@ function filaMidi(tb, e){
   tr.className = 'midi-row';
   tr.innerHTML =
     '<td><span style="font-size:12px;color:var(--muted)">Nota</span></td>'+
-    '<td><input class="mi-t" type="text" value="'+escA(e.t||'00:00:00:000')+'" placeholder="00:00:00:000"></td>'+
+    '<td><input class="mi-t" type="text" value="'+escA(e.t||'')+'" placeholder="00:00:00:000"></td>'+
     '<td><select class="mi-nota">'+opcsMidi(NOTAS_MIDI, e.nota||'C')+'</select></td>'+
     '<td><select class="mi-oct">'+opcsMidi(OCTAVAS_MIDI, (e.octava!==undefined?e.octava:-1))+'</select></td>'+
     '<td><input class="mi-vel" type="number" min="0" max="127" value="'+(e.velocidad!==undefined?e.velocidad:1)+'"></td>'+
@@ -467,10 +469,8 @@ function initMidi(){
     tabs.appendChild(b);
     var div=document.createElement('div');
     div.className='mlane'+(i===0?' active':''); div.dataset.caja=c.id;
+    div.dataset.canal=canal;
     div.innerHTML=
-      '<div class="mcanal"><label style="font-size:12px;color:var(--muted)">Canal MIDI de "'+escA(c.nombre)+'"</label>'+
-        '<select class="mi-canal" style="width:auto">'+opcsCanal(canal)+'</select>'+
-      '</div>'+
       '<div style="overflow-x:auto"><table><thead><tr>'+
         '<th>Mensaje</th><th>Nota En</th><th>Valor</th><th>Octava</th><th>Velocidad</th><th>Desactivar</th><th>Descripción</th><th></th>'+
       '</tr></thead><tbody class="mbody"></tbody></table></div>'+
@@ -484,7 +484,7 @@ function serializarMidi(){
   var out={version:2, cajas:{}};
   CAJAS_DEF.forEach(function(c){
     var div=laneDiv(c.id); if(!div) return;
-    var canal=parseInt(div.querySelector('.mi-canal').value,10)||1;
+    var canal=parseInt(div.dataset.canal,10)||1;
     var notas=[];
     div.querySelectorAll('.mbody .midi-row').forEach(function(tr){
       notas.push({
@@ -600,7 +600,7 @@ function seccionCif(sc){
   document.getElementById('cifrado-body').appendChild(div);
   previewCif(div.querySelector('.cif-texto'));
 }
-function agregarSeccion(){ seccionCif({tipo:'',nota:'',texto:''}); }
+function agregarSeccion(){ programarAutosaveCifrado(); seccionCif({tipo:'',nota:'',texto:''}); }
 function quitarSeccion(b){ var d=b.closest('.cif-sec'); if(d) d.remove(); }
 function serializarCifrado(){
   var arr=[];
@@ -643,6 +643,40 @@ function cargarJsonCifrado(input){
   };
   reader.readAsText(file);
 }
+var _cifTimer;
+function _autosavePost(action, fd, statusEl){
+  fd.append('autosave','1');
+  if(statusEl){ statusEl.textContent='Guardando…'; statusEl.style.opacity='1'; }
+  fetch(action, {method:'POST', body:fd}).then(function(r){ if(!r.ok) throw 0; }).then(function(){
+    if(statusEl){ statusEl.textContent='Guardado ✓'; setTimeout(function(){ statusEl.style.opacity='0'; }, 1600); }
+  }).catch(function(){ if(statusEl){ statusEl.textContent='⚠ No se pudo autoguardar'; statusEl.style.opacity='1'; } });
+}
+function autosaveCifrado(){
+  var arr=[];
+  document.querySelectorAll('#cifrado-body .cif-sec').forEach(function(d){
+    var tipo=d.querySelector('.cif-tipo').value.trim();
+    var nota=d.querySelector('.cif-nota').value.trim();
+    var texto=d.querySelector('.cif-texto').value;
+    if(!tipo && !nota && !texto.trim()) return;
+    arr.push({tipo:tipo, nota:nota, texto:texto});
+  });
+  var form=document.querySelector('#p-cifrado form'); if(!form) return;
+  var fd=new FormData(); fd.append('cifrado_json', JSON.stringify(arr));
+  _autosavePost(form.action, fd, document.getElementById('cif-autosave'));
+}
+function programarAutosaveCifrado(){ clearTimeout(_cifTimer); _cifTimer=setTimeout(autosaveCifrado, 400); }
+var _tmpTimer;
+function autosaveTiempos(){
+  var form=document.querySelector('#p-tiempos form'); if(!form) return;
+  var fd=new FormData(form); fd.delete('accion');
+  _autosavePost(form.action, fd, document.getElementById('tiempos-autosave'));
+}
+(function(){
+  var cb=document.getElementById('cifrado-body');
+  if(cb){ cb.addEventListener('focusout', function(){ programarAutosaveCifrado(); }); }
+  var tf=document.querySelector('#p-tiempos form');
+  if(tf){ tf.addEventListener('focusout', function(e){ var t=e.target; if(t&&t.classList&&t.classList.contains('t')){ clearTimeout(_tmpTimer); _tmpTimer=setTimeout(autosaveTiempos, 300); } }); }
+})();
 (function(){ if(CIFRADO && CIFRADO.length){ CIFRADO.forEach(seccionCif); } else { seccionCif({}); } })();
 </script>
 </body>

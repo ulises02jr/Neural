@@ -1340,6 +1340,8 @@ def admin_secciones(numero):
         carpeta.mkdir(exist_ok=True)
         _archivo_secciones(numero).write_text(
             json.dumps(guardadas, ensure_ascii=False, indent=2), encoding="utf-8")
+        if request.form.get("autosave"):
+            return jsonify({"ok": True})
         if request.form.get("accion") == "exportar_midi":
             data = _construir_midi_secciones(numero)
             nombre = secure_filename(cancion.get("titulo", "") or ("cancion_%d" % numero)) or ("cancion_%d" % numero)
@@ -2119,6 +2121,9 @@ def admin_cifrado(numero):
             sec["lines"] = lineas
         nuevas.append(sec)
     datos["secciones"] = nuevas
+    if request.form.get("autosave"):
+        f.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+        return jsonify({"ok": True})
     _backup_cancion(f)
     f.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
     flash("Cifrado guardado", "success")
