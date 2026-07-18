@@ -59,6 +59,7 @@
   {% endwith %}
 
   <form method="POST">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <label for="email">Email</label>
     <input type="email" id="email" name="email" autocomplete="email" autofocus required>
     <label for="password">Contraseña</label>

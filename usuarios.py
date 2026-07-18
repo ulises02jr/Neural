@@ -27,6 +27,7 @@ import secrets
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
+from werkzeug.security import generate_password_hash, check_password_hash
 
 ARCHIVO_DB = Path(__file__).parent / "usuarios.db"
 CODIGO_RESET_DURACION_MIN = 15
@@ -65,21 +66,71 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES usuarios(id)
             );
             CREATE INDEX IF NOT EXISTS idx_reset_codigo ON reset_codigos(codigo);
+
+            CREATE TABLE IF NOT EXISTS login_intentos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT NOT NULL,
+                ts TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_login_intentos ON login_intentos(ip, ts);
         """)
 
 
 def hash_password(password):
-    """Hash de password con SHA-256 + salt."""
-    salt = secrets.token_hex(16)
-    h = hashlib.sha256((salt + password).encode()).hexdigest()
-    return f"{salt}${h}"
+    """Hash seguro con PBKDF2-SHA256 (werkzeug)."""
+    return generate_password_hash(password, method="pbkdf2:sha256")
+
+
+def _es_hash_antiguo(h):
+    """True si es el formato viejo salt$sha256 (sin prefijo de metodo werkzeug)."""
+    return bool(h) and "$" in h and not h.startswith(("pbkdf2:", "scrypt:", "argon2"))
 
 
 def verificar_password(password, password_hash):
-    if "$" not in password_hash:
+    if not password_hash:
         return False
-    salt, h = password_hash.split("$", 1)
-    return hashlib.sha256((salt + password).encode()).hexdigest() == h
+    if _es_hash_antiguo(password_hash):
+        salt, h = password_hash.split("$", 1)
+        return hashlib.sha256((salt + password).encode()).hexdigest() == h
+    try:
+        return check_password_hash(password_hash, password)
+    except Exception:
+        return False
+
+
+def necesita_rehash(password_hash):
+    return _es_hash_antiguo(password_hash)
+
+
+# Rate limiting de intentos de login
+LOGIN_MAX_INTENTOS = 8
+LOGIN_VENTANA_MIN = 10
+
+
+def registrar_intento(ip):
+    try:
+        with _conexion() as conn:
+            conn.execute("INSERT INTO login_intentos (ip, ts) VALUES (?, ?)", (ip or "?", _ahora_iso()))
+    except Exception:
+        pass
+
+
+def login_bloqueado(ip):
+    try:
+        limite = (datetime.utcnow() - timedelta(minutes=LOGIN_VENTANA_MIN)).isoformat(timespec="seconds")
+        with _conexion() as conn:
+            n = conn.execute("SELECT COUNT(*) FROM login_intentos WHERE ip = ? AND ts > ?", (ip or "?", limite)).fetchone()[0]
+        return n >= LOGIN_MAX_INTENTOS
+    except Exception:
+        return False
+
+
+def limpiar_intentos(ip):
+    try:
+        with _conexion() as conn:
+            conn.execute("DELETE FROM login_intentos WHERE ip = ?", (ip or "?",))
+    except Exception:
+        pass
 
 
 def _ahora_iso():
@@ -165,6 +216,13 @@ def autenticar(email, password):
         return None
     if not verificar_password(password, u["password_hash"]):
         return None
+    if necesita_rehash(u["password_hash"]):
+        try:
+            nuevo = hash_password(password)
+            with _conexion() as conn:
+                conn.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (nuevo, u["id"]))
+        except Exception:
+            pass
     return u
 
 

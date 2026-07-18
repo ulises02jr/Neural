@@ -219,6 +219,7 @@
         </div>
       </div>
       <form method="POST" action="{{ url_for('admin_live_off') }}" onsubmit="return confirm('¿Forzar apagado del live?')">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button type="submit" class="danger">Forzar terminar live</button>
       </form>
     {% else %}
@@ -289,10 +290,12 @@
           </div>
           <div class="actions">
             <form method="POST" action="{{ url_for('admin_usuario_aprobar', user_id=u.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
               <button type="submit" class="primary" style="padding:6px 12px;font-size:12px">✓ Aprobar</button>
             </form>
             <form method="POST" action="{{ url_for('admin_usuario_eliminar', user_id=u.id) }}" style="display:inline"
                   onsubmit="return confirm('¿Rechazar y eliminar este usuario?')">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
               <button type="submit" class="icon-btn danger" title="Rechazar y eliminar">×</button>
             </form>
           </div>
@@ -321,6 +324,7 @@
             {% if not (usuario_actual and usuario_actual.id == u.id) %}
             <form method="POST" action="{{ url_for('admin_usuario_eliminar', user_id=u.id) }}" style="display:inline"
                   onsubmit="return confirm('¿Eliminar usuario {{ u.nombre }} {{ u.apellido }}?')">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
               <button type="submit" class="icon-btn danger" title="Eliminar">×</button>
             </form>
             {% endif %}
@@ -342,6 +346,7 @@
     <div style="margin-bottom:18px">
       <div class="col-h"><span>Nombre de la organización</span></div>
       <form method="POST" action="{{ url_for('admin_org_nombre') }}">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <div class="pw-row">
           <input type="text" name="org_nombre" value="{{ org_nombre }}" maxlength="80" required>
           <button type="submit" class="primary">Guardar</button>
@@ -354,6 +359,7 @@
       <div style="display:flex;align-items:center;gap:14px">
         <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="" style="width:56px;height:56px;border-radius:50%;background:#fff;padding:2px;object-fit:contain;flex-shrink:0">
         <form method="POST" action="{{ url_for('admin_org_logo') }}" enctype="multipart/form-data" style="flex:1">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required style="margin-bottom:10px">
           <button type="submit" class="primary">Subir logo</button>
         </form>
@@ -365,6 +371,7 @@
       <div class="col-h"><span>Mi perfil de administrador</span></div>
       {% if usuario_actual %}
       <form method="POST" action="{{ url_for('admin_perfil') }}">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
           <input type="text" name="nombre" value="{{ usuario_actual.nombre }}" placeholder="Nombre" required maxlength="40">
           <input type="text" name="apellido" value="{{ usuario_actual.apellido }}" placeholder="Apellido" required maxlength="40">
@@ -381,6 +388,7 @@
       <div class="col-h"><span>🔑 Cambiar mi contraseña</span></div>
       {% if usuario_actual %}
       <form method="POST" action="{{ url_for('admin_cambiar_mi_password') }}">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <div class="pw-row">
           <input type="password" name="nueva" placeholder="Mínimo 6 caracteres" required minlength="6">
           <button type="submit" class="primary">Actualizar</button>
@@ -396,6 +404,7 @@
       <details>
         <summary style="cursor:pointer;padding:10px 12px;background:var(--raised);border-radius:6px;font-size:13px;color:var(--txt2)">+ Crear nuevo admin</summary>
         <form method="POST" action="{{ url_for('admin_crear_admin') }}" style="padding:14px;background:var(--raised);border-radius:6px;margin-top:8px">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
             <input type="text" name="nombre" placeholder="Nombre" required maxlength="40">
             <input type="text" name="apellido" placeholder="Apellido" required maxlength="40">
@@ -414,6 +423,7 @@
 
     <!-- Crear nuevo setlist -->
     <form method="POST" action="{{ url_for('admin_setlist_crear') }}" class="new-setlist-form">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <input type="text" name="nombre" placeholder="Nombre (ej: Domingo mañana)" maxlength="80" required>
       <input type="date" name="fecha" value="{{ hoy }}" required>
       <button type="submit" class="primary">+ Crear setlist</button>
@@ -433,6 +443,7 @@
               <div class="sl-actions" onclick="event.preventDefault();event.stopPropagation();">
                 <button class="icon-btn" data-sl-id="{{ s.id }}" data-sl-nombre="{{ s.nombre }}" data-sl-fecha="{{ s.fecha }}" onclick="editarSetlistBtn(this)" title="Editar nombre/fecha">✎</button>
                 <form method="POST" action="{{ url_for('admin_setlist_eliminar', setlist_id=s.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
                   <button type="button" class="icon-btn danger" title="Eliminar repertorio"
                     onclick="event.preventDefault();event.stopPropagation();if(confirm('¿Eliminar este repertorio?'))this.closest('form').submit();">×</button>
                 </form>
@@ -453,29 +464,35 @@
                   <!-- Transposición -->
                   <div class="transpose">
                     <form method="POST" action="{{ url_for('admin_setlist_transponer', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
                       <input type="hidden" name="delta" value="-1">
                       <button type="submit" class="t-btn" title="Bajar 1 semitono">−</button>
                     </form>
                     <form method="POST" action="{{ url_for('admin_setlist_resetear_tono', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
                       <button type="submit" class="t-tono" title="Volver al tono original">{{ c.tono or '—' }}</button>
                     </form>
                     <form method="POST" action="{{ url_for('admin_setlist_transponer', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
                       <input type="hidden" name="delta" value="1">
                       <button type="submit" class="t-btn" title="Subir 1 semitono">+</button>
                     </form>
                   </div>
                   <div class="actions">
                     <form method="POST" action="{{ url_for('admin_setlist_mover', setlist_id=s.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
                       <input type="hidden" name="numero" value="{{ c.id }}">
                       <input type="hidden" name="direccion" value="arriba">
                       <button type="submit" class="icon-btn" {% if loop.first %}disabled{% endif %} title="Subir">↑</button>
                     </form>
                     <form method="POST" action="{{ url_for('admin_setlist_mover', setlist_id=s.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
                       <input type="hidden" name="numero" value="{{ c.id }}">
                       <input type="hidden" name="direccion" value="abajo">
                       <button type="submit" class="icon-btn" {% if loop.last %}disabled{% endif %} title="Bajar">↓</button>
                     </form>
                     <form method="POST" action="{{ url_for('admin_setlist_quitar', setlist_id=s.id, numero=c.id) }}" style="display:inline">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
                       <button type="submit" class="icon-btn danger" title="Quitar">×</button>
                     </form>
                   </div>
@@ -488,6 +505,7 @@
 
             <!-- Selector para agregar canción -->
             <form method="POST" action="{{ url_for('admin_setlist_agregar', setlist_id=s.id) }}" class="add-song-form">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
               <select name="numero" required>
                 <option value="">+ Agregar canción...</option>
                 {% set ids_en_setlist = s.canciones_resolved|map(attribute='id')|list %}
@@ -593,6 +611,7 @@
     <div class="modal-content">
       <h3>Editar setlist</h3>
       <form id="edit-form" method="POST">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <label>Nombre</label>
         <input type="text" name="nombre" id="edit-nombre" required maxlength="80">
         <label>Fecha</label>
@@ -609,6 +628,7 @@
     <h2>Biblioteca</h2>
     <p class="help" style="margin:-4px 0 10px">{{ biblioteca|length }} canción(es) disponibles.</p>
     <form method="POST" action="{{ url_for('admin_nueva_blanca') }}" style="margin-bottom:12px">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <button type="submit" class="primary" style="margin:0">＋ Nueva canción</button>
     </form>
     <div class="lista">

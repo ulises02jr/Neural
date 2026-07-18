@@ -131,6 +131,7 @@
     <div class="card">
       <h2>Información de Canción</h2>
       <form method="POST" action="{{ url_for('admin_info', numero=numero) }}" enctype="multipart/form-data" style="margin-top:6px">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <div class="info-grid">
           <div class="fld" style="grid-column:1/-1"><label>Nombre de canción *</label><input type="text" name="titulo" value="{{ info.titulo }}" required maxlength="120"></div>
           <div class="fld"><label>Artista</label><input type="text" name="artista" value="{{ info.artista }}" maxlength="80"></div>
@@ -167,6 +168,7 @@
       <div class="hint">Subí las pistas en <b>MP3 a 128 kbps</b> (buena calidad y livianas, para que carguen rápido). Podés subir archivos más pesados (WAV, 320 kbps, etc.) si preferís, pero queda a tu criterio: los tiempos de espera al subir y al generar los tonos serán más largos.</div>
       {% if stems %}
       <form method="POST" action="{{ url_for('admin_familias', numero=numero) }}">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <table>
           <tr><th>Pista</th><th>Familia</th><th></th></tr>
           {% for s in stems %}
@@ -193,6 +195,7 @@
       <hr class="sep">
       <h2>Agregar más pistas</h2>
       <form method="POST" action="{{ url_for('admin_editar_subir', numero=numero) }}" enctype="multipart/form-data" onsubmit="return uiSubiendoPistas(this)">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="file" name="pistas" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple required>
         <button class="primary" type="submit">Subir pistas</button>
         <div class="hint">Se agregan a las existentes. El nombre del archivo = nombre de la pista.</div>
@@ -207,6 +210,7 @@
       <h2>Cifrado</h2>
       <div class="hint">Editá la canción sección por sección. Escribí los acordes entre corchetes dentro de la letra, ej: <b>¿Cómo [C]expresar[D] tu amor por [G]mí?</b>. La vista previa muestra los acordes sobre la letra. El tiempo de cada sección se pone en "Time de Secciones".</div>
       <form method="POST" action="{{ url_for('admin_cifrado', numero=numero) }}" onsubmit="return serializarCifrado()" style="margin-top:14px">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="cifrado_json" id="cifrado_json">
         <datalist id="tipos-sec">
           <option value="Intro"></option><option value="Verso"></option><option value="Verso 1"></option><option value="Verso 2"></option><option value="Verso 3"></option><option value="Verso 4"></option>
@@ -233,6 +237,7 @@
       <h2>Time de Secciones</h2>
       <div class="hint">El tiempo va como <b>código de tiempo (SMPTE)</b> en formato <b>HH:MM:SS:mmm</b> (ej. 00:00:41:500), o simple <b>M:SS</b>. Los <b>:</b> se ponen solos al escribir. Dejá en blanco las secciones que no quieras marcar.</div>
       <form method="POST" action="{{ url_for('admin_secciones', numero=numero) }}" style="margin-top:14px" onsubmit="return validarTiempos(this)">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="volver" value="editar">
         <table>
           <tr><th>#</th><th>Sección del chart</th><th>Tiempo de inicio</th></tr>
@@ -266,12 +271,14 @@
           <span class="fr-sp"></span>
           {% if t.listo %}
           <form method="POST" action="{{ url_for('admin_borrar_tono', numero=numero, n=t.n) }}" onsubmit="return confirm('¿Eliminar la transposición en {{ t.nombre }}?')">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
             <button type="submit" class="fr-btn del">Eliminar</button>
           </form>
           {% elif t.en_proceso %}
           <button type="button" class="fr-btn proc" disabled>Generando…</button>
           {% else %}
           <form method="POST" action="{{ url_for('admin_pregenerar', numero=numero) }}" onsubmit="return uiGenerando(this)">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
             <input type="hidden" name="tono" value="{{ t.n }}">
             <button type="submit" class="fr-btn gen">Generar</button>
           </form>
@@ -288,6 +295,7 @@
       <h2>MIDI</h2>
       <div class="hint">Varias cajas independientes de notas MIDI (como en Secuencias: Lyrics, Luces, Patches, Guitar, Aux). Cada caja se exporta a su propio archivo <b>.mid</b>.</div>
       <form method="POST" action="{{ url_for('admin_midi', numero=numero) }}" onsubmit="return serializarMidi()" style="margin-top:14px">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="midi_json" id="midi_json">
         <input type="hidden" name="accion" id="midi_accion" value="guardar">
         <input type="hidden" name="caja" id="midi_caja" value="lyrics">
@@ -309,6 +317,7 @@
       <h2>Exportar Lyrics</h2>
       <div class="hint">Genera la letra para tu software de presentación (ProPresenter, EasyWorship, PowerPoint…). ProPresenter importa PPTX o TXT sin problema.</div>
       <form method="POST" action="{{ url_for('admin_letras', numero=numero) }}" style="margin-top:14px">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <div class="lt-grid">
           <div class="fld"><label>Formato</label>
             <select name="formato" id="lt-formato">
@@ -352,6 +361,7 @@
       <p>¿Está seguro que desea borrar esta canción?<br>Esta acción es <b>irreversible</b>: se borra el chart, las pistas y todos los tonos generados.</p>
       <form method="POST" action="{{ url_for('admin_eliminar', numero=numero) }}"
             onsubmit="return confirm('¿Está seguro que desea borrar esta canción? Esta acción es irreversible.')">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button type="submit">🗑 Eliminar definitivamente</button>
       </form>
     </div>
@@ -667,6 +677,7 @@ function autosaveCifrado(){
   });
   var form=document.querySelector('#p-cifrado form'); if(!form) return;
   var fd=new FormData(); fd.append('cifrado_json', JSON.stringify(arr));
+  var _ct=form.querySelector('[name=_csrf]'); if(_ct) fd.append('_csrf', _ct.value);
   _autosavePost(form.action, fd, document.getElementById('cif-autosave'));
 }
 function programarAutosaveCifrado(){ clearTimeout(_cifTimer); _cifTimer=setTimeout(autosaveCifrado, 400); }

@@ -35,6 +35,7 @@ import shutil
 import threading
 import logging
 import hashlib
+import hmac
 import secrets
 from functools import wraps
 from pathlib import Path
@@ -162,6 +163,35 @@ app = Flask(__name__)
 app.secret_key = _config_inicial["secret_key"]
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 5 MB max por archivo
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = True
+
+
+def _client_ip():
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or "?"
+
+
+@app.context_processor
+def _inyectar_csrf():
+    if "_csrf" not in session:
+        session["_csrf"] = secrets.token_hex(32)
+    return {"csrf_token": lambda: session.get("_csrf", "")}
+
+
+@app.before_request
+def _proteger_csrf():
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    if request.path.startswith("/api/"):
+        return
+    token = session.get("_csrf")
+    enviado = request.form.get("_csrf") or request.headers.get("X-CSRFToken")
+    if not token or not enviado or not hmac.compare_digest(str(token), str(enviado)):
+        abort(400)
 
 
 @app.context_processor
@@ -242,6 +272,10 @@ def login():
         if not email or not password:
             flash("Completá email y contraseña", "error")
             return render_template("login_musicos.html")
+        ip = _client_ip()
+        if usuarios.login_bloqueado(ip):
+            flash("Demasiados intentos fallidos. Esperá unos minutos y volvé a intentar.", "error")
+            return render_template("login_musicos.html")
         # Intentar autenticar con sistema de usuarios
         u = usuarios.autenticar(email, password)
         if u:
@@ -249,6 +283,7 @@ def login():
             if u["rol"] == "admin":
                 flash("Sos administrador. Usá el acceso de administrador.", "error")
                 return redirect(url_for("admin_login"))
+            usuarios.limpiar_intentos(ip)
             session.permanent = True
             session.clear()
             session["user_id"] = u["id"]
@@ -262,6 +297,7 @@ def login():
         elif existente and existente["estado"] == "rechazado":
             flash("Tu cuenta no fue aprobada. Contactá al administrador.", "error")
         else:
+            usuarios.registrar_intento(ip)
             flash("Email o contraseña incorrectos", "error")
     return render_template("login_musicos.html")
 
@@ -299,28 +335,37 @@ def admin_login():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
 
+        ip = _client_ip()
+        if usuarios.login_bloqueado(ip):
+            flash("Demasiados intentos fallidos. Esperá unos minutos.", "error")
+            return render_template("login_admin.html")
+
         # Si dejan email vacío → intentar password de emergencia
         if not email and password:
             cfg = get_config()
             if hash_password(password) == cfg.get("password_admin", ""):
+                usuarios.limpiar_intentos(ip)
                 session.permanent = True
                 session.clear()
                 session["rol"] = "admin"
                 session["nombre"] = "Admin (Emergencia)"
                 flash("⚠️ Entraste con password de emergencia. Iniciá sesión con tu cuenta personal cuando puedas.", "success")
                 return redirect(url_for("admin"))
+            usuarios.registrar_intento(ip)
             flash("Password de emergencia incorrecto", "error")
             return render_template("login_admin.html")
 
         # Login normal con email
         u = usuarios.autenticar(email, password)
         if u and u["rol"] == "admin":
+            usuarios.limpiar_intentos(ip)
             session.permanent = True
             session.clear()
             session["user_id"] = u["id"]
             session["rol"] = "admin"
             session["nombre"] = u["nombre"]
             return redirect(url_for("admin"))
+        usuarios.registrar_intento(ip)
         flash("Email o contraseña incorrectos (o no sos admin)", "error")
     return render_template("login_admin.html")
 

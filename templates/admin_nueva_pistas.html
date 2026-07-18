@@ -49,6 +49,7 @@
     <div class="song">🎵 Canción #{{ numero }} — <b>{{ titulo }}</b></div>
     <div class="desc">Elegí todas las pistas (stems) de esta canción — podés seleccionar varias a la vez. El nombre del archivo será el nombre de la pista.</div>
     <form method="POST" action="{{ url_for('admin_nueva_pistas', numero=numero) }}" enctype="multipart/form-data">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <input type="file" name="pistas" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple required>
       <button type="submit" class="primary">Subir y continuar →</button>
       <a class="skip" href="{{ url_for('admin_secciones', numero=numero, wizard=1) }}">Omitir por ahora</a>

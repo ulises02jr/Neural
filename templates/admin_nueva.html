@@ -44,6 +44,7 @@
     <h2>Paso 1 — Subir el chart (JSON)</h2>
     <div class="desc">Subí el archivo JSON de la canción (el que sale del conversor de Secuencias). Con esto quedan definidas las secciones del chart.</div>
     <form method="POST" action="{{ url_for('admin_nueva') }}" enctype="multipart/form-data">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <input type="file" name="archivo" accept=".json" required>
       <button type="submit" class="primary">Subir y continuar →</button>
     </form>

@@ -59,6 +59,7 @@
       Dejá en blanco las secciones que no quieras marcar. Copiá el tiempo directo de Logic.
     </div>
     <form method="POST" action="{{ url_for('admin_secciones', numero=numero) }}">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
       <table>
         <tr><th>#</th><th>Sección del chart</th><th>Tiempo de inicio</th></tr>

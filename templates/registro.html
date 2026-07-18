@@ -53,6 +53,7 @@
   </div>
 
   <form method="POST">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
     <div class="row">
       <div>
         <label for="nombre">Nombre</label>
