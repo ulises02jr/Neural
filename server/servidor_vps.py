@@ -1669,7 +1669,7 @@ def _midi_note_num(nota, octava):
         oc = int(octava)
     except Exception:
         oc = 0
-    return max(0, min(127, (oc + 1) * 12 + idx))
+    return max(0, min(127, (oc + 2) * 12 + idx))  # +1 octava: alineado con ProPresenter/Playback
 
 
 def _construir_midi(eventos, canal=1):
