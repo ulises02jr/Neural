@@ -1981,17 +1981,17 @@ private:
     void fetchLiveChartForCurrent()
     {
         if (currentSong >= 0 && currentSong < repertoire.size())
-            fetchLiveChart (repertoire.getReference (currentSong).id);
+            fetchLiveChart (repertoire.getReference (currentSong).id, repertoire.getReference (currentSong).tono);
     }
 
-    void fetchLiveChart (int songId)
+    void fetchLiveChart (int songId, int tono)
     {
         if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
         const auto url = serverUrl; const auto tok = serverToken;
         juce::Component::SafePointer<MainComponent> sp (this);
-        juce::Thread::launch ([sp, url, tok, songId]
+        juce::Thread::launch ([sp, url, tok, songId, tono]
         {
-            auto js = httpGet (url + "/api/live/chart/" + juce::String (songId), tok);
+            auto js = httpGet (url + "/api/live/chart/" + juce::String (songId) + "?t=" + juce::String (tono), tok);
             juce::MessageManager::callAsync ([sp, js]
             {
                 if (sp == nullptr) return;
@@ -2388,7 +2388,7 @@ private:
         }
 
         liveSectionIdx.store (0);
-        if (syncEnabled) fetchLiveChart (sng.id);
+        if (syncEnabled) fetchLiveChart (sng.id, sng.tono);
 
         rebuildMixerUI();
         highlightSongButton();
