@@ -76,6 +76,22 @@ static juce::String httpPostJson (const juce::String& url, const juce::String& j
     return in->readEntireStreamAsString();
 }
 
+// POST con parámetros de formulario + token en header Bearer (para /api/live/setlist/* y render)
+static juce::String httpPostForm (const juce::String& baseUrl, juce::StringPairArray params, const juce::String& token)
+{
+    juce::URL u (baseUrl);
+    params.set ("_", "1");   // asegura que JUCE use método POST (cuerpo no vacío)
+    for (auto& k : params.getAllKeys()) u = u.withParameter (k, params[k]);
+    int status = 0;
+    auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
+                    .withExtraHeaders ("Authorization: Bearer " + token)
+                    .withConnectionTimeoutMs (10000)
+                    .withStatusCode (&status);
+    std::unique_ptr<juce::InputStream> in (u.createInputStream (opts));
+    if (in == nullptr) return {};
+    return in->readEntireStreamAsString();
+}
+
 static juce::String localLanIp()
 {
     for (auto& a : juce::IPAddress::getAllAddresses (false))   // IPv4
@@ -253,8 +269,28 @@ struct SongCard : public juce::Component
     juce::Image cover;
     juce::String titulo, tono;
     bool active = false;
-    std::function<void()> onClick;
-    void mouseUp (const juce::MouseEvent& e) override { if (onClick && e.mouseWasClicked()) onClick(); }
+    bool editMode = false;
+    std::function<void()> onClick, onRemove, onTono;
+
+    juce::Rectangle<float> coverRect() const
+    {
+        auto r = getLocalBounds().toFloat();
+        r.removeFromTop (6.0f);
+        return r.removeFromTop (r.getHeight() * 0.76f).reduced (1.0f);
+    }
+    juce::Rectangle<float> removeBtnRect() const { auto c = coverRect(); return { c.getRight() - 34.0f, c.getY() + 8.0f, 26.0f, 26.0f }; }
+    juce::Rectangle<float> tonoBtnRect()   const { auto c = coverRect(); return { c.getCentreX() - 22.0f, c.getCentreY() - 18.0f, 44.0f, 36.0f }; }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (! e.mouseWasClicked()) return;
+        if (editMode)
+        {
+            if (removeBtnRect().contains (e.position)) { if (onRemove) onRemove(); return; }
+            if (tonoBtnRect().contains (e.position))   { if (onTono)   onTono();   return; }
+        }
+        if (onClick) onClick();
+    }
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
@@ -276,6 +312,42 @@ struct SongCard : public juce::Component
         g.setColour (active ? juce::Colour (0xffffffff) : juce::Colour (0xfff2f2f2));
         g.setFont (juce::Font (17.0f, juce::Font::bold));
         g.drawFittedText (linea, txt.toNearestInt(), juce::Justification::topLeft, 2);
+
+        if (editMode)
+        {
+            auto c = coverRect();
+            { juce::Path clip; clip.addRoundedRectangle (c, 9.0f); g.saveState(); g.reduceClipRegion (clip);
+              g.setColour (juce::Colour (0x66000000)); g.fillRect (c); g.restoreState(); }
+            auto rb = removeBtnRect();
+            g.setColour (juce::Colour (0xffE5534B)); g.fillEllipse (rb);
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (22.0f, juce::Font::bold));
+            g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), rb, juce::Justification::centred);   // −
+            auto tb = tonoBtnRect();
+            g.setColour (juce::Colour (0xF0141414)); g.fillRoundedRectangle (tb, 8.0f);
+            g.setColour (juce::Colour (0x44ffffff)); g.drawRoundedRectangle (tb, 8.0f, 1.2f);
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (22.0f, juce::Font::bold));
+            g.drawText (juce::String::fromUTF8 ("\xe2\x8b\xaf"), tb, juce::Justification::centred);   // ⋯
+        }
+    }
+};
+
+struct AddCard : public juce::Component
+{
+    std::function<void()> onClick;
+    void mouseUp (const juce::MouseEvent& e) override { if (onClick && e.mouseWasClicked()) onClick(); }
+    void paint (juce::Graphics& g) override
+    {
+        auto r = getLocalBounds().toFloat();
+        r.removeFromTop (6.0f);
+        auto cov = r.removeFromTop (r.getHeight() * 0.76f).reduced (1.0f);
+        g.setColour (juce::Colour (0xff121212)); g.fillRoundedRectangle (cov, 9.0f);
+        g.setColour (juce::Colour (0x55ffffff)); g.drawRoundedRectangle (cov, 9.0f, 1.4f);
+        g.setColour (juce::Colour (0xff7Cc6ff)); g.setFont (juce::Font (46.0f, juce::Font::bold));
+        g.drawText ("+", cov, juce::Justification::centred);
+        r.removeFromTop (5.0f);
+        g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (15.0f, juce::Font::bold));
+        g.drawFittedText (juce::String::fromUTF8 ("Agregar canci\xc3\xb3n"), r.reduced (3.0f, 0.0f).toNearestInt(),
+                          juce::Justification::topLeft, 2);
     }
 };
 
@@ -490,6 +562,7 @@ struct RepertoireLoader : public juce::Thread
         if (wantedId.isNotEmpty())
             for (auto& s : *setlists)
                 if (s.getProperty ("id", "").toString() == wantedId) { sl = s; break; }
+        resolvedId = sl.getProperty ("id", "").toString();
         juce::String slName = sl.getProperty ("nombre", "Repertorio").toString();
         auto* cs = sl.getProperty ("canciones", juce::var()).getArray();
         if (cs == nullptr || cs->isEmpty()) { status ("Repertorio vacio"); return; }
@@ -518,8 +591,8 @@ struct RepertoireLoader : public juce::Thread
             if (e.tono != 0 && ! (bool) pv.getProperty ("listo", false))
             {
                 status (juce::String::fromUTF8 ("Este tono no se encontraba renderizado, espere unos momentos mientras se renderiza\xe2\x80\xa6"));
-                httpPostJson (serverUrl + "/api/live/render/" + juce::String (e.id) + "/"
-                              + juce::String (e.tono) + "?token=" + token, "{}");
+                httpPostForm (serverUrl + "/api/live/render/" + juce::String (e.id) + "/"
+                              + juce::String (e.tono), {}, token);
                 for (int tries = 0; tries < 600 && ! threadShouldExit(); ++tries)   // hasta ~10 min
                 {
                     auto est = juce::JSON::parse (httpGet (serverUrl + "/api/live/render/" + juce::String (e.id) + "/"
@@ -602,7 +675,8 @@ struct RepertoireLoader : public juce::Thread
     }
 
     juce::String serverUrl, token;
-    juce::String wantedId;   // setlist elegido (vacio = el primero)
+    juce::String wantedId;    // setlist elegido (vacio = el primero)
+    juce::String resolvedId;  // id real del setlist cargado (lo llena run())
     juce::File cacheDir;
 };
 
@@ -765,7 +839,8 @@ struct RepertoirePicker : public juce::Component
     int selected = -1;
     bool loading = true;
     std::function<void (juce::String)> onLoad;
-    juce::TextButton loadBtn, closeBtn;
+    std::function<void()> onNew;
+    juce::TextButton loadBtn, newBtn, closeBtn;
 
     RepertoirePicker()
     {
@@ -778,6 +853,11 @@ struct RepertoirePicker : public juce::Component
             { setVisible (false); onLoad (items[selected].id); }
         };
         addAndMakeVisible (loadBtn);
+        newBtn.setButtonText (juce::String::fromUTF8 ("+ Nuevo"));
+        newBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        newBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff7Cc6ff));
+        newBtn.onClick = [this] { setVisible (false); if (onNew) onNew(); };
+        addAndMakeVisible (newBtn);
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
@@ -847,7 +927,9 @@ struct RepertoirePicker : public juce::Component
     {
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
-        loadBtn.setBounds (p.getX() + (p.getWidth() - 130) / 2, p.getBottom() - 54, 130, 36);
+        auto brow = juce::Rectangle<int> (p.getX() + 20, p.getBottom() - 54, p.getWidth() - 40, 36);
+        newBtn.setBounds (brow.removeFromLeft (110));
+        loadBtn.setBounds (brow.removeFromRight (130));
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -1096,6 +1178,174 @@ struct AudioConfigPanel : public juce::Component
     }
 };
 
+// ───────── Panel de edición de repertorio (biblioteca + grid de tonos) ─────────
+struct RepEditPanel : public juce::Component, private juce::Timer
+{
+    enum Mode { Biblioteca, Tono };
+    Mode mode = Biblioteca;
+    juce::String serverUrl, token;
+
+    struct BibItem { int id = 0; juce::String titulo, tono; };
+    juce::Array<BibItem> bib;
+
+    int songId = 0; juce::String songTitle; bool addFlow = false;
+    struct Key { juce::String nombre; int sem = 0; bool rendered = false; };
+    juce::Array<Key> keys;
+    int renderingSem = 99, pendIdx = -1, progHechos = 0, progTotal = 0;
+
+    juce::TextButton closeBtn;
+    std::function<void (int)> onPickSong;            // biblioteca -> elegir cancion
+    std::function<void (int, juce::String)> onChoose; // (semitonos, nombre) -> aplicar
+
+    RepEditPanel()
+    {
+        setAlwaysOnTop (true);
+        closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
+        closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        closeBtn.onClick = [this] { stopTimer(); renderingSem = 99; setVisible (false); };
+        addAndMakeVisible (closeBtn);
+    }
+
+    void openBiblioteca (juce::Array<BibItem> items)
+    { mode = Biblioteca; bib = std::move (items); renderingSem = 99; stopTimer(); resized(); repaint(); }
+    void openTono (int id, juce::String title, bool add, juce::Array<Key> ks)
+    { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); renderingSem = 99; stopTimer(); resized(); repaint(); }
+
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 520); }
+
+    juce::Rectangle<int> keyRect (int i) const
+    {
+        auto p = panelBounds().reduced (22); p.removeFromTop (58);
+        const int cols = 3, gap = 10, cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = 60;
+        return { p.getX() + (i % cols) * (cw + gap), p.getY() + (i / cols) * (ch + gap), cw, ch };
+    }
+    juce::Rectangle<int> bibRect (int i) const
+    {
+        auto p = panelBounds().reduced (18); p.removeFromTop (52);
+        return { p.getX(), p.getY() + i * 48, p.getWidth(), 42 };
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xC0000000));
+        auto p = panelBounds().toFloat();
+        g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (p, 14.0f);
+        g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (p, 14.0f, 1.2f);
+
+        g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
+        auto title = (mode == Biblioteca) ? juce::String::fromUTF8 ("Agregar canci\xc3\xb3n")
+                                          : (juce::String::fromUTF8 ("Tono \xc2\xb7 ") + songTitle);
+        g.drawText (title, panelBounds().removeFromTop (52).reduced (22, 0), juce::Justification::centredLeft);
+
+        if (mode == Biblioteca)
+        {
+            for (int i = 0; i < bib.size(); ++i)
+            {
+                auto r = bibRect (i).toFloat();
+                g.setColour (juce::Colour (0xff1c1c1c)); g.fillRoundedRectangle (r, 9.0f);
+                g.setColour (juce::Colour (0x22ffffff)); g.drawRoundedRectangle (r, 9.0f, 1.0f);
+                g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
+                g.drawText (bib[i].titulo, r.reduced (14, 0).removeFromTop (r.getHeight() * 0.62f), juce::Justification::centredLeft);
+                g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (11.5f));
+                g.drawText (juce::String::fromUTF8 ("Tono ") + bib[i].tono, r.reduced (14, 5).removeFromBottom (15.0f), juce::Justification::centredLeft);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < keys.size() && i < 12; ++i)
+            {
+                auto r = keyRect (i).toFloat(); auto& k = keys.getReference (i);
+                g.setColour (k.rendered ? juce::Colour (0xff20301f) : juce::Colour (0xff181818)); g.fillRoundedRectangle (r, 9.0f);
+                g.setColour (k.rendered ? juce::Colour (0x553ED66E) : juce::Colour (0x22ffffff)); g.drawRoundedRectangle (r, 9.0f, 1.0f);
+                g.setColour (k.rendered ? juce::Colours::white : juce::Colour (0xff6a6a6a));
+                g.setFont (juce::Font (19.0f, juce::Font::bold));
+                g.drawText (k.nombre, r.withTrimmedBottom (k.rendered ? 0.0f : 14.0f), juce::Justification::centred);
+                if (! k.rendered)
+                { g.setColour (juce::Colour (0xff7a7a7a)); g.setFont (juce::Font (9.5f, juce::Font::bold));
+                  g.drawText (juce::String::fromUTF8 ("generar"), r.removeFromBottom (16.0f), juce::Justification::centred); }
+                if (k.sem == renderingSem)
+                {
+                    g.setColour (juce::Colour (0xAA000000)); g.fillRoundedRectangle (r, 9.0f);
+                    g.setColour (juce::Colour (0xff7Cc6ff)); g.setFont (juce::Font (11.0f, juce::Font::bold));
+                    g.drawText (progTotal > 0 ? (juce::String (progHechos) + "/" + juce::String (progTotal)) : juce::String::fromUTF8 ("\xe2\x80\xa6"),
+                                r, juce::Justification::centred);
+                }
+            }
+            if (renderingSem != 99)   // barra de progreso
+            {
+                auto pb = panelBounds();
+                juce::Rectangle<float> bar ((float) pb.getX() + 22.0f, (float) pb.getBottom() - 38.0f, (float) pb.getWidth() - 44.0f, 8.0f);
+                g.setColour (juce::Colour (0xff262626)); g.fillRoundedRectangle (bar, 4.0f);
+                float frac = progTotal > 0 ? juce::jlimit (0.05f, 1.0f, (float) progHechos / (float) progTotal) : 0.1f;
+                g.setColour (juce::Colour (0xff3ED66E)); g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * frac), 4.0f);
+            }
+        }
+    }
+
+    void resized() override { closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30); }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! panelBounds().contains (e.getPosition())) { stopTimer(); renderingSem = 99; setVisible (false); return; }
+        if (renderingSem != 99) return;   // ocupado renderizando
+        if (mode == Biblioteca)
+        {
+            for (int i = 0; i < bib.size(); ++i)
+                if (bibRect (i).contains (e.getPosition())) { if (onPickSong) onPickSong (bib[i].id); return; }
+        }
+        else
+        {
+            for (int i = 0; i < keys.size() && i < 12; ++i)
+                if (keyRect (i).contains (e.getPosition()))
+                {
+                    auto& k = keys.getReference (i);
+                    if (k.rendered) { if (onChoose) onChoose (k.sem, k.nombre); }
+                    else            startRender (i);
+                    return;
+                }
+        }
+    }
+
+    void startRender (int i)
+    {
+        renderingSem = keys[i].sem; pendIdx = i; progHechos = 0; progTotal = 0;
+        const auto url = serverUrl, tok = token; const int sid = songId, sem = keys[i].sem;
+        juce::Thread::launch ([url, tok, sid, sem]
+        { httpPostForm (url + "/api/live/render/" + juce::String (sid) + "/" + juce::String (sem), {}, tok); });
+        startTimerHz (2);
+        repaint();
+    }
+
+    void timerCallback() override
+    {
+        if (renderingSem == 99) { stopTimer(); return; }
+        const auto url = serverUrl, tok = token; const int sid = songId, sem = renderingSem;
+        juce::Component::SafePointer<RepEditPanel> sp (this);
+        juce::Thread::launch ([sp, url, tok, sid, sem]
+        {
+            auto est = juce::JSON::parse (httpGet (url + "/api/live/render/" + juce::String (sid) + "/" + juce::String (sem) + "/estado", tok));
+            const bool listo = (bool) est.getProperty ("listo", false);
+            const auto prog = est.getProperty ("progreso", "").toString();
+            juce::MessageManager::callAsync ([sp, listo, prog]
+            {
+                if (sp == nullptr) return;
+                if (prog.containsChar ('/')) { sp->progHechos = prog.upToFirstOccurrenceOf ("/", false, false).getIntValue();
+                                               sp->progTotal  = prog.fromFirstOccurrenceOf ("/", false, false).getIntValue(); }
+                if (listo)
+                {
+                    const int i = sp->pendIdx, sem2 = sp->renderingSem;
+                    juce::String nom = (i >= 0 && i < sp->keys.size()) ? sp->keys[i].nombre : juce::String();
+                    if (i >= 0 && i < sp->keys.size()) sp->keys.getReference (i).rendered = true;
+                    sp->renderingSem = 99; sp->stopTimer(); sp->repaint();
+                    if (sp->onChoose) sp->onChoose (sem2, nom);
+                }
+                else sp->repaint();
+            });
+        });
+    }
+};
+
 // ───────── Página del músico (servida por el :5050 embebido) ─────────
 static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><head>
 <meta charset="utf-8">
@@ -1270,6 +1520,7 @@ public:
         addAndMakeVisible (repertoireBtn);
         repertoireBtn.onClick = [this] { openRepertoirePicker(); };
         repPicker.onLoad = [this] (juce::String id) { startLoadId (id); };
+        repPicker.onNew  = [this] { createSetlist(); };
         addChildComponent (repPicker);
 
         settingsBtn.onClick = [this]
@@ -1301,7 +1552,27 @@ public:
         editBtn.setButtonText ("Editar");
         editBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         editBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        editBtn.onClick = [this] { toggleEdit(); };
         addAndMakeVisible (editBtn);
+
+        addCard.onClick = [this] { openBibliotecaForAdd(); };
+        addChildComponent (addCard);
+
+        repEdit.onPickSong = [this] (int songId)
+        {
+            juce::String title;
+            for (auto& b : bibliotecaAll) if (b.id == songId) { title = b.titulo; break; }
+            openTonoFor (songId, title, true);
+        };
+        repEdit.onChoose = [this] (int sem, juce::String nombre)
+        {
+            juce::ignoreUnused (sem);
+            const int sid = repEdit.songId; const bool add = repEdit.addFlow;
+            repEdit.setVisible (false);
+            if (add) addSong (sid, nombre);
+            else     setSongTono (sid, nombre);
+        };
+        addChildComponent (repEdit);
         padBtn.setButtonText ("PAD");
         padBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         padBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
@@ -1826,6 +2097,7 @@ public:
         {
             int x = strip.getX();
             for (auto* c : songCards) { c->setBounds (x, strip.getY(), 240, 178); x += 250; }
+            if (editMode) addCard.setBounds (x, strip.getY(), 240, 178);
         }
         area.removeFromTop (4);
 
@@ -1865,6 +2137,7 @@ public:
         repPicker.setBounds (getLocalBounds());
         settingsPanel.setBounds (getLocalBounds());
         audioCfg.setBounds (getLocalBounds());
+        repEdit.setBounds (getLocalBounds());
     }
 
     void layoutFaderStrip()
@@ -2221,6 +2494,140 @@ private:
         startLoadId (lastSetlistId);
     }
 
+    // ───────── Edición de repertorio ─────────
+    void toggleEdit()
+    {
+        editMode = ! editMode;
+        editBtn.setColour (juce::TextButton::buttonColourId, editMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));
+        editBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        editBtn.repaint();
+        rebuildRepertoireStrip();
+    }
+
+    void postThenReload (juce::String baseUrl, juce::StringPairArray params)
+    {
+        const auto tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, baseUrl, params, tok]
+        {
+            httpPostForm (baseUrl, params, tok);
+            juce::MessageManager::callAsync ([sp] { if (sp) sp->reloadCurrent(); });
+        });
+    }
+
+    void removeSong (int songId)
+    {
+        if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/quitar/" + juce::String (songId), {});
+    }
+    void setSongTono (int songId, juce::String tonoName)
+    {
+        if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        juce::StringPairArray p; p.set ("tono", tonoName);
+        postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/tono/" + juce::String (songId), p);
+    }
+    void addSong (int songId, juce::String tonoName)
+    {
+        if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        juce::StringPairArray p; p.set ("numero", juce::String (songId)); p.set ("tono", tonoName);
+        postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/agregar", p);
+    }
+
+    void createSetlist()
+    {
+        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Nuevo repertorio"),
+                                          juce::String::fromUTF8 ("Nombre del repertorio:"),
+                                          juce::MessageBoxIconType::NoIcon);
+        aw->addTextEditor ("n", "");
+        aw->addButton ("Crear", 1);
+        aw->addButton ("Cancelar", 0);
+        juce::Component::SafePointer<MainComponent> sp (this);
+        aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
+        {
+            const juce::String nombre = aw->getTextEditorContents ("n").trim();
+            if (r == 1 && sp != nullptr)
+                sp->doCreateSetlist (nombre.isNotEmpty() ? nombre : juce::String ("Nuevo repertorio"));
+        }), true);
+    }
+
+    void doCreateSetlist (juce::String nombre)
+    {
+        if (serverUrl.isEmpty()) return;
+        const auto base = serverUrl + "/api/live/setlist/crear"; const auto tok = serverToken;
+        juce::StringPairArray p; p.set ("nombre", nombre);
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, base, p, tok]
+        {
+            auto v = juce::JSON::parse (httpPostForm (base, p, tok));
+            const auto id = v.getProperty ("id", "").toString();
+            juce::MessageManager::callAsync ([sp, id]
+            {
+                if (sp == nullptr || id.isEmpty()) return;
+                if (! sp->editMode) sp->toggleEdit();   // entrar en modo edición para agregar canciones
+                sp->startLoadId (id);
+            });
+        });
+    }
+
+    void openBibliotecaForAdd()
+    {
+        if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        repEdit.serverUrl = serverUrl; repEdit.token = serverToken;
+        repEdit.setBounds (getLocalBounds());
+        const auto url = serverUrl; const auto tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, url, tok]
+        {
+            auto v = juce::JSON::parse (httpGet (url + "/api/live/setlists", tok));
+            juce::Array<RepEditPanel::BibItem> items;
+            if (auto* obj = v.getProperty ("canciones", juce::var()).getDynamicObject())
+                for (auto& pr : obj->getProperties())
+                {
+                    RepEditPanel::BibItem it;
+                    it.id     = (int) pr.value.getProperty ("id", 0);
+                    it.titulo = pr.value.getProperty ("titulo", "").toString();
+                    it.tono   = pr.value.getProperty ("tono", "").toString();
+                    if (it.id > 0) items.add (it);
+                }
+            juce::MessageManager::callAsync ([sp, items]
+            {
+                if (sp == nullptr) return;
+                sp->bibliotecaAll = items;
+                sp->repEdit.openBiblioteca (items);
+                sp->repEdit.setVisible (true); sp->repEdit.toFront (true);
+            });
+        });
+    }
+
+    void openTonoFor (int songId, juce::String title, bool addFlow)
+    {
+        if (serverUrl.isEmpty()) return;
+        repEdit.serverUrl = serverUrl; repEdit.token = serverToken;
+        repEdit.setBounds (getLocalBounds());
+        const auto url = serverUrl; const auto tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, url, tok, songId, title, addFlow]
+        {
+            auto v = juce::JSON::parse (httpGet (url + "/api/live/tonos/" + juce::String (songId) + "?token=" + tok, tok));
+            juce::Array<RepEditPanel::Key> ks;
+            if (auto* a = v.getProperty ("keys", juce::var()).getArray())
+                for (auto& kv : *a)
+                {
+                    RepEditPanel::Key k;
+                    k.nombre   = kv.getProperty ("nombre", "").toString();
+                    k.sem      = (int) kv.getProperty ("semitonos", 0);
+                    k.rendered = (bool) kv.getProperty ("rendered", false);
+                    ks.add (k);
+                }
+            juce::MessageManager::callAsync ([sp, songId, title, addFlow, ks]
+            {
+                if (sp == nullptr) return;
+                sp->repEdit.openTono (songId, title, addFlow, ks);
+                sp->repEdit.setVisible (true); sp->repEdit.toFront (true);
+            });
+        });
+    }
+
     void startLoadId (juce::String setlistId)
     {
         if (serverToken.isEmpty()) { connStatus.setText ("Falta servidor/token", juce::dontSendNotification); return; }
@@ -2270,6 +2677,7 @@ private:
 
     void onRepertoireLoaded (juce::Array<SongEntry> songs)
     {
+        if (loader && loader->resolvedId.isNotEmpty()) lastSetlistId = loader->resolvedId;   // id real del setlist
         repertoire = songs;
         songMaster.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i) songMaster.add (0.0);
@@ -2289,10 +2697,14 @@ private:
             c->cover = s.cover;
             c->titulo = s.titulo;
             c->tono = s.tonoNombre;
-            const int idx = i;
-            c->onClick = [this, idx] { loadSong (idx); };
+            c->editMode = editMode;
+            const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
+            c->onClick  = [this, idx] { loadSong (idx); };
+            c->onRemove = [this, sid] { removeSong (sid); };
+            c->onTono   = [this, sid, title] { openTonoFor (sid, title, false); };
             addAndMakeVisible (c);
         }
+        addCard.setVisible (editMode);
         highlightSongButton();
         resized();
     }
@@ -2911,6 +3323,10 @@ private:
     RepertoirePicker repPicker;
     SettingsPanel settingsPanel;
     juce::String lastSetlistId;   // setlist cargado (para "Actualizar")
+    RepEditPanel repEdit;
+    AddCard addCard;
+    bool editMode = false;
+    juce::Array<RepEditPanel::BibItem> bibliotecaAll;
     bool syncEnabled = false;
     std::atomic<bool> syncLinked { false };
     int syncPingCtr = 0, syncPollCtr = 0;
