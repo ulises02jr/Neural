@@ -869,22 +869,29 @@ struct RepertoirePicker : public juce::Component
 
 struct SettingsPanel : public juce::Component
 {
-    juce::TextButton syncBtn, cfgBtn, closeBtn;
+    juce::TextButton syncBtn, cfgBtn, refreshBtn, closeBtn;
     bool syncOn = false, linked = false;
     juce::Rectangle<int> indRect;
     std::function<void (bool)> onSync;
     std::function<void()> onConfig;
+    std::function<void()> onRefresh;
 
     SettingsPanel()
     {
         syncBtn.onClick  = [this] { if (onSync) onSync (! syncOn); };
         addAndMakeVisible (syncBtn);
 
-        cfgBtn.setButtonText ("Configuraciones");
+        cfgBtn.setButtonText (juce::String::fromUTF8 ("Salidas de Audio"));
         cfgBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         cfgBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         cfgBtn.onClick = [this] { if (onConfig) onConfig(); };
         addAndMakeVisible (cfgBtn);
+
+        refreshBtn.setButtonText (juce::String::fromUTF8 ("Actualizar"));
+        refreshBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        refreshBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        refreshBtn.onClick = [this] { if (onRefresh) onRefresh(); };
+        addAndMakeVisible (refreshBtn);
 
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
@@ -907,7 +914,7 @@ struct SettingsPanel : public juce::Component
         repaint();
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (360, 244); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (360, 312); }
 
     void paint (juce::Graphics& g) override
     {
@@ -949,6 +956,8 @@ struct SettingsPanel : public juce::Component
         syncBtn.setBounds (row);
         b.removeFromTop (14);
         cfgBtn.setBounds (b.removeFromTop (48).withTrimmedRight (28));
+        b.removeFromTop (14);
+        refreshBtn.setBounds (b.removeFromTop (48).withTrimmedRight (28));
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -1270,8 +1279,9 @@ public:
             settingsPanel.setVisible (true);
             settingsPanel.toFront (true);
         };
-        settingsPanel.onSync   = [this] (bool on) { setSync (on); };
-        settingsPanel.onConfig = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
+        settingsPanel.onSync    = [this] (bool on) { setSync (on); };
+        settingsPanel.onConfig  = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
+        settingsPanel.onRefresh = [this] { settingsPanel.setVisible (false); reloadCurrent(); };
         addChildComponent (settingsPanel);
 
         audioCfg.onDevice = [this] (const juce::String& d) { applyAudioDevice (d); };
@@ -2206,11 +2216,17 @@ private:
         });
     }
 
+    void reloadCurrent()   // "Actualizar": vuelve a bajar el setlist actual (agarra cambios de tono/chart)
+    {
+        startLoadId (lastSetlistId);
+    }
+
     void startLoadId (juce::String setlistId)
     {
         if (serverToken.isEmpty()) { connStatus.setText ("Falta servidor/token", juce::dontSendNotification); return; }
         if (loader && loader->isThreadRunning()) return;
-        connStatus.setText ("Conectando...", juce::dontSendNotification);
+        lastSetlistId = setlistId;
+        connStatus.setText ("Actualizando...", juce::dontSendNotification);
         loader = std::make_unique<RepertoireLoader> (serverUrl, serverToken, npAppDir().getChildFile ("cache"));
         loader->wantedId = setlistId;
         juce::Component::SafePointer<MainComponent> sp (this);
@@ -2894,6 +2910,7 @@ private:
     MidiPanel midiPanel;
     RepertoirePicker repPicker;
     SettingsPanel settingsPanel;
+    juce::String lastSetlistId;   // setlist cargado (para "Actualizar")
     bool syncEnabled = false;
     std::atomic<bool> syncLinked { false };
     int syncPingCtr = 0, syncPollCtr = 0;
