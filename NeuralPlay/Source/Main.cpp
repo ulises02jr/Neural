@@ -501,17 +501,38 @@ struct RepertoireLoader : public juce::Thread
             auto item = (*cs)[i];
             SongEntry e;
             e.id   = (int) item.getProperty ("id", 0);
-            e.tono = (int) item.getProperty ("tono", 0);
+            e.tono = (int) item.getProperty ("tono_semitonos", 0);   // semitono resuelto por el servidor
             auto meta = cIdx.getProperty (juce::String (e.id), juce::var());
             e.titulo     = meta.getProperty ("titulo", "Cancion " + juce::String (e.id)).toString();
             e.artista    = meta.getProperty ("artista", "").toString();
             e.tonoNombre = meta.getProperty ("tono", "").toString();
+            { auto tn = item.getProperty ("tono_nombre", "").toString(); if (tn.isNotEmpty()) e.tonoNombre = tn; }
             e.portada = meta.getProperty ("portada", "").toString();
 
             status ("Preparando " + juce::String (i + 1) + "/" + juce::String (cs->size()) + ": " + e.titulo);
 
-            auto pv = juce::JSON::parse (httpGet (serverUrl + "/api/live/pistas/" + juce::String (e.id)
-                                                  + "?t=" + juce::String (e.tono), token));
+            const auto pistasUrl = serverUrl + "/api/live/pistas/" + juce::String (e.id) + "?t=" + juce::String (e.tono);
+            auto pv = juce::JSON::parse (httpGet (pistasUrl, token));
+
+            // Si el tono no está renderizado en el servidor, pedir que se genere y esperar
+            if (e.tono != 0 && ! (bool) pv.getProperty ("listo", false))
+            {
+                status (juce::String::fromUTF8 ("Este tono no se encontraba renderizado, espere unos momentos mientras se renderiza\xe2\x80\xa6"));
+                httpPostJson (serverUrl + "/api/live/render/" + juce::String (e.id) + "/"
+                              + juce::String (e.tono) + "?token=" + token, "{}");
+                for (int tries = 0; tries < 600 && ! threadShouldExit(); ++tries)   // hasta ~10 min
+                {
+                    auto est = juce::JSON::parse (httpGet (serverUrl + "/api/live/render/" + juce::String (e.id) + "/"
+                                                           + juce::String (e.tono) + "/estado", token));
+                    if ((bool) est.getProperty ("listo", false)) break;
+                    auto prog = est.getProperty ("progreso", "").toString();
+                    status (juce::String::fromUTF8 ("Renderizando tono de ") + e.titulo
+                            + (prog.isNotEmpty() ? ("   " + prog) : juce::String()));
+                    juce::Thread::sleep (1000);
+                }
+                pv = juce::JSON::parse (httpGet (pistasUrl, token));   // re-pedir, ya con el tono listo
+            }
+
             e.tempo = (double) pv.getProperty ("tempo", 0.0);
             auto comp = pv.getProperty ("compas", "4/4").toString();
             e.beatsPerBar = comp.upToFirstOccurrenceOf ("/", false, false).getIntValue();
