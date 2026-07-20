@@ -762,6 +762,132 @@ def api_live_render_estado(numero, t):
     return jsonify({"listo": False, "progreso": prog})
 
 
+@app.route("/api/live/setlist/crear", methods=["POST"])
+def api_live_setlist_crear():
+    if not _token_ok(): return jsonify({"ok": False, "error": "unauthorized"}), 403
+    nombre = (request.values.get("nombre") or "").strip() or "Sin nombre"
+    fecha = (request.values.get("fecha") or "").strip() or _hoy_iso()
+    cfg = get_config()
+    nuevo = {"id": secrets.token_hex(6), "nombre": nombre[:80], "fecha": fecha, "canciones": [], "creado": _ahora_iso()}
+    cfg.setdefault("setlists", []).append(nuevo)
+    guardar_config(cfg)
+    return jsonify({"ok": True, "id": nuevo["id"]})
+
+
+@app.route("/api/live/setlist/<sid>/eliminar", methods=["POST"])
+def api_live_setlist_eliminar(sid):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    cfg = get_config()
+    cfg["setlists"] = [x for x in cfg.get("setlists", []) if x["id"] != sid]
+    guardar_config(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/live/setlist/<sid>/renombrar", methods=["POST"])
+def api_live_setlist_renombrar(sid):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    nombre = (request.values.get("nombre") or "").strip()
+    cfg = get_config()
+    s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
+    if not s: return jsonify({"ok": False}), 404
+    if nombre: s["nombre"] = nombre[:80]
+    guardar_config(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/live/setlist/<sid>/agregar", methods=["POST"])
+def api_live_setlist_agregar(sid):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    try: numero = int(request.values.get("numero", ""))
+    except ValueError: return jsonify({"ok": False, "error": "numero"}), 400
+    tono = (request.values.get("tono") or "").strip() or None
+    cfg = get_config()
+    s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
+    if not s: return jsonify({"ok": False, "error": "setlist"}), 404
+    if numero not in cargar_biblioteca(): return jsonify({"ok": False, "error": "cancion"}), 404
+    s.setdefault("canciones", []).append({"id": numero, "tono": tono})
+    guardar_config(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/live/setlist/<sid>/quitar/<int:numero>", methods=["POST"])
+def api_live_setlist_quitar(sid, numero):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    cfg = get_config()
+    s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
+    if s:
+        s["canciones"] = [c for c in s.get("canciones", []) if c.get("id") != numero]
+        guardar_config(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/live/setlist/<sid>/tono/<int:numero>", methods=["POST"])
+def api_live_setlist_tono(sid, numero):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    tono = (request.values.get("tono") or "").strip()
+    cfg = get_config()
+    s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
+    if not s: return jsonify({"ok": False}), 404
+    item = next((c for c in s.get("canciones", []) if c.get("id") == numero), None)
+    if not item: return jsonify({"ok": False}), 404
+    base = cargar_biblioteca().get(numero, {})
+    item["tono"] = None if (not tono or tono == base.get("tono", "")) else tono
+    guardar_config(cfg)
+    return jsonify({"ok": True, "tono": item["tono"]})
+
+
+@app.route("/api/live/setlist/<sid>/mover", methods=["POST"])
+def api_live_setlist_mover(sid):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    try: numero = int(request.values.get("numero", 0))
+    except ValueError: numero = 0
+    direccion = request.values.get("direccion", "")
+    cfg = get_config()
+    s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
+    if not s: return jsonify({"ok": False}), 404
+    cs = s.get("canciones", [])
+    idx = next((i for i, c in enumerate(cs) if c.get("id") == numero), -1)
+    if idx >= 0:
+        j = idx - 1 if direccion == "arriba" else idx + 1
+        if 0 <= j < len(cs):
+            cs[idx], cs[j] = cs[j], cs[idx]
+            guardar_config(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/live/tonos/<int:numero>")
+def api_live_tonos(numero):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    base = cargar_biblioteca().get(numero, {})
+    rendered = []
+    if _stems_originales(numero): rendered.append(0)
+    d = CARPETA_PISTAS / str(numero)
+    if d.is_dir():
+        for sub in d.iterdir():
+            if sub.is_dir() and sub.name.startswith("tono_"):
+                try: n = int(sub.name[5:])
+                except ValueError: continue
+                if _tono_listo(numero, n): rendered.append(n)
+    rendered = sorted(set(rendered))
+    orig = base.get("tono", "")
+    from transposicion import NOTAS_BEMOL, transponer_acorde, usar_sostenidos, NOTA_A_INDICE
+    import re as _re
+    def _raiz(t):
+        m=_re.match(r"^([A-G][#b]?)", t or ""); return m.group(1) if m else None
+    keys=[]
+    ro=_raiz(orig)
+    for k in NOTAS_BEMOL:
+        if ro and ro in NOTA_A_INDICE and k in NOTA_A_INDICE:
+            d=(NOTA_A_INDICE[k]-NOTA_A_INDICE[ro])%12
+            if d>6: d-=12
+        else:
+            d=0
+        ts=transponer_acorde(orig,d,usar_sost=True) if orig else k
+        nombre=transponer_acorde(orig,d,usar_sost=usar_sostenidos(ts)) if orig else k
+        keys.append({"nombre":nombre,"semitonos":d,"rendered":d in rendered})
+    return jsonify({"ok": True, "numero": numero, "tono_original": orig, "rendered": rendered, "keys": keys})
+
+
 @app.route("/api/cancion/<int:numero>")
 @login_required("musico")
 def api_cancion(numero):
