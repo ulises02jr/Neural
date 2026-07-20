@@ -17,6 +17,8 @@ NeuralPlay/stems/
 
 # ───── NeuralWorship (el puente) ─────
 NeuralWorship/**/config.json
+NeuralWorship/config.json
+NeuralWorship/config.windows.json
 NeuralWorship/build/
 NeuralWorship/dist/
 NeuralWorship/venv/
