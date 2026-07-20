@@ -574,6 +574,22 @@ def _token_ok():
     return bool(token) and token == get_config().get("live_token")
 
 
+def _semitono_override(base_tono, override_tono):
+    """Semitono firmado (mas cercano) del override respecto al tono original. 0 si igual/None."""
+    import re
+    from transposicion import NOTA_A_INDICE
+    def raiz(t):
+        m = re.match(r"^([A-G][#b]?)", t or "")
+        return m.group(1) if m else None
+    ro, rd = raiz(base_tono), raiz(override_tono)
+    if not ro or not rd or ro not in NOTA_A_INDICE or rd not in NOTA_A_INDICE:
+        return 0
+    d = (NOTA_A_INDICE[rd] - NOTA_A_INDICE[ro]) % 12
+    if d > 6:
+        d -= 12
+    return d
+
+
 @app.route("/api/live/setlists")
 def api_live_setlists():
     """NeuralPlay: lista de repertorios (setlists) + indice liviano de canciones. Token."""
@@ -587,7 +603,21 @@ def api_live_setlists():
                        "tono": c.get("tono", ""), "tempo": c.get("tempo"),
                        "compas": c.get("compas", ""), "portada": c.get("portada", ""),
                        "portada_ts": c.get("portada_ts")}
-    return jsonify({"ok": True, "setlists": cfg.get("setlists", []), "canciones": idx})
+    setlists_out = []
+    for s in cfg.get("setlists", []):
+        so = dict(s)
+        cs = []
+        for it in s.get("canciones", []):
+            base = bib.get(it.get("id"), {})
+            override = it.get("tono")
+            sem = _semitono_override(base.get("tono", ""), override) if override else 0
+            ci = dict(it)
+            ci["tono_semitonos"] = sem
+            ci["tono_nombre"] = override or base.get("tono", "")
+            cs.append(ci)
+        so["canciones"] = cs
+        setlists_out.append(so)
+    return jsonify({"ok": True, "setlists": setlists_out, "canciones": idx})
 
 
 @app.route("/api/live/pistas/<int:numero>")
@@ -683,6 +713,46 @@ def api_live_chart(numero):
         "compas": c.get("compas", ""),
         "secciones": c.get("secciones", []),
     })
+
+
+@app.route("/api/live/render/<int:numero>/<t>", methods=["POST"])
+def api_live_render(numero, t):
+    """NeuralPlay: dispara el render de un tono (semitonos). Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    try:
+        n = int(t)
+    except ValueError:
+        return jsonify({"listo": False, "error": "tono invalido"}), 400
+    if _tono_listo(numero, n):
+        return jsonify({"listo": True})
+    if not _stems_originales(numero):
+        return jsonify({"listo": False, "error": "sin pistas"})
+    d = _carpeta_tono(numero, n)
+    if not (d.exists() and (d / ".lock").exists()):
+        threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
+    return jsonify({"listo": False, "estado": "procesando"})
+
+
+@app.route("/api/live/render/<int:numero>/<t>/estado")
+def api_live_render_estado(numero, t):
+    """NeuralPlay: progreso del render de un tono. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    try:
+        n = int(t)
+    except ValueError:
+        return jsonify({"listo": False})
+    if _tono_listo(numero, n):
+        return jsonify({"listo": True})
+    prog = ""
+    lock = _carpeta_tono(numero, n) / ".lock"
+    if lock.exists():
+        try:
+            prog = lock.read_text().strip()
+        except Exception:
+            prog = ""
+    return jsonify({"listo": False, "progreso": prog})
 
 
 @app.route("/api/cancion/<int:numero>")

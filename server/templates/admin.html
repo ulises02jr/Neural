@@ -764,5 +764,26 @@ function backToMenu(){
   }
 })();
 </script>
+<script id="mw-setlist-ajax">
+/* Setlist sin recargar la pagina: intercepta transponer/resetear/mover/quitar/agregar
+   y actualiza solo esa tarjeta en el sitio (no te saca al top). */
+(function(){
+  function slId(a){ var m=(a||"").match(/\/setlist\/([^\/]+)\/(transponer|resetear|mover|quitar|agregar)/); return m?m[1]:null; }
+  document.addEventListener("submit", function(ev){
+    var f=ev.target; if(!f||(f.method||"").toLowerCase()!=="post") return;
+    var id=slId(f.getAttribute("action")||""); if(!id) return;
+    ev.preventDefault();
+    fetch(f.action,{method:"POST",body:new FormData(f),headers:{"X-Requested-With":"fetch"}})
+      .then(function(r){return r.text();})
+      .then(function(html){
+        var doc=new DOMParser().parseFromString(html,"text/html");
+        var fresh=doc.getElementById("sl-"+id), cur=document.getElementById("sl-"+id);
+        if(fresh&&cur){ var open=cur.open; cur.innerHTML=fresh.innerHTML; cur.open=open||fresh.hasAttribute("open"); }
+        else { window.location.reload(); }
+      })
+      .catch(function(){ f.submit(); });
+  }, true);
+})();
+</script>
 </body>
 </html>
