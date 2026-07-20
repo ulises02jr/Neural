@@ -8,7 +8,7 @@ import copy
 NOTAS_BEMOL =     ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
 NOTAS_SOSTENIDO = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-TONOS_CON_SOSTENIDOS = {'G', 'D', 'A', 'E', 'B', 'F#', 'C#',
+TONOS_CON_SOSTENIDOS = {'G', 'D', 'A', 'E', 'B',
                         'Gm', 'Dm', 'Am', 'Em', 'Bm', 'F#m', 'C#m', 'G#m', 'D#m', 'A#m'}
 
 NOTA_A_INDICE = {
