@@ -22,11 +22,11 @@ guarda una copia ordenada (este monorepo) como respaldo y control de versiones.
 
 ## Cómo respaldar a GitHub
 
-El repo mono está clonado en el VPS (p. ej. `/home/charts/Mi-Worship`). Para respaldar
+El repo mono está clonado en el VPS (p. ej. `/home/charts/Neural`). Para respaldar
 el estado actual del servidor:
 
 ```bash
-cd /home/charts/Mi-Worship
+cd /home/charts/Neural
 ./respaldar.sh "mensaje describiendo el cambio"
 ```
 

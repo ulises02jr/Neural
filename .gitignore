@@ -32,3 +32,6 @@ NeuralWorship/venv/
 .DS_Store
 
 ._*
+
+# entregas locales (archivos que Claude te da)
+entregas/

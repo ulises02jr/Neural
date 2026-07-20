@@ -9,7 +9,7 @@ propia carpeta, con su propio código y documentación.
 ## Estructura
 
 ```
-Mi-Worship/
+Neural/
 ├── server/          Servidor web (Flask) — corre en el VPS
 │                    Biblioteca, setlists, usuarios, API para las apps y la web del músico.
 │
