@@ -2,6 +2,8 @@
 #include <atomic>
 #include <cmath>
 #include <functional>
+#include <map>
+#include <array>
 
 static inline float softClip (float x) noexcept
 {
@@ -332,6 +334,22 @@ static juce::String familyFor (const juce::String& raw)
     if (C("key")||C("teclad")||C("piano")||C("synth")||C("rhodes")||C("organ")||C("pad")||C("string")|| tok=="kb") return juce::String::fromUTF8 ("Teclados");
     if (C("voz")||C("vocal")||C("coro")||C("lead")||C("bgv")||C("choir")||C("voc")) return juce::String::fromUTF8 ("Voces");
     return juce::String::fromUTF8 ("Otros");
+}
+
+// ───────── Enrutamiento de salidas de audio por familia ─────────
+static const char* kRouteFam[11] = {
+    "Voces", "Guitarras", "Teclados", "Cuerdas", "Metales", "Bajo",
+    "Percusi\xc3\xb3n", "Gu\xc3\xad" "a", "M\xc3\xbasica original", "Click", "Otros" };
+static constexpr int kNumFam = 11;
+
+static int routeFamIndex (const juce::String& serverFam, const juce::String& trackName)
+{
+    juce::String fam = serverFam;
+    if (fam.isEmpty()) fam = familyFor (trackName);
+    if (fam.startsWithIgnoreCase ("Bater")) return 6;   // Batería -> Percusión
+    for (int i = 0; i < kNumFam; ++i)
+        if (fam.equalsIgnoreCase (juce::String::fromUTF8 (kRouteFam[i]))) return i;
+    return 10;   // Otros
 }
 
 struct FaderStripComp : public juce::Component
@@ -918,6 +936,136 @@ struct SettingsPanel : public juce::Component
     }
 };
 
+// ───────── Ventana de Salida de audio (dispositivo + enrutamiento por familia) ─────────
+struct AudioConfigPanel : public juce::Component
+{
+    struct FamRoute { int mode = 2; int ch = 0; };   // 0 off, 1 mono, 2 estéreo · ch base 0-based
+    juce::ComboBox deviceBox;
+    juce::Label title, devLbl, chInfo;
+    juce::OwnedArray<juce::Label> famLabels;
+    juce::OwnedArray<juce::ComboBox> routeBoxes;
+    juce::TextButton closeBtn;
+    int numChans = 2;
+    std::function<void (const juce::String&)> onDevice;
+    std::function<void (int, int, int)> onRoute;   // fam, mode, base
+
+    AudioConfigPanel()
+    {
+        setAlwaysOnTop (true);
+        auto dark = [] (juce::ComboBox& c)
+        {
+            c.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff1f1f1f));
+            c.setColour (juce::ComboBox::textColourId,       juce::Colour (0xfff2f2f2));
+            c.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0x33ffffff));
+            c.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffa3a3a3));
+        };
+        addAndMakeVisible (deviceBox); dark (deviceBox);
+        deviceBox.onChange = [this] { if (onDevice && deviceBox.getSelectedId() > 0) onDevice (deviceBox.getText()); };
+
+        title.setText ("Salida de audio", juce::dontSendNotification);
+        title.setColour (juce::Label::textColourId, juce::Colours::white);
+        title.setFont (juce::Font (17.0f, juce::Font::bold));
+        addAndMakeVisible (title);
+        devLbl.setText ("Interfaz", juce::dontSendNotification);
+        devLbl.setColour (juce::Label::textColourId, juce::Colour (0xffa3a3a3));
+        devLbl.setFont (juce::Font (12.0f)); addAndMakeVisible (devLbl);
+        chInfo.setColour (juce::Label::textColourId, juce::Colour (0xff7Cc6ff));
+        chInfo.setFont (juce::Font (12.0f)); addAndMakeVisible (chInfo);
+
+        for (int i = 0; i < kNumFam; ++i)
+        {
+            auto* l = famLabels.add (new juce::Label());
+            l->setText (juce::String::fromUTF8 (kRouteFam[i]), juce::dontSendNotification);
+            l->setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
+            l->setFont (juce::Font (13.0f)); addAndMakeVisible (l);
+            auto* c = routeBoxes.add (new juce::ComboBox()); dark (*c);
+            const int fi = i;
+            c->onChange = [this, fi] { fireRoute (fi); };
+            addAndMakeVisible (c);
+        }
+        closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
+        closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        closeBtn.onClick = [this] { setVisible (false); };
+        addAndMakeVisible (closeBtn);
+    }
+
+    void setDevices (const juce::StringArray& names, const juce::String& current)
+    {
+        deviceBox.clear (juce::dontSendNotification);
+        for (int i = 0; i < names.size(); ++i) deviceBox.addItem (names[i], i + 1);
+        int sel = names.indexOf (current);
+        deviceBox.setSelectedId (sel >= 0 ? sel + 1 : (names.isEmpty() ? 0 : 1), juce::dontSendNotification);
+    }
+
+    void buildRouteItems (int chans)
+    {
+        numChans = juce::jlimit (0, 12, chans);
+        chInfo.setText (juce::String (numChans) + juce::String::fromUTF8 (" canales disponibles"), juce::dontSendNotification);
+        for (auto* c : routeBoxes)
+        {
+            c->clear (juce::dontSendNotification);
+            c->addItem ("Off", 1);
+            for (int k = 1; k <= numChans; ++k)          c->addItem (juce::String (k), 100 + k);                                  // mono
+            for (int k = 1; k + 1 <= numChans; k += 2)   c->addItem (juce::String (k) + "/" + juce::String (k + 1), 200 + k);     // estéreo
+        }
+    }
+
+    void setRoute (int fam, int mode, int base)
+    {
+        if (fam < 0 || fam >= routeBoxes.size()) return;
+        int id = 1;
+        if      (mode == 1) id = 100 + (base + 1);
+        else if (mode == 2) id = 200 + (base + 1);
+        routeBoxes[fam]->setSelectedId (id, juce::dontSendNotification);
+    }
+
+    void fireRoute (int fam)
+    {
+        if (! onRoute || fam < 0 || fam >= routeBoxes.size()) return;
+        const int id = routeBoxes[fam]->getSelectedId();
+        int mode = 0, base = 0;
+        if      (id >= 200) { mode = 2; base = id - 200 - 1; }
+        else if (id >= 100) { mode = 1; base = id - 100 - 1; }
+        onRoute (fam, mode, base);
+    }
+
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (480, 560); }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xC0000000));
+        auto p = panelBounds().toFloat();
+        g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (p, 14.0f);
+        g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (p, 14.0f, 1.2f);
+    }
+
+    void resized() override
+    {
+        auto p = panelBounds();
+        closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
+        auto b = p.reduced (22);
+        title.setBounds (b.removeFromTop (34));
+        b.removeFromTop (4);
+        devLbl.setBounds (b.removeFromTop (16));
+        deviceBox.setBounds (b.removeFromTop (30));
+        chInfo.setBounds (b.removeFromTop (20));
+        b.removeFromTop (8);
+        for (int i = 0; i < kNumFam; ++i)
+        {
+            auto row = b.removeFromTop (32);
+            famLabels[i]->setBounds (row.removeFromLeft (160));
+            routeBoxes[i]->setBounds (row.reduced (0, 2));
+            b.removeFromTop (4);
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (! panelBounds().contains (e.getPosition())) setVisible (false);
+    }
+};
+
 // ───────── Página del músico (servida por el :5050 embebido) ─────────
 static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><head>
 <meta charset="utf-8">
@@ -1102,8 +1250,12 @@ public:
             settingsPanel.toFront (true);
         };
         settingsPanel.onSync   = [this] (bool on) { setSync (on); };
-        settingsPanel.onConfig = [this] { /* TODO: ventana de configuraciones */ };
+        settingsPanel.onConfig = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
         addChildComponent (settingsPanel);
+
+        audioCfg.onDevice = [this] (const juce::String& d) { applyAudioDevice (d); };
+        audioCfg.onRoute  = [this] (int f, int m, int b)   { setFamRoute (f, m, b); };
+        addChildComponent (audioCfg);
 
         liveServer.getPage  = [] { return juce::String (juce::CharPointer_UTF8 (kMusicianPage)); };
         liveServer.getSong  = [this] { const juce::ScopedLock l (chartLock); return currentChartJson; };
@@ -1243,11 +1395,28 @@ public:
         midiClock.startTimer (1);   // ~1 ms: minima latencia MIDI, hilo dedicado
 
         setSize (1040, 906);
-        setAudioChannels (0, 2);
+        setAudioChannels (0, 12);   // hasta 12 salidas (interfaces multicanal)
         auto setup = deviceManager.getAudioDeviceSetup();
         setup.bufferSize = 256;   // menor latencia de salida (sin comprometer estabilidad)
         setup.sampleRate = 44100.0;
         deviceManager.setAudioDeviceSetup (setup, true);
+
+        // Enrutamiento de salida: cargar config y aplicar dispositivo guardado (si está conectado)
+        loadAudioRouting();
+        {
+            const juce::String want = audioOutDevice;
+            const auto avail = outputDeviceNames();
+            if (want.isNotEmpty() && avail.contains (want))
+                applyAudioDevice (want);
+            else
+            {
+                audioOutDevice = currentDeviceName();
+                ensureDeviceRoutes (audioOutDevice);
+                openOutChans = juce::jlimit (1, 12, currentOutputChannelCount());
+                snapshotRoutes();
+            }
+        }
+
         splashStart = juce::Time::getMillisecondCounter();
         addAndMakeVisible (splash);
         startTimerHz (60);
@@ -1312,8 +1481,10 @@ public:
         if (! playing.load()) return;
 
         const int nn = info.numSamples;
-        auto* oL = info.buffer->getWritePointer (0, info.startSample);
-        auto* oR = info.buffer->getNumChannels() > 1 ? info.buffer->getWritePointer (1, info.startSample) : oL;
+        const int nch = juce::jmax (1, info.buffer->getNumChannels());
+        const int useCh = juce::jmin (nch, 12);
+        float* out[12] = { nullptr };
+        for (int c = 0; c < useCh; ++c) out[c] = info.buffer->getWritePointer (c, info.startSample);
 
         bool anySolo = false;
         for (int t = 0; t < resamplers.size(); ++t) if (trackSolo[t].load()) { anySolo = true; break; }
@@ -1327,19 +1498,45 @@ public:
             const float g = audible ? trackGain[t].load() * busGain[trackFamily[t]].load() : 0.0f;
             const float* tL = temp.getReadPointer (0);
             const float* tR = temp.getNumChannels() > 1 ? temp.getReadPointer (1) : tL;
+
+            const int fi   = (t < kMaxTracks ? trackRouteFam[t] : 10);   // familia -> ruta de salida
+            const int mode = famMode[fi];
+            const int base = famBaseCh[fi];
             float peak = 0.0f;
-            for (int n = 0; n < nn; ++n)
+
+            if (mode == 2 && base >= 0 && base < useCh)            // estéreo (canal base + base+1)
             {
-                const float cl = tL[n] * g, cr = (tR != tL ? tR[n] : tL[n]) * g;
-                oL[n] += cl; if (oR != oL) oR[n] += cr;
-                const float a = juce::jmax (std::abs (cl), std::abs (cr));
-                if (a > peak) peak = a;
+                float* aL = out[base];
+                float* aR = (base + 1 < useCh) ? out[base + 1] : nullptr;
+                for (int n = 0; n < nn; ++n)
+                {
+                    const float cl = tL[n] * g, cr = (tR != tL ? tR[n] : tL[n]) * g;
+                    aL[n] += cl; if (aR) aR[n] += cr;
+                    const float a = juce::jmax (std::abs (cl), std::abs (cr));
+                    if (a > peak) peak = a;
+                }
             }
+            else if (mode == 1 && base >= 0 && base < useCh)       // mono (suma L+R a un canal)
+            {
+                float* aM = out[base];
+                for (int n = 0; n < nn; ++n)
+                {
+                    const float cm = (tL[n] + (tR != tL ? tR[n] : tL[n])) * 0.5f * g;
+                    aM[n] += cm;
+                    const float a = std::abs (cm);
+                    if (a > peak) peak = a;
+                }
+            }
+            else                                                  // off: solo medimos nivel del track
+            {
+                for (int n = 0; n < nn; ++n) { const float a = std::abs (tL[n] * g); if (a > peak) peak = a; }
+            }
+
             const float prev = trackLevel[t].load();
             trackLevel[t].store (peak > prev ? peak : prev * 0.82f);
         }
         const float m = masterGain.load();
-        for (int n = 0; n < nn; ++n) { oL[n] = softClip (oL[n] * m); if (oR != oL) oR[n] = softClip (oR[n] * m); }
+        for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] = softClip (o[n] * m); }
         positionOut.fetch_add (nn);
 
         const double posSec = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
@@ -1636,6 +1833,7 @@ public:
         splash.setBounds (getLocalBounds());
         repPicker.setBounds (getLocalBounds());
         settingsPanel.setBounds (getLocalBounds());
+        audioCfg.setBounds (getLocalBounds());
     }
 
     void layoutFaderStrip()
@@ -1792,6 +1990,169 @@ private:
         return idx;
     }
 
+    // ───────── Salida de audio: dispositivo + enrutamiento por familia ─────────
+    juce::StringArray outputDeviceNames()
+    {
+        juce::StringArray names;
+        const auto& types = deviceManager.getAvailableDeviceTypes();
+        for (auto* t : types) { t->scanForDevices(); names.addArray (t->getDeviceNames (false)); }
+        return names;
+    }
+
+    juce::String currentDeviceName()
+    {
+        if (auto* d = deviceManager.getCurrentAudioDevice()) return d->getName();
+        return {};
+    }
+
+    int currentOutputChannelCount()
+    {
+        if (auto* d = deviceManager.getCurrentAudioDevice())
+        {
+            int n = d->getActiveOutputChannels().countNumberOfSetBits();
+            if (n <= 0) n = d->getOutputChannelNames().size();
+            return n;
+        }
+        return 2;
+    }
+
+    void ensureDeviceRoutes (const juce::String& name)
+    {
+        if (name.isEmpty()) return;
+        if (routesByDevice.find (name) == routesByDevice.end())
+        {
+            std::array<AudioConfigPanel::FamRoute, kNumFam> def;
+            for (auto& r : def) { r.mode = 2; r.ch = 0; }   // por defecto estéreo 1/2
+            routesByDevice[name] = def;
+        }
+    }
+
+    void applyAudioDevice (const juce::String& name)
+    {
+        auto setup = deviceManager.getAudioDeviceSetup();
+        setup.outputDeviceName = name;
+        setup.useDefaultOutputChannels = false;
+        setup.outputChannels.clear();
+        setup.outputChannels.setRange (0, 12, true);
+        setup.bufferSize = 256;
+        setup.sampleRate = 44100.0;
+        deviceManager.setAudioDeviceSetup (setup, true);
+        audioOutDevice = name;
+        openOutChans = juce::jlimit (1, 12, currentOutputChannelCount());
+        ensureDeviceRoutes (name);
+        snapshotRoutes();
+        audioCfg.buildRouteItems (openOutChans);
+        applyRoutesToUI();
+        saveAudioRouting();
+    }
+
+    void setFamRoute (int fam, int mode, int base)
+    {
+        if (audioOutDevice.isEmpty()) audioOutDevice = currentDeviceName();
+        ensureDeviceRoutes (audioOutDevice);
+        auto& arr = routesByDevice[audioOutDevice];
+        if (fam >= 0 && fam < kNumFam) { arr[fam].mode = mode; arr[fam].ch = base; }
+        snapshotRoutes();
+        saveAudioRouting();
+    }
+
+    void snapshotRoutes()
+    {
+        const juce::ScopedLock sl (graphLock);
+        std::array<AudioConfigPanel::FamRoute, kNumFam> arr;
+        auto it = routesByDevice.find (audioOutDevice);
+        if (it != routesByDevice.end()) arr = it->second;
+        else for (auto& r : arr) { r.mode = 2; r.ch = 0; }
+        for (int i = 0; i < kNumFam; ++i)
+        {
+            int mode = arr[i].mode, base = arr[i].ch;
+            if (mode == 2 && base + 1 >= openOutChans) mode = (base < openOutChans ? 1 : 0);
+            if (mode == 1 && base >= openOutChans)      mode = 0;
+            famMode[i]   = mode;
+            famBaseCh[i] = base;
+        }
+    }
+
+    void applyRoutesToUI()
+    {
+        auto it = routesByDevice.find (audioOutDevice);
+        if (it == routesByDevice.end()) { for (int i = 0; i < kNumFam; ++i) audioCfg.setRoute (i, 2, 0); return; }
+        for (int i = 0; i < kNumFam; ++i) audioCfg.setRoute (i, it->second[i].mode, it->second[i].ch);
+    }
+
+    void openAudioConfig()
+    {
+        if (audioOutDevice.isEmpty())
+        {
+            audioOutDevice = currentDeviceName();
+            ensureDeviceRoutes (audioOutDevice);
+            openOutChans = juce::jlimit (1, 12, currentOutputChannelCount());
+            snapshotRoutes();
+        }
+        audioCfg.setBounds (getLocalBounds());
+        audioCfg.setDevices (outputDeviceNames(), audioOutDevice);
+        audioCfg.buildRouteItems (openOutChans);
+        applyRoutesToUI();
+        audioCfg.setVisible (true);
+        audioCfg.toFront (true);
+    }
+
+    void computeTrackRouteFam()
+    {
+        for (int i = 0; i < kMaxTracks; ++i) trackRouteFam[i] = 10;
+        const int nt = juce::jmin (numTracks, (int) kMaxTracks);
+        for (int i = 0; i < nt; ++i)
+        {
+            juce::String sf = (i < trackServerFam.size() ? trackServerFam[i] : juce::String());
+            juce::String tn = (i < trackNames.size()     ? trackNames[i]     : juce::String());
+            trackRouteFam[i] = routeFamIndex (sf, tn);
+        }
+    }
+
+    void saveAudioRouting()
+    {
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("device", audioOutDevice);
+        juce::DynamicObject::Ptr dev = new juce::DynamicObject();
+        for (auto& kv : routesByDevice)
+        {
+            juce::Array<juce::var> arr;
+            for (auto& r : kv.second)
+            {
+                juce::DynamicObject::Ptr o = new juce::DynamicObject();
+                o->setProperty ("mode", r.mode);
+                o->setProperty ("ch", r.ch);
+                arr.add (juce::var (o.get()));
+            }
+            dev->setProperty (kv.first, arr);
+        }
+        root->setProperty ("routes", juce::var (dev.get()));
+        npAppDir().getChildFile ("audio_routing.json").replaceWithText (juce::JSON::toString (juce::var (root.get())));
+    }
+
+    void loadAudioRouting()
+    {
+        auto f = npAppDir().getChildFile ("audio_routing.json");
+        if (! f.existsAsFile()) return;
+        auto v = juce::JSON::parse (f.loadFileAsString());
+        if (! v.isObject()) return;
+        audioOutDevice = v.getProperty ("device", "").toString();
+        auto routes = v.getProperty ("routes", juce::var());
+        if (auto* obj = routes.getDynamicObject())
+            for (auto& p : obj->getProperties())
+            {
+                std::array<AudioConfigPanel::FamRoute, kNumFam> arr;
+                for (auto& r : arr) { r.mode = 2; r.ch = 0; }
+                if (auto* a = p.value.getArray())
+                    for (int i = 0; i < juce::jmin ((int) a->size(), kNumFam); ++i)
+                    {
+                        arr[i].mode = (int) (*a)[i].getProperty ("mode", 2);
+                        arr[i].ch   = (int) (*a)[i].getProperty ("ch", 0);
+                    }
+                routesByDevice[p.name.toString()] = arr;
+            }
+    }
+
     void syncPing (bool bye)
     {
         if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
@@ -1933,6 +2294,7 @@ private:
                 stemFiles.add (f);
         }
         numTracks = resamplers.size();
+        computeTrackRouteFam();   // familia canónica por track (para enrutar salidas)
     }
 
     void loadSong (int index)
@@ -2519,6 +2881,13 @@ private:
     juce::CriticalSection chartLock;
     std::atomic<int> liveSectionIdx { 0 };
     std::atomic<int> liveSongVer { 0 };
+    AudioConfigPanel audioCfg;
+    juce::String audioOutDevice;
+    std::map<juce::String, std::array<AudioConfigPanel::FamRoute, kNumFam>> routesByDevice;
+    int famMode[kNumFam] = { 2,2,2,2,2,2,2,2,2,2,2 };   // snapshot para el hilo de audio (default estéreo)
+    int famBaseCh[kNumFam] = { 0 };
+    int trackRouteFam[kMaxTracks] = { 0 };
+    int openOutChans = 2;
     juce::Array<MidiBox> currentMidiBoxes;
     juce::OwnedArray<juce::MidiOutput> midiOuts;
     juce::Array<juce::MidiOutput*> cajaOut;
