@@ -1,16 +1,32 @@
-__pycache__/
+# ───── Secretos y datos del servidor (NUNCA subir) ─────
+server/config.json
+server/secrets.json
+server/usuarios.db
+server/*.db
+server/pistas/
+server/descargas/
+server/backups_canciones/
+server/canciones/*.json
+server/static/portadas/
+server/venv/
+
+# ───── NeuralPlay (JUCE / C++) ─────
+NeuralPlay/JUCE/
+NeuralPlay/build/
+NeuralPlay/stems/
+
+# ───── NeuralWorship (el puente) ─────
+NeuralWorship/**/config.json
+NeuralWorship/build/
+NeuralWorship/dist/
+NeuralWorship/venv/
+
+# ───── General ─────
+**/__pycache__/
 *.pyc
-config.json
-secrets.json
-canciones/*.json
-venv/
-.DS_Store
-pistas/
 *.bak
 *.bak-*
 *.bak*
-*.db
-usuarios.db
-descargas/
-backups_canciones/
-static/portadas/
+.DS_Store
+
+._*

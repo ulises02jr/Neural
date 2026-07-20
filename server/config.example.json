@@ -1,0 +1,12 @@
+{
+  "password_musicos": "<hash pbkdf2 — generado por la app>",
+  "password_admin": "<hash pbkdf2 — generado por la app>",
+  "secret_key": "<cadena aleatoria larga para las sesiones de Flask>",
+  "live_token": "<token aleatorio para la API de las apps (/api/live/*)>",
+  "live_activo": false,
+  "mac_local_ip": null,
+  "ultimo_heartbeat": null,
+  "setlists": [],
+  "org_nombre": "Mi Iglesia",
+  "neuralworship_version": "1.0"
+}

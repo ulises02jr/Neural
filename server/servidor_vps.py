@@ -634,6 +634,57 @@ def api_live_pista(numero, archivo):
     return send_file(str(ruta))
 
 
+@app.route("/api/live/midi/<int:numero>")
+def api_live_midi(numero):
+    """NeuralPlay: cajas MIDI + notas (en segundos) de una cancion. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    midi = _leer_midi(numero)
+    cajas = []
+    for cid, nom, chdef in MIDI_CAJAS:
+        c = midi["cajas"].get(cid, {})
+        notas = []
+        for e in c.get("notas", []):
+            if e.get("desactivar"):
+                continue
+            seg = _parse_tiempo(str(e.get("t", "")))
+            if seg is None:
+                continue
+            try:
+                vel = int(e.get("velocidad", 100))
+            except Exception:
+                vel = 100
+            notas.append({
+                "seg": round(seg, 3),
+                "note": _midi_note_num(e.get("nota", "C"), e.get("octava", 0)),
+                "vel": max(1, min(127, vel)),
+                "desc": str(e.get("descripcion", "")),
+            })
+        notas.sort(key=lambda x: x["seg"])
+        cajas.append({"id": cid, "nombre": nom, "canal": int(c.get("canal", chdef)), "notas": notas})
+    return jsonify({"ok": True, "numero": numero, "cajas": cajas})
+
+
+@app.route("/api/live/chart/<int:numero>")
+def api_live_chart(numero):
+    """NeuralPlay: chart (secciones con acordes+letra) de una cancion para servir a los musicos. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    c = cargar_biblioteca().get(numero)
+    if not c:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    return jsonify({
+        "ok": True,
+        "numero": numero,
+        "titulo": c.get("titulo", ""),
+        "artista": c.get("artista", ""),
+        "tono": c.get("tono", ""),
+        "tempo": c.get("tempo"),
+        "compas": c.get("compas", ""),
+        "secciones": c.get("secciones", []),
+    })
+
+
 @app.route("/api/cancion/<int:numero>")
 @login_required("musico")
 def api_cancion(numero):

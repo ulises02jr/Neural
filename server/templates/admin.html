@@ -433,7 +433,7 @@
     <div class="setlists-wrap">
       {% if setlists %}
         {% for s in setlists %}
-        <details class="setlist-card" {% if loop.first %}open{% endif %}>
+        <details class="setlist-card" id="sl-{{ s.id }}" {% if loop.first %}open{% endif %}>
           <summary>
             <div class="sl-head">
               <div class="sl-info">
@@ -740,6 +740,28 @@ function backToMenu(){
   const hayFlash = document.querySelector('.flash') !== null;
   let sec=null; try{ sec=sessionStorage.getItem('admin_sec'); }catch(e){}
   if(hayFlash && sec && document.getElementById(sec)){ showSection(sec); } else { backToMenu(); }
+})();
+</script>
+<script>
+(function(){
+  var KEY='mw_setlist_abierto';
+  document.querySelectorAll('details.setlist-card').forEach(function(d){
+    d.addEventListener('toggle', function(){
+      if(d.open){
+        try{ localStorage.setItem(KEY, d.id); }catch(e){}
+        document.querySelectorAll('details.setlist-card[open]').forEach(function(o){ if(o!==d) o.open=false; });
+      }
+    });
+  });
+  var id=null; try{ id=localStorage.getItem(KEY); }catch(e){}
+  if(id){
+    var el=document.getElementById(id);
+    if(el){
+      document.querySelectorAll('details.setlist-card[open]').forEach(function(o){ if(o!==el) o.open=false; });
+      el.open=true;
+      setTimeout(function(){ try{ el.scrollIntoView({block:'center'}); }catch(e){} }, 60);
+    }
+  }
 })();
 </script>
 </body>
