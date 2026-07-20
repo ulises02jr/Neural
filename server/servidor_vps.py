@@ -703,6 +703,13 @@ def api_live_chart(numero):
     c = cargar_biblioteca().get(numero)
     if not c:
         return jsonify({"ok": False, "error": "not found"}), 404
+    try:
+        sem = int(request.args.get("t", 0))
+    except (ValueError, TypeError):
+        sem = 0
+    if sem != 0:
+        import copy as _copy
+        c = transponer_cancion(_copy.deepcopy(c), sem)
     return jsonify({
         "ok": True,
         "numero": numero,
