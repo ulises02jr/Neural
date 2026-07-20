@@ -1,0 +1,20 @@
+# NeuralWorship — dependencias para Windows
+# Instalar con:  pip install -r requirements-windows.txt
+
+# Motor (igual que en Mac)
+flask
+flask-sock
+simple-websocket
+mido
+python-rtmidi
+certifi
+qrcode
+
+# Cara (Windows)
+pywebview            # ventana nativa con Edge WebView2
+pythonnet            # backend de WebView2 para pywebview
+pystray              # ícono en la bandeja del sistema
+Pillow               # ícono de la bandeja
+
+# Empaquetado
+pyinstaller

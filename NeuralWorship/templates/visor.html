@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Charts</title>
+<style>
+  :root{
+    --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
+    --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
+    --accent:#C9A96E; --accent-soft:#2a2418; --live:#86B36A; --dead:#dc6262;
+    /* Tamaños de letra/acorde, controlados por data-size en <body>. Default = M */
+    --lyric-size:18px; --chord-size:17px; --chord-min:21px;
+  }
+  /* 5 niveles de tamaño - los músicos eligen con A-/A+ */
+  body[data-size="xs"]{ --lyric-size:14px; --chord-size:13px; --chord-min:17px; }
+  body[data-size="s"] { --lyric-size:16px; --chord-size:15px; --chord-min:19px; }
+  body[data-size="m"] { --lyric-size:18px; --chord-size:17px; --chord-min:21px; }
+  body[data-size="l"] { --lyric-size:22px; --chord-size:20px; --chord-min:24px; }
+  body[data-size="xl"]{ --lyric-size:26px; --chord-size:24px; --chord-min:28px; }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;line-height:1.5}
+  .topbar-logo{width:30px;height:30px;border-radius:50%;background:#fff;padding:1.5px;object-fit:contain;flex-shrink:0}
+  .brand-block{display:flex;flex-direction:column;align-items:center;gap:8px;padding:30px 20px 20px}
+  .brand-logo{width:100px;height:100px;border-radius:50%;background:#fff;padding:4px;object-fit:contain}
+  .brand-name{font-size:14px;font-weight:600;color:var(--txt2);letter-spacing:0.4px;text-align:center}
+  /* 100dvh: dynamic viewport height — respeta la barra del navegador en iOS/iPadOS
+     (100vh incluye la zona que tapa Safari y deja contenido oculto abajo) */
+  .wrap{height:100dvh;display:flex;flex-direction:column;padding:14px;padding-bottom:max(14px,env(safe-area-inset-bottom))}
+  .topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:10px}
+  .song-title{font-size:17px;font-weight:600;line-height:1.2}
+  .song-meta{font-size:12px;color:var(--txt2);margin-top:2px}
+  .right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+  .pos{font-size:12px;color:var(--txt2)}
+  .live{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500}
+  .live.ok{color:var(--live)}
+  .live.off{color:var(--dead)}
+  .dot{width:7px;height:7px;border-radius:50%}
+  .live.ok .dot{background:var(--live);animation:pulse 1.6s ease-in-out infinite}
+  .live.off .dot{background:var(--dead)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .timeline-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -14px;padding:0 14px 6px;flex-shrink:0;scrollbar-width:none}
+  .timeline-wrap::-webkit-scrollbar{display:none}
+  .timeline{display:inline-flex;gap:6px;padding-bottom:4px;white-space:nowrap}
+  .pill{display:inline-block;padding:6px 12px;border-radius:7px;font-size:13px;color:var(--txt2);
+    background:var(--surface);border:1px solid var(--line);cursor:pointer;flex-shrink:0}
+  .pill.done{color:var(--txt3)}
+  .pill.active{color:var(--accent);background:var(--accent-soft);border-color:var(--accent);font-weight:600}
+  .stage{flex:1;overflow-y:auto;background:transparent;border:none;
+    border-radius:0;padding:2px 0 0;-webkit-overflow-scrolling:touch}
+  .eyebrow{font-size:12px;color:var(--accent);font-weight:600;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+  .perfnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:14px;padding:8px 12px;
+    background:var(--raised);border-radius:7px;border-left:3px solid var(--accent)}
+  .lyrics{}
+  .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
+  .lyrics .tok{display:inline-flex;flex-direction:column}
+  .chord{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+    font-size:var(--chord-size);font-weight:700;color:var(--accent);
+    min-height:var(--chord-min);line-height:var(--chord-min);white-space:pre}
+  .lyric{font-size:var(--lyric-size);color:var(--txt);line-height:1.35;white-space:pre}
+  @media (max-height:700px){
+    /* En pantallas cortas, los chips instrumentales se reducen un poco */
+    .lyrics .line{margin-bottom:5px}
+  }
+  .inst{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 0}
+  .chip{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--chord-size);font-weight:700;
+    color:var(--accent);background:var(--accent-soft);padding:8px 16px;border-radius:8px}
+  .inst-label{font-size:15px;color:var(--txt2);margin-bottom:14px}
+  .sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 16px;margin-bottom:12px}
+  .sec:last-child{margin-bottom:2px}
+  .sec.active{border-color:var(--accent)}
+  .sechead{display:inline-flex;align-items:center;background:var(--raised);
+    border-left:3px solid var(--line);border-radius:7px;padding:7px 13px;margin-bottom:10px;
+    font-size:11px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--txt3)}
+  .sec.active .sechead{color:var(--accent);border-left-color:var(--accent)}
+  .secnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:12px}
+  .footer{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-shrink:0}
+  .next{font-size:13px;color:var(--txt2)}
+  .next b{color:var(--txt)}
+
+  /* Franja de previsualización: muestra la siguiente sección antes de que llegue */
+  .nextpreview{flex-shrink:0;margin-top:8px;padding:8px 12px;background:var(--raised);
+    border:1px solid var(--line);border-radius:8px;border-left:3px solid var(--accent);
+    display:flex;flex-direction:column;gap:2px;min-height:0;overflow:hidden}
+  .nextpreview .np-tag{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+  .nextpreview .np-name{font-size:13px;color:var(--accent);font-weight:600}
+  .nextpreview .np-line{display:flex;flex-wrap:wrap;align-items:flex-end;gap:2px;margin-top:2px;
+    max-height:36px;overflow:hidden}
+  .nextpreview .np-tok{display:inline-flex;flex-direction:column;margin-right:6px}
+  .nextpreview .np-chord{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;
+    color:var(--accent);line-height:14px;white-space:pre;opacity:0.85}
+  .nextpreview .np-lyric{font-size:13px;color:var(--txt2);line-height:1.2;white-space:pre}
+  .nextpreview .np-end{font-size:13px;color:var(--txt2);font-style:italic}
+  .nextpreview .np-inst{font-size:12px;color:var(--txt2);font-style:italic}
+  .controls{display:flex;gap:6px;align-items:center}
+  .btn-icon{width:40px;height:40px;border-radius:8px;background:var(--surface);
+    border:1px solid var(--line);color:var(--txt);font-size:20px;line-height:1;cursor:pointer;font-family:inherit}
+  .btn-icon:active{background:var(--raised)}
+  .btn-follow{flex:1;background:var(--accent);color:#1a1407;border-color:var(--accent);
+    font-weight:600;padding:9px 14px;border-radius:8px;font-size:13px;cursor:pointer;
+    border:1px solid var(--accent);font-family:inherit}
+  .btn-follow.off{background:var(--raised);color:var(--txt);border-color:var(--line);font-weight:500}
+
+  /* Pantalla de espera (setlist) */
+  .setlist{padding-top:14px}
+  .setlist h2{font-size:20px;margin-bottom:6px}
+  .waiting{font-size:15px;color:var(--txt2);margin-bottom:22px}
+  .hint{font-size:12px;color:var(--txt3);margin:-14px 0 14px;font-style:italic}
+  .song-item{display:flex;align-items:center;gap:14px;padding:15px 16px;background:var(--surface);
+    border:1px solid var(--line);border-radius:11px;margin-bottom:10px}
+  .song-item.clickable{cursor:pointer}
+  .song-item.clickable:active{background:var(--raised);border-color:var(--accent-soft)}
+  .song-item .num{font-family:ui-monospace,Menlo,monospace;font-size:14px;color:var(--txt3);width:18px}
+  .song-item .info{flex:1;min-width:0}
+  .song-item .nm{font-size:16px;font-weight:600}
+  .song-item .ar{font-size:13px;color:var(--txt2)}
+  .song-item .chev{color:var(--txt3);font-size:22px;font-weight:300;margin-left:8px}
+  .tono-tag{color:var(--accent);font-weight:700;font-size:14px}
+
+  /* Tono destacado en barra superior durante canción */
+  .song-title-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .tono-chip{display:inline-flex;align-items:center;justify-content:center;
+    background:var(--accent);color:#1a1407;font-weight:700;font-size:15px;
+    padding:2px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;
+    line-height:1.3;letter-spacing:0.5px}
+
+  /* Banner de modo preview */
+  .preview-banner{background:var(--accent-soft);color:var(--accent);padding:8px 14px;border-radius:8px;
+    font-size:13px;font-weight:600;margin-bottom:14px;display:flex;justify-content:space-between;
+    align-items:center;gap:10px;flex-shrink:0}
+  .preview-banner button{background:transparent;border:1px solid var(--accent);color:var(--accent);
+    padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+
+  /* Control de tamaño de texto (A- A+) */
+  .size-ctrl{display:inline-flex;align-items:center;gap:4px;margin-top:2px}
+  .size-btn{width:28px;height:24px;border-radius:6px;background:var(--surface);
+    border:1px solid var(--line);color:var(--txt2);font-size:13px;cursor:pointer;
+    font-family:inherit;font-weight:600;padding:0;line-height:1}
+  .size-btn:active{background:var(--raised);color:var(--accent)}
+  .size-btn:disabled{opacity:0.35;cursor:default}
+  .size-label{font-size:11px;color:var(--txt3);min-width:14px;text-align:center}
+  .dots-btn{width:34px;height:30px;border-radius:7px;background:var(--surface);border:1px solid var(--line);
+    color:var(--txt2);font-size:18px;line-height:1;cursor:pointer;font-family:inherit}
+  .dots-btn:active{background:var(--raised);color:var(--txt)}
+  .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;opacity:0;pointer-events:none;transition:opacity .2s}
+  .sheet-bg.open{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:101;background:var(--surface);border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom));
+    transform:translateY(110%);transition:transform .25s ease;max-height:80vh;overflow-y:auto}
+  .sheet.open{transform:translateY(0)}
+  .sheet-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .sheet-t{font-size:16px;font-weight:700}
+  .sheet-sub{font-size:12px;color:var(--txt2);margin-bottom:14px}
+  .sheet-x{background:none;border:none;color:var(--accent);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+  .size-row{display:flex;align-items:center;gap:16px;justify-content:center;margin-top:8px}
+  .size-big{width:64px;height:52px;border-radius:12px;background:var(--raised);border:1px solid var(--line);
+    color:var(--txt);font-size:20px;font-weight:700;cursor:pointer;font-family:inherit}
+  .size-big:active{background:var(--accent-soft)}
+  .size-big:disabled{opacity:.35}
+  .size-lbl{font-size:16px;color:var(--accent);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<div class="sheet-bg" id="bg-ajustes" onclick="cerrarAjustes()"></div>
+<div class="sheet" id="sheet-ajustes">
+  <div class="sheet-h"><div class="sheet-t">Tamaño de letra</div><button class="sheet-x" onclick="cerrarAjustes()">Listo</button></div>
+  <div class="sheet-sub">Ajustá qué tan grande se ve la letra y los acordes.</div>
+  <div class="size-row">
+    <button class="size-big" id="size-minus" onclick="tamanoMenos()">A−</button>
+    <span class="size-lbl" id="size-label">M</span>
+    <button class="size-big" id="size-plus" onclick="tamanoMas()">A+</button>
+  </div>
+</div>
+
+<script>
+const app = document.getElementById("app");
+
+// ───── Estado del visor ─────
+let song = null;        // canción actual cargada
+let idx = 0;            // sección que el cel está mostrando
+let idxLogic = 0;       // última sección que Logic disparó
+let following = true;   // ¿modo siguiendo a Logic?
+let connected = false;
+let setlist = [];       // lista del servicio (para pantalla de espera)
+let estado = "waiting"; // waiting | playing
+let preview = null;     // { cancion, idx } si el músico está explorando antes del culto
+
+let ultimoRenderClave = null;
+
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+
+// ───── Control de tamaño de letra (5 niveles, persiste por dispositivo) ─────
+const NIVELES = ["xs","s","m","l","xl"];
+let nivelTamano = NIVELES.indexOf(localStorage.getItem("puente_tam") || "m");
+if(nivelTamano < 0) nivelTamano = 2;  // default M
+function aplicarTamano(){
+  document.body.dataset.size = NIVELES[nivelTamano];
+  localStorage.setItem("puente_tam", NIVELES[nivelTamano]);
+}
+function tamanoMenos(){
+  if(nivelTamano > 0){ nivelTamano--; aplicarTamano(); refrescarBotonesTamano(); }
+}
+function tamanoMas(){
+  if(nivelTamano < NIVELES.length - 1){ nivelTamano++; aplicarTamano(); refrescarBotonesTamano(); }
+}
+function refrescarBotonesTamano(){
+  // Actualiza el estado disabled de los botones sin re-renderizar la vista entera
+  const bm = document.getElementById("size-minus");
+  const bp = document.getElementById("size-plus");
+  const lb = document.getElementById("size-label");
+  if(bm) bm.disabled = (nivelTamano === 0);
+  if(bp) bp.disabled = (nivelTamano === NIVELES.length - 1);
+  if(lb) lb.textContent = NIVELES[nivelTamano].toUpperCase();
+}
+function htmlBotonesTamano(){
+  return `<div class="size-ctrl">
+    <button class="size-btn" id="size-minus" onclick="tamanoMenos()" ${nivelTamano===0?'disabled':''}>A−</button>
+    <span class="size-label" id="size-label">${NIVELES[nivelTamano].toUpperCase()}</span>
+    <button class="size-btn" id="size-plus" onclick="tamanoMas()" ${nivelTamano===NIVELES.length-1?'disabled':''}>A+</button>
+  </div>`;
+}
+function abrirAjustes(){ refrescarBotonesTamano(); document.getElementById('bg-ajustes').classList.add('open'); document.getElementById('sheet-ajustes').classList.add('open'); }
+function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
+aplicarTamano();  // aplica el nivel guardado al cargar
+
+// ───── Renderizado de cuerpo de sección (acordes + letras) ─────
+function renderLines(lines){
+  return `<div class="lyrics">${(lines||[]).map(line => `
+    <div class="line">
+      ${line.map(tok => `<div class="tok">
+        <span class="chord">${esc(tok[0])}</span>
+        <span class="lyric">${esc(tok[1])}</span>
+      </div>`).join("")}
+    </div>`).join("")}</div>`;
+}
+
+function renderBody(sec){
+  if(sec.inst && sec.prog){
+    return `<div class="inst-label">Instrumental</div>
+      <div class="inst">${sec.prog.map(a => `<span class="chip">${esc(a)}</span>`).join("")}</div>`;
+  }
+  return renderLines(sec.lines);
+}
+
+// ───── Previsualización de la siguiente sección (franja inferior) ─────
+function renderNextPreview(sigSec){
+  if(!sigSec){
+    return `<div class="nextpreview">
+      <div class="np-tag">Sigue</div>
+      <div class="np-end">Fin de la canción</div>
+    </div>`;
+  }
+  let contenido;
+  if(sigSec.inst && sigSec.prog){
+    // Sección instrumental: mostrar los primeros 4 acordes
+    const acordes = sigSec.prog.slice(0, 4).map(a => esc(a)).join("  ");
+    contenido = `<div class="np-inst">${acordes}${sigSec.prog.length > 4 ? "  ..." : ""}</div>`;
+  } else if(sigSec.lines && sigSec.lines.length > 0){
+    // Primera línea: acordes + letra
+    const primeraLinea = sigSec.lines[0] || [];
+    contenido = `<div class="np-line">${primeraLinea.map(tok => `
+      <div class="np-tok">
+        <span class="np-chord">${esc(tok[0])}</span>
+        <span class="np-lyric">${esc(tok[1])}</span>
+      </div>`).join("")}</div>`;
+  } else {
+    contenido = `<div class="np-end">(sin contenido)</div>`;
+  }
+  return `<div class="nextpreview">
+    <div class="np-tag">Sigue</div>
+    <div class="np-name">${esc(sigSec.tipo)}</div>
+    ${contenido}
+  </div>`;
+}
+
+// ───── Vistas ─────
+// Desplaza el escenario para dejar la seccion activa arriba
+function scrollSeccionActiva(activo){
+  const stage=document.getElementById("stage");
+  const target=document.getElementById("sec-"+activo);
+  if(stage && target){
+    const base = stage.firstElementChild ? stage.firstElementChild.offsetTop : 0;
+    stage.scrollTop = target.offsetTop - base;
+  }
+}
+
+function viewWaiting(){
+  const lista = setlist || [];
+  if(lista.length === 0){
+    app.innerHTML = `
+      <div class="setlist">
+        <div class="brand-block">
+          <img src="/static/logo.png" alt="" class="brand-logo">
+          <div class="brand-name">Mi Iglesia Internacional</div>
+        </div>
+        <h2>Setlist del Servicio de Hoy</h2>
+      </div>`;
+    return;
+  }
+  app.innerHTML = `
+    <div class="setlist">
+      <div class="brand-block">
+        <img src="/static/logo.png" alt="" class="brand-logo">
+        <div class="brand-name">Mi Iglesia Internacional</div>
+      </div>
+      <h2>Setlist del Servicio de Hoy</h2>
+      <p class="hint">Tocá una canción para verla antes del culto</p>
+      ${lista.map((s,i)=>`
+        <div class="song-item clickable" onclick="entrarPreview(${s.numero})">
+          <span class="num">${i+1}</span>
+          <div class="info">
+            <div class="nm">${esc(s.titulo)}${s.tono?` <span class="tono-tag">(${esc(s.tono)})</span>`:''}</div>
+            <div class="ar">${esc(s.artista||'')}</div>
+          </div>
+          <span class="chev">›</span>
+        </div>`).join("")}
+    </div>`;
+}
+
+function viewPlaying(){
+  if(!song) return viewWaiting();
+  const sec = song.secciones[idx];
+  const nextSec = song.secciones[idx+1];
+  app.innerHTML = `
+    <div class="topbar">
+      <div style="min-width:0;flex:1;display:flex;align-items:center;gap:10px">
+        <img src="/static/logo.png" alt="" class="topbar-logo">
+        <div style="min-width:0;flex:1">
+          <div class="song-title-row">
+            <div class="song-title">${esc(song.titulo)}</div>
+            ${song.tono?`<span class="tono-chip">${esc(song.tono)}</span>`:''}
+          </div>
+          <div class="song-meta">${song.tempo} BPM · ${esc(song.compas)}</div>
+        </div>
+      </div>
+      <div class="right">
+        <button class="dots-btn" onclick="abrirAjustes()" title="Ajustes">⋯</button>
+        <span class="pos">Sección ${idx+1} / ${song.secciones.length}</span>
+        <span class="live ${connected?'ok':'off'}"><span class="dot"></span>${connected?(following?'siguiendo':'manual'):'desconectado'}</span>
+      </div>
+    </div>
+    <div class="timeline-wrap">
+      <div class="timeline">
+        ${song.secciones.map((s,i)=>`<span class="pill ${i===idx?'active':(i<idx?'done':'')}" onclick="jump(${i})">${esc(s.tipo)}</span>`).join("")}
+      </div>
+    </div>
+    <div class="stage" id="stage">
+      ${song.secciones.map((s,i)=>`
+        <div class="sec${i===idx?' active':''}" id="sec-${i}" data-idx="${i}">
+          <div class="sechead">${esc(s.tipo)}</div>
+          ${s.nota?`<div class="secnote">${esc(s.nota)}</div>`:``}
+          ${renderBody(s)}
+        </div>`).join("")}
+    </div>
+    <div class="footer">
+      <div class="controls" style="width:100%">
+        <button class="btn-icon" onclick="prev()">‹</button>
+        <button class="btn-follow ${following?'':'off'}" onclick="toggleFollow()">${following?'● Siguiendo Logic':'↺ Volver a seguir Logic'}</button>
+        <button class="btn-icon" onclick="next()">›</button>
+      </div>
+    </div>`;
+  const active = document.querySelector(".pill.active");
+  if(active) active.scrollIntoView({inline:"center",block:"nearest"});
+  scrollSeccionActiva(idx);
+}
+
+function viewPreview(){
+  if(!preview || !preview.cancion) return viewWaiting();
+  const c = preview.cancion;
+  const i = preview.idx;
+  const sec = c.secciones[i];
+  const nextSec = c.secciones[i+1];
+  app.innerHTML = `
+    <div class="preview-banner">
+      <span>👁 Vista previa — no en vivo</span>
+      <button onclick="salirPreview()">Volver al setlist</button>
+    </div>
+    <div class="topbar">
+      <div style="min-width:0;flex:1">
+        <div class="song-title-row">
+          <div class="song-title">${esc(c.titulo)}</div>
+          ${c.tono?`<span class="tono-chip">${esc(c.tono)}</span>`:''}
+        </div>
+        <div class="song-meta">${c.tempo} BPM · ${esc(c.compas)}</div>
+      </div>
+      <div class="right">
+        <button class="dots-btn" onclick="abrirAjustes()" title="Ajustes">⋯</button>
+        <span class="pos">Sección ${i+1} / ${c.secciones.length}</span>
+      </div>
+    </div>
+    <div class="timeline-wrap">
+      <div class="timeline">
+        ${c.secciones.map((s,k)=>`<span class="pill ${k===i?'active':''}" onclick="previewJump(${k})">${esc(s.tipo)}</span>`).join("")}
+      </div>
+    </div>
+    <div class="stage" id="stage">
+      ${c.secciones.map((s,k)=>`
+        <div class="sec${k===i?' active':''}" id="sec-${k}" data-idx="${k}">
+          <div class="sechead">${esc(s.tipo)}</div>
+          ${s.nota?`<div class="secnote">${esc(s.nota)}</div>`:``}
+          ${renderBody(s)}
+        </div>`).join("")}
+    </div>
+    <div class="footer">
+      <div class="controls" style="width:100%">
+        <button class="btn-icon" onclick="previewPrev()" style="flex:1">‹</button>
+        <button class="btn-icon" onclick="previewNext()" style="flex:1">›</button>
+      </div>
+    </div>`;
+  const active = document.querySelector(".pill.active");
+  if(active) active.scrollIntoView({inline:"center",block:"nearest"});
+  scrollSeccionActiva(i);
+}
+
+function claveVista(){
+  const songId = song ? (song.titulo + "|" + song.secciones.length + "|" + idx) : "null";
+  const setlistId = (setlist || []).map(s => s.numero).join(",");
+  const previewId = preview ? ("PV:"+preview.cancion.titulo+":"+preview.idx) : "null";
+  return estado + "|" + songId + "|" + (connected?"on":"off") + "|" + setlistId + "|" + previewId + "|" + (following?"F":"M");
+}
+
+function render(){
+  const clave = claveVista();
+  if(clave === ultimoRenderClave) return;  // mismo estado: no repintar
+  ultimoRenderClave = clave;
+  // Prioridad: playing > preview > waiting
+  // (ya no hay "ended" persistente - cuando termina, vuelve a waiting)
+  if(estado === "playing" && song) viewPlaying();
+  else if(preview) viewPreview();
+  else viewWaiting();
+}
+
+// ───── Navegación manual (durante canción en vivo) ─────
+function jump(i){ following=false; idx=i; render(); }
+function prev(){ if(idx>0){ following=false; idx--; render(); } }
+function next(){ if(song && idx<song.secciones.length-1){ following=false; idx++; render(); } }
+function toggleFollow(){
+  following = !following;
+  if(following && song){ idx = idxLogic; }
+  render();
+}
+
+// ───── Modo preview (antes del culto) ─────
+async function entrarPreview(numero){
+  try {
+    const r = await fetch('/api/cancion/' + numero);
+    const data = await r.json();
+    if(data && data.ok && data.cancion){
+      preview = { cancion: data.cancion, idx: 0 };
+      render();
+    }
+  } catch(e){ console.error(e); }
+}
+function salirPreview(){ preview = null; render(); }
+function previewJump(i){ if(preview){ preview.idx = i; render(); } }
+function previewPrev(){ if(preview && preview.idx > 0){ preview.idx--; render(); } }
+function previewNext(){ if(preview && preview.idx < preview.cancion.secciones.length - 1){ preview.idx++; render(); } }
+
+// ───── Mensajes del puente ─────
+function manejar(msg){
+  if(msg.tipo === "estado"){
+    setlist = msg.setlist || [];
+    song = msg.cancion || null;
+    idx = msg.seccion ?? 0;
+    idxLogic = idx;
+    estado = msg.estado === "ended" ? "waiting" : (msg.estado || "waiting");
+    following = true;
+    if(estado === "playing" && song) preview = null;
+    render();
+  } else if(msg.tipo === "cancion"){
+    song = msg.cancion;
+    idx = 0;
+    idxLogic = 0;
+    estado = "playing";
+    following = true;
+    preview = null;  // Logic activó canción real → fuera del preview
+    render();
+  } else if(msg.tipo === "seccion"){
+    idxLogic = msg.indice;
+    estado = "playing";
+    if(following) idx = msg.indice;
+    render();
+  } else if(msg.tipo === "fin"){
+    // Volver automáticamente a la pantalla de espera (setlist)
+    estado = "waiting";
+    song = null;
+    idx = 0;
+    idxLogic = 0;
+    following = true;
+    render();
+  } else if(msg.tipo === "setlist"){
+    setlist = msg.setlist || [];
+    render();
+  }
+}
+
+// ───── WebSocket robusto ─────
+let ws = null;
+let reconnectDelay = 1000;
+let reconnectTimer = null;
+let heartbeatTimer = null;
+
+function limpiarTimers(){
+  if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
+}
+
+function conectar(){
+  if(ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  try { ws = new WebSocket(`${proto}://${location.host}/ws`); }
+  catch(e){ programarReconexion(); return; }
+
+  ws.onopen = ()=>{
+    connected = true;
+    reconnectDelay = 1000;
+    heartbeatTimer = setInterval(()=>{
+      if(ws && ws.readyState === WebSocket.OPEN){
+        try { ws.send(JSON.stringify({tipo:"ping"})); } catch(e){}
+      }
+    }, 25000);
+    render();
+  };
+  ws.onclose = ()=>{
+    connected = false;
+    limpiarTimers();
+    render();
+    programarReconexion();
+  };
+  ws.onerror = ()=>{};
+  ws.onmessage = (e)=>{
+    try {
+      const msg = JSON.parse(e.data);
+      if(msg.tipo === "pong") return;
+      manejar(msg);
+    } catch(err){ console.error(err); }
+  };
+}
+
+function programarReconexion(){
+  if(reconnectTimer) return;
+  reconnectTimer = setTimeout(()=>{
+    reconnectTimer = null;
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    conectar();
+  }, reconnectDelay);
+}
+
+// visibilitychange amigable con iPad: no cerrar WS al ocultarse, solo pausar heartbeat
+document.addEventListener("visibilitychange", ()=>{
+  if(document.hidden){
+    if(heartbeatTimer){ clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  } else {
+    if(ws && ws.readyState === WebSocket.OPEN){
+      if(!heartbeatTimer){
+        heartbeatTimer = setInterval(()=>{
+          if(ws && ws.readyState === WebSocket.OPEN){
+            try { ws.send(JSON.stringify({tipo:"ping"})); } catch(e){}
+          }
+        }, 25000);
+      }
+    } else {
+      reconnectDelay = 1000;
+      conectar();
+    }
+  }
+});
+
+render();
+conectar();
+</script>
+</body>
+</html>

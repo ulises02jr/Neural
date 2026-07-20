@@ -1,0 +1,8 @@
+{
+  "vps_url": "https://miworship.miiglesiainternacional.org",
+  "token": "PEGA_AQUI_EL_TOKEN_DEL_VPS",
+  "midi_channel": 16,
+  "iac_port": "",
+  "puerto": 5050,
+  "simulacion": false
+}

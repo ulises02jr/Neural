@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeuralWorship</title>
+<style>
+  :root{
+    --bg:#16150f; --bg2:#100f0a; --card:#201f18; --card2:#292820;
+    --linea:#38362b; --txt:#fbfaf7; --sub:#9c988b; --acento:#fbfaf7;
+    --ok:#3fbf6f; --warn:#e0b64a; --off:#5a5748; --rojo:#e2564f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%, #24231a 0%, var(--bg) 60%);
+    color:var(--txt); -webkit-font-smoothing:antialiased;
+    padding:26px 30px 30px; min-height:100vh;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+
+  header{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+  .mark{height:40px;width:auto;display:block}
+  .h-tit{font-size:20px;font-weight:700;letter-spacing:.3px}
+  .h-tit .t-light{font-weight:400}
+  .h-tit .t-bold{font-weight:800}
+  .h-sub{font-size:12.5px;color:var(--sub);margin-top:1px}
+  .badge{margin-left:auto;display:flex;align-items:center;gap:8px;
+    background:var(--card);border:1px solid var(--linea);
+    padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600}
+  .badge .dot{width:9px;height:9px;border-radius:50%;background:var(--off);
+    box-shadow:0 0 0 0 rgba(46,192,122,.6)}
+  .badge.live .dot{background:var(--rojo);animation:pulso 1.8s infinite}
+  @keyframes pulso{0%{box-shadow:0 0 0 0 rgba(255,84,112,.5)}70%{box-shadow:0 0 0 9px rgba(255,84,112,0)}100%{box-shadow:0 0 0 0 rgba(255,84,112,0)}}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px}
+  .stat{background:var(--card);border:1px solid var(--linea);border-radius:16px;padding:15px 16px}
+  .stat .lbl{font-size:11.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+  .stat .val{display:flex;align-items:center;gap:9px;margin-top:9px;font-size:16px;font-weight:700}
+  .stat .val .dot{width:11px;height:11px;border-radius:50%;flex:none}
+  .d-ok{background:var(--ok);box-shadow:0 0 12px rgba(46,192,122,.6)}
+  .d-warn{background:var(--warn);box-shadow:0 0 12px rgba(240,180,41,.5)}
+  .d-off{background:var(--off)}
+  .stat .val.num{font-size:26px}
+
+  .cardrow{display:grid;grid-template-columns:1.2fr .8fr;gap:12px;margin-bottom:14px}
+  .card{background:var(--card);border:1px solid var(--linea);border-radius:18px;padding:20px}
+  .card h3{font-size:12.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.7px;font-weight:700;margin-bottom:14px}
+  .url{font-size:22px;font-weight:800;color:var(--acento);word-break:break-all;line-height:1.25}
+  .url-hint{font-size:13px;color:var(--sub);margin-top:10px;line-height:1.5}
+  .qr{background:#fff;border-radius:14px;padding:12px;display:flex;align-items:center;justify-content:center}
+  .qr svg{width:100%;height:auto;display:block}
+  .qr-cap{text-align:center;font-size:12px;color:var(--sub);margin-top:9px}
+
+  .foot{display:grid;grid-template-columns:1.4fr .7fr auto;gap:12px;align-items:end}
+  .field .lbl{font-size:11.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-bottom:8px;display:block}
+  select{width:100%;background:var(--card2);color:var(--txt);border:1px solid var(--linea);
+    border-radius:12px;padding:13px 14px;font-size:15px;font-weight:600;appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%238b97ab' viewBox='0 0 16 16'><path d='M4 6l4 4 4-4'/></svg>");
+    background-repeat:no-repeat;background-position:right 13px center;cursor:pointer}
+  .rep{background:var(--card);border:1px solid var(--linea);border-radius:16px;padding:14px 18px;margin-bottom:14px}
+  .rep-h{display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--sub);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:10px}
+  .rep-son{text-transform:none;letter-spacing:0;color:var(--acento);font-weight:600}
+  .rep-list{list-style:none;display:flex;flex-wrap:wrap;gap:8px}
+  .rep-list li{display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--linea);border-radius:999px;padding:7px 13px;font-size:13.5px;font-weight:600;color:var(--txt)}
+  .rep-list li .n{color:var(--sub);font-size:12px}
+  .rep-list li .t{color:var(--sub);font-size:12px;font-weight:700}
+  .rep-list li.playing{background:var(--acento);color:#16150f;border-color:transparent}
+  .rep-list li.playing .n,.rep-list li.playing .t{color:rgba(22,21,15,.7)}
+  .rep-empty{color:var(--sub);font-style:italic}
+  .update{display:flex;align-items:center;gap:12px;background:var(--acento);color:#16150f;border-radius:14px;padding:12px 16px;margin-bottom:16px;font-weight:700;font-size:14px}
+  .update svg{flex:none}
+  .update button{margin-left:auto;background:#16150f;color:var(--acento);box-shadow:none;padding:9px 16px;font-size:13px}
+  button{background:var(--acento);color:#16150f;border:none;
+    border-radius:12px;padding:13px 22px;font-size:14px;font-weight:700;cursor:pointer;
+    box-shadow:0 6px 18px rgba(0,0,0,.3);transition:transform .06s,filter .15s;white-space:nowrap}
+  button:hover{filter:brightness(1.08)} button:active{transform:translateY(1px)}
+  .stamp{text-align:center;color:var(--off);font-size:11.5px;margin-top:20px;letter-spacing:.3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="update" id="update" style="display:none">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16150f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    <span id="update-txt">Actualización disponible</span>
+    <button id="btn-update">Descargar</button>
+  </div>
+
+  <header>
+    <img class="mark" src="data:image/png;base64,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" alt="NeuralWorship">
+    <div>
+      <div class="h-tit"><span class="t-light">Neural</span> <span class="t-bold">Worship</span></div>
+      <div class="h-sub">Conecta el secuenciador con los músicos</div>
+    </div>
+    <div class="badge" id="badge"><span class="dot"></span><span id="badge-txt">Conectando…</span></div>
+  </header>
+
+  <div class="grid">
+    <div class="stat">
+      <div class="lbl">Conexión</div>
+      <div class="val"><span class="dot d-off" id="d-vps"></span><span id="t-vps">—</span></div>
+    </div>
+    <div class="stat">
+      <div class="lbl">MIDI</div>
+      <div class="val"><span class="dot d-off" id="d-midi"></span><span id="t-midi">—</span></div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Músicos</div>
+      <div class="val num"><span id="t-mus">0</span></div>
+    </div>
+  </div>
+
+  <div class="rep">
+    <div class="rep-h"><span>Repertorio</span><span class="rep-son" id="rep-son"></span></div>
+    <ol class="rep-list" id="rep-list"><li class="rep-empty">Sin repertorio activo</li></ol>
+  </div>
+
+  <div class="cardrow">
+    <div class="card">
+      <h3>Para los músicos</h3>
+      <div class="url" id="url">http://…</div>
+      <div class="url-hint">Que se conecten a la misma red Wi-Fi y abran esta dirección, o escaneen el código.</div>
+    </div>
+    <div class="card">
+      <h3>Escanear</h3>
+      <div class="qr"><img id="qr" src="/api/qr.svg" alt="QR"></div>
+      <div class="qr-cap">Cámara del celular</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="field">
+      <label class="lbl" for="puerto">Fuente MIDI (loopMIDI / rtpMIDI / IAC)</label>
+      <select id="puerto"></select>
+    </div>
+    <div class="field">
+      <label class="lbl" for="canal">Canal MIDI</label>
+      <select id="canal"></select>
+    </div>
+    <button id="btn-act">Actualizar</button>
+  </div>
+
+  <div class="stamp">NeuralWorship · v1.0</div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+
+  // Selector de canal 1-16
+  const sel = $("canal");
+  for(let n=1;n<=16;n++){ const o=document.createElement("option"); o.value=n; o.textContent="Canal "+n; sel.appendChild(o); }
+  sel.addEventListener("change", async ()=>{
+    await fetch("/api/set_canal",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({canal:parseInt(sel.value)})});
+  });
+
+  // Selector de fuente MIDI (loopMIDI / rtpMIDI / IAC / hardware)
+  const selP = $("puerto");
+  let focoPuerto = false;
+  selP.addEventListener("focus", ()=>focoPuerto=true);
+  selP.addEventListener("blur", ()=>focoPuerto=false);
+  selP.addEventListener("change", async ()=>{
+    await fetch("/api/set_midi_puerto",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({puerto:selP.value})});
+    setTimeout(cargarPuertos, 400);
+  });
+  async function cargarPuertos(){
+    if(focoPuerto) return;
+    try{
+      const r = await (await fetch("/api/midi_puertos")).json();
+      const filtro = (r.filtro||"").toLowerCase();
+      selP.innerHTML = "";
+      const optA = document.createElement("option"); optA.value=""; optA.textContent="(automático)"; selP.appendChild(optA);
+      (r.puertos||[]).forEach(p=>{
+        const o=document.createElement("option"); o.value=p; o.textContent=p; selP.appendChild(o);
+      });
+      let elegido = "";
+      if(filtro){ elegido = (r.puertos||[]).find(p=>p.toLowerCase().includes(filtro)) || ""; }
+      selP.value = elegido;
+    }catch(_){}
+  }
+  cargarPuertos();
+  setInterval(cargarPuertos, 4000);
+
+  $("btn-update").addEventListener("click", async ()=>{ await fetch("/api/abrir_descarga",{method:"POST"}); });
+
+  $("btn-act").addEventListener("click", async (e)=>{
+    e.target.textContent="Actualizando…"; e.target.disabled=true;
+    try{ const r=await (await fetch("/api/actualizar",{method:"POST"})).json();
+         e.target.textContent = r.ok ? "✓ Actualizado" : "No se pudo"; }
+    catch(_){ e.target.textContent="Error"; }
+    setTimeout(()=>{ e.target.textContent="Actualizar del VPS"; e.target.disabled=false; }, 1600);
+    refrescar();
+  });
+
+  function escapeHtml(s){ return (s||"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  function renderRepertorio(lista, sonando){
+    const cont = $("rep-list"), son = $("rep-son");
+    if(!lista || !lista.length){ cont.innerHTML = '<li class="rep-empty">Sin repertorio activo</li>'; son.textContent=""; return; }
+    son.textContent = sonando ? ("Sonando: " + sonando) : "";
+    cont.innerHTML = lista.map((c,i)=>{
+      const play = (sonando && c.titulo===sonando) ? ' class="playing"' : "";
+      const tono = c.tono ? ('<span class="t">'+escapeHtml(c.tono)+'</span>') : "";
+      return '<li'+play+'><span class="n">'+(i+1)+'</span>'+escapeHtml(c.titulo)+tono+'</li>';
+    }).join("");
+  }
+
+  function setDot(el, cls){ el.className = "dot "+cls; }
+
+  let urlPuesta=false, focoCanal=false;
+  sel.addEventListener("focus",()=>focoCanal=true);
+  sel.addEventListener("blur",()=>focoCanal=false);
+
+  async function refrescar(){
+    try{
+      const s = await (await fetch("/api/estado")).json();
+      // VPS
+      const bd=$("badge");
+      if(s.live){ bd.classList.add("live"); $("badge-txt").textContent="EN VIVO"; setDot($("d-vps"),"d-ok"); $("t-vps").textContent="Conectado"; }
+      else{ bd.classList.remove("live"); $("badge-txt").textContent="Sin conexión"; setDot($("d-vps"),"d-off"); $("t-vps").textContent="Sin conexión"; }
+      // MIDI
+      const midi=(s.midi||"").toLowerCase();
+      if(midi.startsWith("escuchando")){ setDot($("d-midi"),"d-ok"); $("t-midi").textContent="Escuchando"; }
+      else if(midi.includes("simula")){ setDot($("d-midi"),"d-warn"); $("t-midi").textContent="Simulación"; }
+      else{ setDot($("d-midi"),"d-warn"); $("t-midi").textContent="Sin puerto"; }
+      // números
+      $("t-mus").textContent=s.musicos;
+      renderRepertorio(s.repertorio_lista, s.sonando);
+      if(s.update){ $("update-txt").textContent="Actualización disponible: v"+s.update; $("update").style.display="flex"; }
+      else{ $("update").style.display="none"; }
+      // url
+      if(!urlPuesta){ $("url").textContent=s.url; urlPuesta=true; }
+      // canal (no pisar si el usuario está eligiendo)
+      if(!focoCanal && parseInt(sel.value)!==s.canal){ sel.value=s.canal; }
+    }catch(_){}
+  }
+  refrescar();
+  setInterval(refrescar, 3000);
+</script>
+</body>
+</html>
