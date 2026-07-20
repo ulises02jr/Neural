@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+config.json
+secrets.json
+canciones/*.json
+venv/
+.DS_Store
+pistas/
+*.bak
+*.bak-*
+*.bak*
+*.db
+usuarios.db
+descargas/
+backups_canciones/
+static/portadas/
