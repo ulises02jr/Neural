@@ -1554,6 +1554,19 @@ def _nombre_base_export(cancion, numero):
     return base or ("cancion_%d" % numero)
 
 
+def _invalidar_tonos(numero):
+    """Borra los caches de tonos transpuestos: quedan inconsistentes al cambiar los stems."""
+    base = CARPETA_PISTAS / str(numero)
+    if not base.is_dir():
+        return
+    for d in base.glob("tono_*"):
+        if d.is_dir():
+            try:
+                shutil.rmtree(str(d))
+            except Exception:
+                pass
+
+
 def _asegurar_web(numero, n):
     """Genera los proxys MP3 128k (modo ensayo) que falten para el tono n."""
     d = _carpeta_tono(numero, n)
@@ -1763,6 +1776,7 @@ def admin_pistas_subir():
         a.save(str(carpeta / nombre))
         guardadas += 1
     if guardadas:
+        _invalidar_tonos(int(numero))
         threading.Thread(target=_asegurar_web, args=(int(numero), 0), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s) a la cancion #" + numero, "success")
     else:
@@ -1940,6 +1954,7 @@ def admin_nueva_pistas(numero):
             a.save(str(carpeta / nombre))
             guardadas += 1
         if guardadas:
+            _invalidar_tonos(numero)
             threading.Thread(target=_asegurar_web, args=(numero, 0), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s)", "success")
         return redirect(url_for("admin_secciones", numero=numero, wizard=1))
@@ -2286,6 +2301,7 @@ def admin_pista_borrar_una(numero):
         for d in base.glob("tono_*"):
             if d.is_dir():
                 objetivos += [d / archivo, d / "web" / (stem + ".mp3")]
+        _invalidar_tonos(numero)
         borro = False
         for p in objetivos:
             if p.is_file():
