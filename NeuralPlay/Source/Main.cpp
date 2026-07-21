@@ -3197,7 +3197,18 @@ private:
         currentSong = -1;
         clearSong();
         rebuildRepertoireStrip();
-        for (auto* c : songCards) c->dlProgress = 0.0f;   // barrita hasta que baje su audio
+        for (int i = 0; i < repertoire.size(); ++i)   // ya en caché: sin barra (no re-descarga); falta bajar: barra en 0
+        {
+            const auto& e = repertoire.getReference (i);
+            bool ready = ! e.famFiles.isEmpty();
+            for (auto& fn : e.famFiles)
+            {
+                auto f = e.folder.getChildFile (fn);
+                if (! f.existsAsFile() || f.getSize() < 2000) { ready = false; break; }
+            }
+            if (i < songReady.size())  songReady.set (i, ready);
+            if (i < songCards.size())  songCards[i]->dlProgress = ready ? -1.0f : 0.0f;
+        }
         repaint();
     }
 

@@ -1642,7 +1642,6 @@ def _render_tono(numero, n):
                 lock.write_text(str(hechos) + "/" + str(len(orig)))
             except Exception:
                 pass
-        _asegurar_web(numero, n)   # proxys mp3 (modo ensayo) de este tono
     except Exception as e:
         logging.error("render tono %s/%s: %s", numero, n, e)
     finally:
@@ -1650,6 +1649,11 @@ def _render_tono(numero, n):
             lock.unlink()
         except Exception:
             pass
+    # proxys DESPUES de soltar el lock real: el reproductor ya ve el tono listo y baja los reales
+    try:
+        _asegurar_web(numero, n)
+    except Exception as e:
+        logging.error("proxys tono %s/%s: %s", numero, n, e)
 
 
 @app.route("/api/pistas/<int:numero>")
