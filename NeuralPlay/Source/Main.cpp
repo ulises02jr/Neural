@@ -2231,10 +2231,12 @@ public:
         {
             g.setColour (juce::Colour (0xff8a94a6));
             g.setFont (13.0f);
-            juce::String msg = (currentSong >= 0)
-                ? juce::String ("Cargando forma de onda...")
-                : (repertoire.isEmpty() ? juce::String ("Conecta para traer el repertorio")
-                                        : juce::String::fromUTF8 ("Descargando repertorio\xe2\x80\xa6"));
+            juce::String msg;
+            if (currentSong >= 0)                     msg = juce::String ("Cargando forma de onda...");
+            else if (! repertoire.isEmpty())          msg = juce::String::fromUTF8 ("Descargando repertorio\xe2\x80\xa6");
+            else if (serverToken.isEmpty())           msg = juce::String ("Conecta para traer el repertorio");
+            else if (currentSetlistName.isNotEmpty()) msg = juce::String::fromUTF8 ("Repertorio vac\xc3\xado \xe2\x80\x94 agreg\xc3\xa1 canciones con +");
+            else                                      msg = juce::String::fromUTF8 ("Abr\xc3\xad un repertorio o cre\xc3\xa1 uno nuevo");
             g.drawText (msg, inner, juce::Justification::centred, true);
         }
 
@@ -3111,16 +3113,22 @@ private:
     void startLoadId (juce::String setlistId)
     {
         if (serverToken.isEmpty()) { connStatus.setText ("Falta servidor/token", juce::dontSendNotification); return; }
-        if (loader && loader->isThreadRunning()) return;
+        if (loader && loader->isThreadRunning())      // cancelar la carga anterior y reiniciar (no bloquear crear/agregar)
+        {
+            loader->signalThreadShouldExit();
+            loader->stopThread (4000);
+        }
+        ++loadGen;                                    // invalida callbacks en cola de la carga anterior
+        const int gen = loadGen;
         lastSetlistId = setlistId;
         connStatus.setText ("Actualizando...", juce::dontSendNotification);
         loader = std::make_unique<RepertoireLoader> (serverUrl, serverToken, npAppDir().getChildFile ("cache"));
         loader->wantedId = setlistId;
         juce::Component::SafePointer<MainComponent> sp (this);
-        loader->onStatus = [sp] (juce::String s) { if (sp) { sp->connStatus.setText (s, juce::dontSendNotification); sp->repaint (sp->mapBounds); } };
-        loader->onMeta   = [sp] (juce::Array<SongEntry> songs) { if (sp) sp->onRepertoireMeta (songs); };
-        loader->onProgress = [sp] (int i, double f) { if (sp) sp->onSongProgress (i, f); };
-        loader->onDone   = [sp] (juce::Array<SongEntry> songs) { if (sp) sp->onRepertoireLoaded (songs); };
+        loader->onStatus = [sp, gen] (juce::String s) { if (sp && sp->loadGen == gen) { sp->connStatus.setText (s, juce::dontSendNotification); sp->repaint (sp->mapBounds); } };
+        loader->onMeta   = [sp, gen] (juce::Array<SongEntry> songs) { if (sp && sp->loadGen == gen) sp->onRepertoireMeta (songs); };
+        loader->onProgress = [sp, gen] (int i, double f) { if (sp && sp->loadGen == gen) sp->onSongProgress (i, f); };
+        loader->onDone   = [sp, gen] (juce::Array<SongEntry> songs) { if (sp && sp->loadGen == gen) sp->onRepertoireLoaded (songs); };
         loader->startThread();
     }
 
@@ -3927,6 +3935,7 @@ private:
     SettingsPanel settingsPanel;
     juce::String lastSetlistId;   // setlist cargado (para "Actualizar")
     juce::String currentSetlistName;
+    int loadGen = 0;                 // generación de carga: descarta callbacks de cargas canceladas
     juce::Rectangle<int> setlistBandBounds;   // franja donde se dibuja el nombre del repertorio
     juce::Rectangle<int> compasBoxBounds;     // caja de Tempo/Compás (a la par del tiempo)
     RepEditPanel repEdit;
