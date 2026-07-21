@@ -1,4 +1,5 @@
 #include <JuceHeader.h>
+#include "BinaryData.h"
 #include <atomic>
 #include <cmath>
 #include <functional>
@@ -107,6 +108,8 @@ struct SongEntry
 {
     int id = 0, tono = 0, beatsPerBar = 4;
     double tempo = 0.0;
+    juce::String compas = "4/4";
+    juce::var mix;                    // mezcla guardada de esta canción en el repertorio
     juce::String titulo, artista, tonoNombre;
     juce::File folder;
     juce::Array<double> secTimes;
@@ -261,6 +264,71 @@ struct SplashComp : public juce::Component
                          juce::RectanglePlacement::centred);
         }
         else drawNPLogoBig (g, getLocalBounds().toFloat());
+    }
+};
+
+// Boton de Play/Pausa: dibuja el simbolo (triangulo / dos barras) en azul.
+// Decide el icono segun su texto ("Pausa" => pausa, si no => play), asi
+// reutiliza los setButtonText existentes sin tocar la logica de reproduccion.
+struct PlayIconButton : public juce::Button
+{
+    PlayIconButton() : juce::Button ("play") {}
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const float rad = juce::jmin (r.getHeight() * 0.5f, 12.0f);
+        juce::Colour blue (0xff2E6BE6);
+        if (! isEnabled())  blue = blue.withAlpha (0.35f);
+        else if (down)      blue = blue.darker (0.10f);
+        else if (over)      blue = blue.brighter (0.12f);
+        g.setColour (blue);
+        g.fillRoundedRectangle (r, rad);
+
+        const bool pause = getButtonText().equalsIgnoreCase ("Pausa");
+        g.setColour (juce::Colours::white.withAlpha (isEnabled() ? 1.0f : 0.6f));
+        const auto c = r.getCentre();
+        const float s = juce::jmin (r.getHeight(), r.getWidth());
+        if (pause)
+        {
+            const float bw = s * 0.13f, gap = s * 0.14f, bh = s * 0.42f;
+            g.fillRoundedRectangle (c.x - gap - bw, c.y - bh * 0.5f, bw, bh, bw * 0.35f);
+            g.fillRoundedRectangle (c.x + gap,       c.y - bh * 0.5f, bw, bh, bw * 0.35f);
+        }
+        else
+        {
+            const float w = s * 0.34f, h = s * 0.42f;
+            juce::Path tri;
+            tri.addTriangle (c.x - w * 0.40f, c.y - h * 0.5f,
+                             c.x - w * 0.40f, c.y + h * 0.5f,
+                             c.x + w * 0.60f, c.y);
+            g.fillPath (tri);
+        }
+    }
+};
+
+// Botón de Desvanecer: dibuja una rampa descendente (fade out) en un pill oscuro.
+struct FadeIconButton : public juce::Button
+{
+    FadeIconButton() : juce::Button ("fade") {}
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const float rad = juce::jmin (r.getHeight() * 0.5f, 12.0f);
+        juce::Colour bg (0xff1f1f1f);
+        if (down) bg = bg.brighter (0.06f); else if (over) bg = bg.brighter (0.10f);
+        g.setColour (bg); g.fillRoundedRectangle (r, rad);
+        g.setColour (juce::Colour (0xff2a2a2a)); g.drawRoundedRectangle (r, rad, 1.0f);
+
+        const auto c = r.getCentre();
+        const float hw = juce::jmin (r.getWidth() * 0.30f, 15.0f);
+        const float hh = juce::jmin (r.getHeight() * 0.30f, 10.0f);
+        juce::Path ramp;                    // rampa que baja: alto a la izquierda, cero a la derecha
+        ramp.startNewSubPath (c.x - hw, c.y - hh);
+        ramp.lineTo         (c.x - hw, c.y + hh);
+        ramp.lineTo         (c.x + hw, c.y + hh);
+        ramp.closeSubPath();
+        g.setColour (isEnabled() ? juce::Colours::white.withAlpha (0.92f) : juce::Colours::white.withAlpha (0.4f));
+        g.fillPath (ramp);
     }
 };
 
@@ -609,6 +677,7 @@ struct RepertoireLoader : public juce::Thread
             SongEntry e;
             e.id   = (int) item.getProperty ("id", 0);
             e.tono = (int) item.getProperty ("tono_semitonos", 0);   // semitono resuelto por el servidor
+            e.mix  = item.getProperty ("mix", juce::var());          // mezcla guardada en el repertorio
             auto meta = cIdx.getProperty (juce::String (e.id), juce::var());
             e.titulo     = meta.getProperty ("titulo", "Cancion " + juce::String (e.id)).toString();
             e.artista    = meta.getProperty ("artista", "").toString();
@@ -642,6 +711,7 @@ struct RepertoireLoader : public juce::Thread
 
             e.tempo = (double) pv.getProperty ("tempo", 0.0);
             auto comp = pv.getProperty ("compas", "4/4").toString();
+            e.compas = comp.isNotEmpty() ? comp : juce::String ("4/4");
             e.beatsPerBar = comp.upToFirstOccurrenceOf ("/", false, false).getIntValue();
             if (e.beatsPerBar < 1) e.beatsPerBar = 4;
 
@@ -872,37 +942,32 @@ struct RepertoirePicker : public juce::Component
     struct Item { juce::String id, nombre, fecha; int nCanciones = 0; };
     juce::Array<Item> items;
     int selected = -1;
+    int menuRow = -1;                 // fila con el menú (Cargar/Guardar/Borrar) desplegado
     bool loading = true;
+    juce::String currentLoadedId;     // repertorio cargado (para mostrar "Guardar")
+    juce::uint32 savedAt = 0;
     std::function<void (juce::String)> onLoad;
+    std::function<void (juce::String)> onSave;
     std::function<void (juce::String)> onDelete;
     std::function<void()> onNew;
-    juce::TextButton loadBtn, delBtn, newBtn, closeBtn;
+    juce::TextButton newBtn, loadBtn, closeBtn;
 
     RepertoirePicker()
     {
+        newBtn.setButtonText (juce::String::fromUTF8 ("+ Nuevo"));
+        newBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        newBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff7Cc6ff));
+        newBtn.onClick = [this] { setVisible (false); if (onNew) onNew(); };
+        addAndMakeVisible (newBtn);
         loadBtn.setButtonText ("Cargar");
         loadBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffffffff));
         loadBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0a0a0a));
         loadBtn.onClick = [this]
         {
             if (selected >= 0 && selected < items.size() && onLoad)
-            { setVisible (false); onLoad (items[selected].id); }
+            { auto id = items[selected].id; setVisible (false); onLoad (id); }
         };
         addAndMakeVisible (loadBtn);
-        delBtn.setButtonText ("Borrar");
-        delBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a1414));
-        delBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe05555));
-        delBtn.onClick = [this]
-        {
-            if (selected >= 0 && selected < items.size() && onDelete)
-                onDelete (items[selected].id);
-        };
-        addAndMakeVisible (delBtn);
-        newBtn.setButtonText (juce::String::fromUTF8 ("+ Nuevo"));
-        newBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
-        newBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff7Cc6ff));
-        newBtn.onClick = [this] { setVisible (false); if (onNew) onNew(); };
-        addAndMakeVisible (newBtn);
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
@@ -913,7 +978,7 @@ struct RepertoirePicker : public juce::Component
 
     juce::Rectangle<int> panelBounds() const
     {
-        const int w = 430;
+        const int w = 440;
         const int h = 150 + juce::jmax (1, items.size()) * 54;
         return getLocalBounds().withSizeKeepingCentre (w, juce::jmin (h, getHeight() - 80));
     }
@@ -922,31 +987,48 @@ struct RepertoirePicker : public juce::Component
         auto p = panelBounds();
         return { p.getX() + 20, p.getY() + 64 + i * 54, p.getWidth() - 40, 48 };
     }
+    bool canSave (int i) const
+    {
+        return i >= 0 && i < items.size() && currentLoadedId.isNotEmpty() && items[i].id == currentLoadedId;
+    }
+    juce::Array<juce::Rectangle<int>> belowRects (int i) const   // Guardar/Borrar (pequeños) debajo de la fila
+    {
+        juce::Array<juce::Rectangle<int>> out;
+        auto r = rowBounds (i);
+        const int bw = 84, bh = 24, gap = 8;
+        int x = r.getX() + 4, y = r.getBottom() + 4;
+        const int n = canSave (i) ? 2 : 1;
+        for (int k = 0; k < n; ++k) { out.add ({ x, y, bw, bh }); x += bw + gap; }
+        return out;
+    }
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xC0000000));   // velo
+        g.fillAll (juce::Colour (0xC0000000));
         auto p = panelBounds().toFloat();
-        g.setColour (juce::Colour (0xff141414));
-        g.fillRoundedRectangle (p, 14.0f);
-        g.setColour (juce::Colour (0x33ffffff));
-        g.drawRoundedRectangle (p, 14.0f, 1.2f);
+        g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (p, 14.0f);
+        g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (p, 14.0f, 1.2f);
 
         g.setColour (juce::Colours::white);
         g.setFont (juce::Font (17.0f, juce::Font::bold));
         g.drawText ("Abrir repertorio", panelBounds().removeFromTop (56).reduced (22, 0),
                     juce::Justification::centredLeft);
+        if (juce::Time::getMillisecondCounter() - savedAt < 1600)
+        {
+            g.setColour (juce::Colour (0xff3ED66E));
+            g.setFont (juce::Font (12.5f, juce::Font::bold));
+            g.drawText (juce::String::fromUTF8 ("\xe2\x9c\x93 Mezcla guardada"),
+                        panelBounds().removeFromTop (56).reduced (22, 0), juce::Justification::centredRight);
+        }
 
         if (loading)
         {
-            g.setColour (juce::Colour (0xffa3a3a3));
-            g.setFont (juce::Font (13.0f));
+            g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (13.0f));
             g.drawText ("Buscando repertorios...", panelBounds().reduced (20), juce::Justification::centred);
         }
         else if (items.isEmpty())
         {
-            g.setColour (juce::Colour (0xffa3a3a3));
-            g.setFont (juce::Font (13.0f));
+            g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (13.0f));
             g.drawText ("No hay repertorios disponibles", panelBounds().reduced (20), juce::Justification::centred);
         }
         for (int i = 0; i < items.size(); ++i)
@@ -957,13 +1039,26 @@ struct RepertoirePicker : public juce::Component
             g.fillRoundedRectangle (r, 9.0f);
             g.setColour (sel ? juce::Colours::white : juce::Colour (0x22ffffff));
             g.drawRoundedRectangle (r, 9.0f, sel ? 1.6f : 1.0f);
-            g.setColour (juce::Colours::white);
-            g.setFont (juce::Font (14.0f, juce::Font::bold));
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
             g.drawText (items[i].nombre, r.reduced (14, 6).removeFromTop (18.0f), juce::Justification::centredLeft);
-            g.setColour (juce::Colour (0xffa3a3a3));
-            g.setFont (juce::Font (11.5f));
+            g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (11.5f));
             g.drawText (items[i].fecha + "   \xc2\xb7   " + juce::String (items[i].nCanciones) + " canciones",
                         r.reduced (14, 6).removeFromBottom (16.0f), juce::Justification::centredLeft);
+        }
+        // Menú de acciones sobre la fila tocada
+        if (menuRow >= 0 && menuRow < items.size())
+        {
+            const bool save = canSave (menuRow);
+            auto drawBtn = [&g] (juce::Rectangle<int> rb, juce::Colour bg, juce::Colour fg, const juce::String& t)
+            {
+                g.setColour (bg); g.fillRoundedRectangle (rb.toFloat(), 6.0f);
+                g.setColour (fg); g.setFont (juce::Font (11.5f, juce::Font::bold));
+                g.drawText (t, rb, juce::Justification::centred);
+            };
+            auto br = belowRects (menuRow);
+            int k = 0;
+            if (save) drawBtn (br[k++], juce::Colour (0xff17361f), juce::Colour (0xff5CD98A), "Guardar");
+            drawBtn (br[k], juce::Colour (0xff2a1414), juce::Colour (0xffe05555), "Borrar");
         }
     }
 
@@ -973,23 +1068,38 @@ struct RepertoirePicker : public juce::Component
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
         auto brow = juce::Rectangle<int> (p.getX() + 20, p.getBottom() - 54, p.getWidth() - 40, 36);
-        newBtn.setBounds (brow.removeFromLeft (100));
+        newBtn.setBounds (brow.removeFromLeft (110));
         loadBtn.setBounds (brow.removeFromRight (120));
-        brow.removeFromRight (8);
-        delBtn.setBounds (brow.removeFromRight (96));
+    }
+
+    void scheduleFlash()
+    {
+        juce::Component::SafePointer<RepertoirePicker> sp (this);
+        juce::Timer::callAfterDelay (1650, [sp] { if (sp) sp->repaint(); });
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        for (int i = 0; i < items.size(); ++i)
-            if (rowBounds (i).contains (e.getPosition())) { selected = i; repaint(); return; }
-        if (! panelBounds().contains (e.getPosition())) setVisible (false);   // clic fuera cierra
+        if (menuRow >= 0 && menuRow < items.size())   // menú abierto: primero sus botones
+        {
+            const bool save = canSave (menuRow);
+            const auto id = items[menuRow].id;
+            auto br = belowRects (menuRow);
+            int k = 0;
+            if (save && br[k++].contains (e.getPosition())) { savedAt = juce::Time::getMillisecondCounter(); if (onSave) onSave (id); menuRow = -1; scheduleFlash(); repaint(); return; }
+            if (k < br.size() && br[k].contains (e.getPosition())) { menuRow = -1; if (onDelete) onDelete (id); return; }
+        }
+        for (int i = 0; i < items.size(); ++i)   // tocar una fila la selecciona y abre su menú
+            if (rowBounds (i).contains (e.getPosition())) { selected = i; menuRow = i; repaint(); return; }
+        if (menuRow >= 0) { menuRow = -1; repaint(); }          // clic fuera de filas: cerrar menú
+        if (! panelBounds().contains (e.getPosition())) setVisible (false);
     }
 
     void setItems (juce::Array<Item> it)
     {
         items = std::move (it);
         loading = false;
+        menuRow = -1;
         if (selected < 0 && ! items.isEmpty()) selected = 0;
         layoutButtons();
         repaint();
@@ -1000,7 +1110,7 @@ struct SettingsPanel : public juce::Component
 {
     juce::TextButton syncBtn, cfgBtn, refreshBtn, closeBtn;
     bool syncOn = false, linked = false;
-    juce::Rectangle<int> indRect;
+    juce::Rectangle<int> statusBounds;
     std::function<void (bool)> onSync;
     std::function<void()> onConfig;
     std::function<void()> onRefresh;
@@ -1057,21 +1167,28 @@ struct SettingsPanel : public juce::Component
         g.drawText (juce::String::fromUTF8 ("Men\xc3\xba"), panelBounds().removeFromTop (56).reduced (22, 0),
                     juce::Justification::centredLeft);
 
-        // check-in verde del puente
-        auto r = indRect.toFloat();
-        g.setColour (linked ? juce::Colour (0xff3ED66E) : juce::Colour (0xff3a3a3a));
-        g.fillEllipse (r);
-        if (linked)
+        // Estado del puente: pelotita + texto, centrados en su propia línea
         {
-            g.setColour (juce::Colour (0xff0a0a0a));
-            g.setFont (juce::Font (11.0f, juce::Font::bold));
-            g.drawText (juce::String::fromUTF8 ("\xe2\x9c\x93"), r, juce::Justification::centred);
+            const juce::String txt = linked ? "enlazado" : (syncOn ? "esperando..." : "sin enlazar");
+            juce::GlyphArrangement ga; ga.addLineOfText (juce::Font (11.5f), txt, 0.0f, 0.0f);
+            const float tw = ga.getBoundingBox (0, -1, true).getWidth();
+            const float dotD = 10.0f, sp = 7.0f, total = dotD + sp + tw;
+            const float sx = (float) statusBounds.getCentreX() - total * 0.5f;
+            const float cy = (float) statusBounds.getCentreY();
+            juce::Rectangle<float> dot (sx, cy - dotD * 0.5f, dotD, dotD);
+            g.setColour (linked ? juce::Colour (0xff3ED66E) : juce::Colour (0xff3a3a3a));
+            g.fillEllipse (dot);
+            if (linked)
+            {
+                g.setColour (juce::Colour (0xff0a0a0a));
+                g.setFont (juce::Font (8.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("\xe2\x9c\x93"), dot, juce::Justification::centred);
+            }
+            g.setColour (juce::Colour (0xffa3a3a3));
+            g.setFont (juce::Font (11.5f));
+            g.drawText (txt, juce::Rectangle<float> (sx + dotD + sp, cy - 9.0f, tw + 6.0f, 18.0f),
+                        juce::Justification::centredLeft);
         }
-        g.setColour (juce::Colour (0xffa3a3a3));
-        g.setFont (juce::Font (11.0f));
-        g.drawText (linked ? "enlazado" : (syncOn ? "esperando..." : "sin enlazar"),
-                    juce::Rectangle<float> (r.getX() - 96.0f, r.getCentreY() - 8.0f, 90.0f, 16.0f),
-                    juce::Justification::centredRight);
     }
 
     void resized() override
@@ -1079,14 +1196,11 @@ struct SettingsPanel : public juce::Component
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
         auto b = p.reduced (24); b.removeFromTop (44);
-        auto row = b.removeFromTop (48);
-        indRect = row.removeFromRight (18).withSizeKeepingCentre (16, 16);
-        row.removeFromRight (10);
-        syncBtn.setBounds (row);
-        b.removeFromTop (14);
-        cfgBtn.setBounds (b.removeFromTop (48).withTrimmedRight (28));
-        b.removeFromTop (14);
-        refreshBtn.setBounds (b.removeFromTop (48).withTrimmedRight (28));
+        const int bh = 46, gap = 12;
+        syncBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
+        cfgBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
+        refreshBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
+        statusBounds = b.removeFromTop (22);
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -1159,7 +1273,7 @@ struct AudioConfigPanel : public juce::Component
 
     void buildRouteItems (int chans)
     {
-        numChans = juce::jlimit (0, 12, chans);
+        numChans = juce::jlimit (0, 32, chans);
         chInfo.setText (juce::String (numChans) + juce::String::fromUTF8 (" canales disponibles"), juce::dontSendNotification);
         for (auto* c : routeBoxes)
         {
@@ -1574,7 +1688,7 @@ public:
     {
         loadConfig();
         setLookAndFeel (&pillLnf);
-        { auto lf = npAppDir().getChildFile ("logo.png"); if (lf.existsAsFile()) logoImg = juce::ImageFileFormat::loadFrom (lf); }
+        logoImg = juce::ImageFileFormat::loadFrom (BinaryData::AppIcon_png, (size_t) BinaryData::AppIcon_pngSize);
         splash.logo = logoImg;
         formatManager.registerBasicFormats();
        #if JUCE_MAC
@@ -1597,6 +1711,7 @@ public:
         repPicker.onLoad = [this] (juce::String id) { startLoadId (id); };
         repPicker.onNew  = [this] { createSetlist(); };
         repPicker.onDelete = [this] (juce::String id) { confirmDeleteSetlist (id); };
+        repPicker.onSave = [this] (juce::String id) { saveRepertoireMixes (id); };
         addChildComponent (repPicker);
 
         settingsBtn.onClick = [this]
@@ -1631,11 +1746,6 @@ public:
         editBtn.onClick = [this] { toggleEdit(); };
         addAndMakeVisible (editBtn);
 
-        guardarBtn.setButtonText (juce::String::fromUTF8 ("Guardar"));
-        guardarBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
-        guardarBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff5CD98A));
-        guardarBtn.onClick = [this] { saveMix(); };
-        addAndMakeVisible (guardarBtn);
 
         addCard.onClick = [this] { openBibliotecaForAdd(); };
         addChildComponent (addCard);
@@ -1666,8 +1776,6 @@ public:
         addAndMakeVisible (connStatus);
 
         playButton.setButtonText ("Play");
-        playButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffffffff));
-        playButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0a0a0a));
         playButton.onClick = [this] { togglePlay(); };
         addAndMakeVisible (playButton);
 
@@ -1677,15 +1785,13 @@ public:
         returnButton.onClick = [this] { seekSeconds (0.0); };
         addAndMakeVisible (returnButton);
 
-        fadeButton.setButtonText ("Fade");
-        fadeButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
-        fadeButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffffffff));
         fadeButton.onClick = [this] { toggleFade(); };
         addAndMakeVisible (fadeButton);
 
         timeLabel.setJustificationType (juce::Justification::centred);
-        timeLabel.setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
-        timeLabel.setFont (juce::Font (14.0f, juce::Font::bold));
+        timeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffe8e8e8));
+        timeLabel.setFont (juce::Font (12.0f, juce::Font::bold));
+        timeLabel.setMinimumHorizontalScale (1.0f);
         addAndMakeVisible (timeLabel);
 
         masterSlider.setSliderStyle (juce::Slider::LinearVertical);
@@ -1779,7 +1885,7 @@ public:
         midiClock.startTimer (1);   // ~1 ms: minima latencia MIDI, hilo dedicado
 
         setSize (1040, 906);
-        setAudioChannels (0, 12);   // hasta 12 salidas (interfaces multicanal)
+        setAudioChannels (0, 32);   // hasta 32 salidas (interfaces multicanal)
         auto setup = deviceManager.getAudioDeviceSetup();
         setup.bufferSize = 256;   // menor latencia de salida (sin comprometer estabilidad)
         setup.sampleRate = 44100.0;
@@ -1796,7 +1902,7 @@ public:
             {
                 audioOutDevice = currentDeviceName();
                 ensureDeviceRoutes (audioOutDevice);
-                openOutChans = juce::jlimit (1, 12, currentOutputChannelCount());
+                openOutChans = juce::jlimit (1, 32, currentOutputChannelCount());
                 snapshotRoutes();
             }
         }
@@ -1866,8 +1972,8 @@ public:
 
         const int nn = info.numSamples;
         const int nch = juce::jmax (1, info.buffer->getNumChannels());
-        const int useCh = juce::jmin (nch, 12);
-        float* out[12] = { nullptr };
+        const int useCh = juce::jmin (nch, 32);
+        float* out[32] = { nullptr };
         for (int c = 0; c < useCh; ++c) out[c] = info.buffer->getWritePointer (c, info.startSample);
 
         bool anySolo = false;
@@ -1944,7 +2050,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xff0a0a0a));
-        drawLogo (g, 28.0f, 16.0f);
+        drawLogo (g, 28.0f, 18.5f);   // centrado vertical con los botones de la cabecera
 
         {
             auto tbx = timeLabel.getBounds().toFloat();
@@ -1957,16 +2063,29 @@ public:
             }
         }
 
-        if (currentSetlistName.isNotEmpty() && ! setlistBandBounds.isEmpty())   // nombre del repertorio
+        // Caja de Tempo (arriba) / Compás (abajo), a la par de la caja de tiempo
+        if (currentSong >= 0 && bpm > 0.0 && ! compasBoxBounds.isEmpty())
         {
-            g.setColour (juce::Colour (0xff7a7a7a));
-            g.setFont (juce::Font (12.0f, juce::Font::bold));
-            g.drawText (juce::String::fromUTF8 ("REPERTORIO"),
-                        setlistBandBounds.withWidth (92), juce::Justification::centredLeft, false);
+            auto boxf = compasBoxBounds.toFloat();
+            g.setColour (juce::Colour (0xff1f1f1f)); g.fillRoundedRectangle (boxf, 7.0f);
+            g.setColour (juce::Colour (0x22ffffff)); g.drawRoundedRectangle (boxf, 7.0f, 1.0f);
+            const int hh = compasBoxBounds.getHeight() / 2;
             g.setColour (juce::Colour (0xffe8e8e8));
-            g.setFont (juce::Font (14.0f, juce::Font::bold));
-            g.drawText (currentSetlistName, setlistBandBounds.withTrimmedLeft (98),
-                        juce::Justification::centredLeft, true);
+            g.setFont (juce::Font (12.5f, juce::Font::bold));
+            g.drawText (juce::String (juce::roundToInt (bpm)) + " BPM",
+                        compasBoxBounds.withHeight (hh).translated (0, 1), juce::Justification::centred, false);
+            g.setColour (juce::Colour (0xffb0b0b0));
+            g.setFont (juce::Font (11.5f));
+            g.drawText (songCompas, compasBoxBounds.withTrimmedTop (hh).translated (0, -1),
+                        juce::Justification::centred, false);
+        }
+
+        // Nombre del repertorio centrado (debajo del botón de Play)
+        if (! setlistBandBounds.isEmpty() && currentSetlistName.isNotEmpty())
+        {
+            g.setColour (juce::Colour (0xffcfcfcf));
+            g.setFont (juce::Font (13.5f, juce::Font::bold));
+            g.drawText (currentSetlistName, setlistBandBounds, juce::Justification::centred, true);
         }
 
         auto mb = mapBounds;
@@ -2162,11 +2281,13 @@ public:
             const int BW = 80, BH = 34, G = 8;
             const int gy = topbar.getCentreY() - BH / 2;
 
-            // Izquierda (tras el logo): caja de tiempo + PAD
-            const int logoW = 150;
+            // Izquierda (tras el logo): caja de tiempo + caja de tempo/compás + PAD
+            const int logoW = 80, boxW = 64, boxG = 6;
             int lx = topbar.getX() + logoW;
-            timeLabel.setBounds (lx, gy, 106, BH);
-            lx += 106 + G;
+            timeLabel.setBounds (lx, gy, boxW, BH);
+            lx += boxW + boxG;
+            compasBoxBounds = juce::Rectangle<int> (lx, gy, boxW, BH);
+            lx += boxW + G;
             padBtn.setBounds (lx, gy, BW, BH);
 
             // Derecha: Editar, repertorios, configuraciones (misma medida)
@@ -2176,8 +2297,6 @@ public:
             repertoireBtn.setBounds (rr.removeFromRight (BW).withSizeKeepingCentre (BW, BH));
             rr.removeFromRight (G);
             editBtn.setBounds       (rr.removeFromRight (BW).withSizeKeepingCentre (BW, BH));
-            rr.removeFromRight (G);
-            guardarBtn.setBounds    (rr.removeFromRight (BW).withSizeKeepingCentre (BW, BH));
 
             // Centro: Inicio  Play  Fade (misma medida)
             const int cx = topbar.getCentreX();
@@ -2188,8 +2307,8 @@ public:
         connStatus.setVisible (false);
         area.removeFromTop (6);
 
-        // Franja con el nombre del repertorio (solo si hay uno cargado)
-        if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (20); area.removeFromTop (2); }
+        // Franja con el nombre del repertorio centrado (solo si hay uno cargado)
+        if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (22); area.removeFromTop (3); }
         else                                   setlistBandBounds = {};
 
         // Tarjetas verticales grandes: portada arriba + nombre abajo
@@ -2307,9 +2426,9 @@ private:
     {
         if (logoImg.isValid())
         {
-            const float hh = 40.0f;
+            const float hh = 45.0f;
             const float ww = hh * (float) logoImg.getWidth() / (float) juce::jmax (1, logoImg.getHeight());
-            g.drawImage (logoImg, juce::Rectangle<float> (x, y - 4.0f, ww, hh), juce::RectanglePlacement::centred);
+            g.drawImage (logoImg, juce::Rectangle<float> (x, y - 2.0f, ww, hh), juce::RectanglePlacement::centred);
             return;
         }
         const float bw = 4.0f, gap = 3.5f, h = 30.0f;
@@ -2437,12 +2556,12 @@ private:
         setup.outputDeviceName = name;
         setup.useDefaultOutputChannels = false;
         setup.outputChannels.clear();
-        setup.outputChannels.setRange (0, 12, true);
+        setup.outputChannels.setRange (0, 32, true);
         setup.bufferSize = 256;
         setup.sampleRate = 44100.0;
         deviceManager.setAudioDeviceSetup (setup, true);
         audioOutDevice = name;
-        openOutChans = juce::jlimit (1, 12, currentOutputChannelCount());
+        openOutChans = juce::jlimit (1, 32, currentOutputChannelCount());
         ensureDeviceRoutes (name);
         snapshotRoutes();
         audioCfg.buildRouteItems (openOutChans);
@@ -2490,7 +2609,7 @@ private:
         {
             audioOutDevice = currentDeviceName();
             ensureDeviceRoutes (audioOutDevice);
-            openOutChans = juce::jlimit (1, 12, currentOutputChannelCount());
+            openOutChans = juce::jlimit (1, 32, currentOutputChannelCount());
             snapshotRoutes();
         }
         audioCfg.setBounds (getLocalBounds());
@@ -2638,10 +2757,8 @@ private:
     }
 
     // ───────── Guardar/aplicar mezcla por canción ─────────
-    void saveMix()
+    juce::var buildMixVar()   // estado actual del mezclador -> var
     {
-        if (currentSong < 0 || currentSong >= repertoire.size() || serverUrl.isEmpty()) return;
-        const int songId = repertoire.getReference (currentSong).id;
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
         root->setProperty ("master", masterSlider.getValue());
         juce::Array<juce::var> tr;
@@ -2664,36 +2781,35 @@ private:
             bu.add (juce::var (o.get()));
         }
         root->setProperty ("buses", bu);
-        const auto data = juce::JSON::toString (juce::var (root.get()));
-        const auto base = serverUrl + "/api/live/mix/" + juce::String (songId);
+        return juce::var (root.get());
+    }
+
+    // Guarda la mezcla de la canción actual en la caché en memoria (por repertorio)
+    void snapshotCurrentMix()
+    {
+        if (currentSong >= 0 && currentSong < songMixCache.size() && ! trackSliders.isEmpty())
+            songMixCache.set (currentSong, buildMixVar());
+    }
+
+    // Guarda en el servidor la mezcla de TODAS las canciones del repertorio cargado
+    void saveRepertoireMixes (juce::String sid)
+    {
+        if (sid.isEmpty() || serverUrl.isEmpty()) return;
+        snapshotCurrentMix();
+        juce::String data ("{");
+        bool first = true;
+        for (int i = 0; i < repertoire.size(); ++i)
+            if (i < songMixCache.size() && songMixCache[i].isObject())
+            {
+                if (! first) data << ",";
+                first = false;
+                data << "\"" << repertoire.getReference (i).id << "\":" << juce::JSON::toString (songMixCache[i]);
+            }
+        data << "}";
+        const auto base = serverUrl + "/api/live/setlist/" + sid + "/mix";
         const auto tok = serverToken;
         juce::StringPairArray p; p.set ("data", data);
         juce::Thread::launch ([base, p, tok] { httpPostForm (base, p, tok); });
-
-        guardarBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x9c\x93 Guardado"));
-        juce::Component::SafePointer<MainComponent> sp (this);
-        juce::Timer::callAfterDelay (1300, [sp] { if (sp) sp->guardarBtn.setButtonText (juce::String::fromUTF8 ("Guardar")); });
-    }
-
-    void fetchAndApplyMix (int songId)
-    {
-        if (serverUrl.isEmpty()) return;
-        const auto url = serverUrl + "/api/live/mix/" + juce::String (songId) + "?token=" + serverToken;
-        const auto tok = serverToken;
-        juce::Component::SafePointer<MainComponent> sp (this);
-        const int sid = songId;
-        juce::Thread::launch ([sp, url, tok, sid]
-        {
-            auto v = juce::JSON::parse (httpGet (url, tok));
-            juce::MessageManager::callAsync ([sp, v, sid]
-            {
-                if (sp == nullptr) return;
-                if (sp->currentSong < 0 || sp->currentSong >= sp->repertoire.size()) return;
-                if (sp->repertoire.getReference (sp->currentSong).id != sid) return;   // ya cambió de canción
-                auto mix = v.getProperty ("mix", juce::var());
-                if (mix.isObject()) sp->applyMix (mix);
-            });
-        });
     }
 
     void applyMix (const juce::var& mix)
@@ -2884,6 +3000,7 @@ private:
         repPicker.loading = true;
         repPicker.items.clearQuick();
         repPicker.selected = -1;
+        repPicker.currentLoadedId = lastSetlistId;   // para mostrar "Guardar" en el repertorio cargado
         repPicker.setBounds (getLocalBounds());
         repPicker.setVisible (true);
         repPicker.toFront (true);
@@ -2918,7 +3035,12 @@ private:
         if (loader) currentSetlistName = loader->resolvedName;
         repertoire = songs;
         songMaster.clearQuick();
-        for (int i = 0; i < repertoire.size(); ++i) songMaster.add (0.0);
+        songMixCache.clearQuick();
+        for (int i = 0; i < repertoire.size(); ++i)
+        {
+            songMaster.add (0.0);
+            songMixCache.add (repertoire.getReference (i).mix);   // mezcla guardada (o var vacío)
+        }
         for (auto& e : repertoire)
             if (e.coverFile.existsAsFile()) e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         rebuildRepertoireStrip();
@@ -2974,6 +3096,7 @@ private:
         {
             repertoire.move (fromIdx, toIdx);
             if (fromIdx < songMaster.size() && toIdx < songMaster.size()) songMaster.move (fromIdx, toIdx);
+            if (fromIdx < songMixCache.size() && toIdx < songMixCache.size()) songMixCache.move (fromIdx, toIdx);
 
             if (curId >= 0)
                 for (int i = 0; i < repertoire.size(); ++i)
@@ -3056,6 +3179,7 @@ private:
     void loadSong (int index)
     {
         if (index < 0 || index >= repertoire.size()) return;
+        snapshotCurrentMix();   // recuerda la mezcla de la canción anterior
         currentSong = index;
         const auto& sng = repertoire.getReference (index);
 
@@ -3094,6 +3218,7 @@ private:
         sectionNames = sng.secNames;
         bpm = sng.tempo;
         beatsPerBar = sng.beatsPerBar;
+        songCompas = sng.compas;
         playButton.setButtonText ("Play");
 
         thumb.clear();
@@ -3126,7 +3251,8 @@ private:
         if (syncEnabled) fetchLiveChart (sng.id, sng.tono);
 
         rebuildMixerUI();
-        fetchAndApplyMix (sng.id);
+        if (currentSong >= 0 && currentSong < songMixCache.size() && songMixCache[currentSong].isObject())
+            applyMix (songMixCache[currentSong]);   // mezcla del repertorio (si hay)
         highlightSongButton();
         resized();
         repaint();
@@ -3477,7 +3603,7 @@ private:
                 repaint (mapBounds);
             }
         }
-        timeLabel.setText (fmtTime (positionSeconds()) + " / " + fmtTime (totalSeconds()), juce::dontSendNotification);
+        timeLabel.setText (fmtTime (positionSeconds()) + "\n" + fmtTime (totalSeconds()), juce::dontSendNotification);
         if (browsing && ! isDragging && (juce::Time::getMillisecondCounter() - lastInteractionMs > 1200))
         { browsing = false; repaint (mapBounds); }
         if (playing.load() || browsing) repaint (mapBounds);
@@ -3556,6 +3682,7 @@ private:
     juce::String serverUrl, serverToken;
     juce::Array<SongEntry> repertoire;
     juce::Array<double> songMaster;   // master (dB) independiente por cancion
+    juce::Array<juce::var> songMixCache;   // mezcla por cancion (del repertorio cargado)
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
 
@@ -3575,6 +3702,7 @@ private:
     juce::Array<juce::File> stemFiles;
     double bpm = 0.0;
     int beatsPerBar = 4;
+    juce::String songCompas = "4/4";
     juce::AudioBuffer<float> temp;
     juce::Rectangle<int> mapBounds;
     juce::Rectangle<int> faderPanelBounds;
@@ -3617,13 +3745,15 @@ private:
     juce::Image logoImg;
     PillLNF pillLnf;
     FaderLNF faderLnf;
-    juce::TextButton connectButton, playButton, returnButton, fadeButton;
+    juce::TextButton connectButton, returnButton;
+    PlayIconButton playButton;
+    FadeIconButton fadeButton;
     juce::Array<double> preFadeVals;
     int fadeDir = 0;            // -1 bajando, +1 subiendo, 0 quieto
     bool fadedDown = false;
     juce::Label connStatus, timeLabel, masterLabel;
     juce::Slider masterSlider;
-    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn, guardarBtn;
+    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn;
     IconButton faderViewBtn, repeatBtn, infiniteBtn, settingsBtn, repertoireBtn;
     FaderStripComp faderStrip;
     juce::Viewport faderViewport;
@@ -3633,6 +3763,7 @@ private:
     juce::String lastSetlistId;   // setlist cargado (para "Actualizar")
     juce::String currentSetlistName;
     juce::Rectangle<int> setlistBandBounds;   // franja donde se dibuja el nombre del repertorio
+    juce::Rectangle<int> compasBoxBounds;     // caja de Tempo/Compás (a la par del tiempo)
     RepEditPanel repEdit;
     AddCard addCard;
     bool editMode = false;

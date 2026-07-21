@@ -8,6 +8,9 @@ add_subdirectory(JUCE)
 juce_add_gui_app(NeuralPlaySpike
     PRODUCT_NAME "NeuralPlay"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png")
+
+juce_add_binary_data(NeuralPlayData SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png")
+
 juce_generate_juce_header(NeuralPlaySpike)
 
 target_sources(NeuralPlaySpike PRIVATE Source/Main.cpp)
@@ -20,6 +23,7 @@ target_compile_definitions(NeuralPlaySpike PRIVATE
 
 target_link_libraries(NeuralPlaySpike
     PRIVATE
+        NeuralPlayData
         juce::juce_audio_utils
         juce::juce_gui_extra
     PUBLIC
