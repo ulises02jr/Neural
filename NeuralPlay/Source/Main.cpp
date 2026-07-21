@@ -2843,8 +2843,17 @@ private:
     }
 
     // ───────── Edición de repertorio ─────────
+    void refreshEditAvailability()   // sin repertorio cargado no se puede editar
+    {
+        const bool hay = ! lastSetlistId.isEmpty();
+        editBtn.setEnabled (hay);
+        editBtn.setAlpha (hay ? 1.0f : 0.45f);
+        if (! hay && editMode) toggleEdit();   // si quedó sin repertorio estando en edición, salir
+    }
+
     void toggleEdit()
     {
+        if (! editMode && lastSetlistId.isEmpty()) return;   // no entrar en edición sin repertorio
         editMode = ! editMode;
         editBtn.setColour (juce::TextButton::buttonColourId, editMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));
         editBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -3045,6 +3054,7 @@ private:
                     sp->repertoire.clearQuick();
                     sp->rebuildRepertoireStrip();
                     sp->clearSong();
+                    sp->refreshEditAvailability();
                 }
                 if (sp->repPicker.isVisible()) sp->openRepertoirePicker();   // refrescar la lista
             });
@@ -3121,6 +3131,7 @@ private:
         ++loadGen;                                    // invalida callbacks en cola de la carga anterior
         const int gen = loadGen;
         lastSetlistId = setlistId;
+        refreshEditAvailability();
         connStatus.setText ("Actualizando...", juce::dontSendNotification);
         loader = std::make_unique<RepertoireLoader> (serverUrl, serverToken, npAppDir().getChildFile ("cache"));
         loader->wantedId = setlistId;
@@ -3305,7 +3316,7 @@ private:
             c->onReorder = [this] (int from, int to) { reorderSong (from, to); };
             addAndMakeVisible (c);
         }
-        addCard.setVisible (editMode);
+        addCard.setVisible (editMode && ! lastSetlistId.isEmpty());
         highlightSongButton();
         resized();
     }
