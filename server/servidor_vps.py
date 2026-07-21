@@ -932,6 +932,26 @@ def api_live_setlist_orden(sid):
     return jsonify({"ok": True})
 
 
+@app.route("/api/live/setlist/<sid>/mix", methods=["POST"])
+def api_live_setlist_mix(sid):
+    """Guarda la mezcla (faders/mutes/buses/master) de las canciones de un repertorio.
+    Recibe data = { "<songId>": {master,tracks,buses}, ... }. Token."""
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    try:
+        data = json.loads(request.values.get("data", ""))
+    except Exception:
+        return jsonify({"ok": False, "error": "json"}), 400
+    cfg = get_config()
+    s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
+    if not s: return jsonify({"ok": False}), 404
+    for c in s.get("canciones", []):
+        k = str(c.get("id"))
+        if k in data:
+            c["mix"] = data[k]
+    guardar_config(cfg)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/cancion/<int:numero>")
 @login_required("musico")
 def api_cancion(numero):
