@@ -1089,6 +1089,12 @@ def admin_eliminar(numero):
                 datos = json.load(f)
             if datos.get("numero") == numero:
                 archivo.unlink()
+                carpeta_p = CARPETA_PISTAS / str(numero)
+                if carpeta_p.is_dir():
+                    try:
+                        shutil.rmtree(str(carpeta_p))
+                    except Exception:
+                        pass
                 flash(f"✓ Canción #{numero} eliminada", "success")
                 # Removerla de TODOS los setlists si estaba
                 cfg = get_config()
@@ -1548,6 +1554,54 @@ def _nombre_base_export(cancion, numero):
     return base or ("cancion_%d" % numero)
 
 
+def _asegurar_web(numero, n):
+    """Genera los proxys MP3 128k (modo ensayo) que falten para el tono n."""
+    d = _carpeta_tono(numero, n)
+    web = d / "web"
+    web.mkdir(parents=True, exist_ok=True)
+    lock = web / ".lock"
+    if lock.exists():
+        return
+    try:
+        reales = [f for f in sorted(d.iterdir())
+                  if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO]
+        lock.write_text("0/" + str(len(reales)))
+        hechos = 0
+        for f in reales:
+            out = web / (f.stem + ".mp3")
+            if not out.exists():
+                try:
+                    subprocess.run(
+                        ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(f),
+                         "-b:a", "128k", str(out)],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+                except Exception as e:
+                    logging.error("proxy %s/%s %s: %s", numero, n, f.name, e)
+            hechos += 1
+            try:
+                lock.write_text(str(hechos) + "/" + str(len(reales)))
+            except Exception:
+                pass
+    finally:
+        try:
+            lock.unlink()
+        except Exception:
+            pass
+
+
+def _web_listo(numero, n):
+    """True si todos los stems reales del tono n tienen su proxy MP3."""
+    if not _tono_listo(numero, n):
+        return False
+    d = _carpeta_tono(numero, n)
+    web = d / "web"
+    reales = [f.stem for f in d.iterdir()
+              if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO]
+    if not reales:
+        return False
+    return all((web / (s + ".mp3")).exists() for s in reales)
+
+
 def _render_tono(numero, n):
     d = _carpeta_tono(numero, n)
     d.mkdir(parents=True, exist_ok=True)
@@ -1575,6 +1629,7 @@ def _render_tono(numero, n):
                 lock.write_text(str(hechos) + "/" + str(len(orig)))
             except Exception:
                 pass
+        _asegurar_web(numero, n)   # proxys mp3 (modo ensayo) de este tono
     except Exception as e:
         logging.error("render tono %s/%s: %s", numero, n, e)
     finally:
@@ -1591,14 +1646,20 @@ def api_pistas(numero):
         n = int(request.args.get("t", "0"))
     except ValueError:
         n = 0
-    listo = _tono_listo(numero, n)
+    listo = _web_listo(numero, n)
     stems = []
     fam_guardadas = _leer_familias(numero)
+    fam_por_stem = {os.path.splitext(k)[0]: v for k, v in fam_guardadas.items()}
     if listo:
-        for f in sorted(_carpeta_tono(numero, n).iterdir()):
-            if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
+        web = _carpeta_tono(numero, n) / "web"
+        for f in sorted(web.iterdir()):
+            if f.is_file() and f.suffix.lower() == ".mp3":
                 stems.append({"name": f.stem, "file": f.name,
-                              "familia": fam_guardadas.get(f.name) or _familia_auto(f.stem)})
+                              "familia": fam_por_stem.get(f.stem) or _familia_auto(f.stem)})
+    elif _tono_listo(numero, n):
+        web = _carpeta_tono(numero, n) / "web"
+        if not (web.exists() and (web / ".lock").exists()):
+            threading.Thread(target=_asegurar_web, args=(numero, n), daemon=True).start()
     return jsonify({"numero": numero, "tono": n, "listo": listo,
                     "hay_pistas": len(_stems_originales(numero)) > 0,
                     "stems": stems, "secciones": _leer_secciones(numero)})
@@ -1611,13 +1672,18 @@ def api_render(numero, n):
         n = int(n)
     except ValueError:
         return jsonify({"error": "tono invalido"}), 400
-    if _tono_listo(numero, n):
+    if _web_listo(numero, n):
         return jsonify({"listo": True})
     if not _stems_originales(numero):
         return jsonify({"listo": False, "error": "sin pistas"})
-    d = _carpeta_tono(numero, n)
-    if not (d.exists() and (d / ".lock").exists()):
-        threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
+    if _tono_listo(numero, n):
+        web = _carpeta_tono(numero, n) / "web"
+        if not (web.exists() and (web / ".lock").exists()):
+            threading.Thread(target=_asegurar_web, args=(numero, n), daemon=True).start()
+    else:
+        d = _carpeta_tono(numero, n)
+        if not (d.exists() and (d / ".lock").exists()):
+            threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
     return jsonify({"listo": False, "estado": "procesando"})
 
 
@@ -1628,15 +1694,15 @@ def api_render_estado(numero, n):
         n = int(n)
     except ValueError:
         return jsonify({"listo": False})
-    if _tono_listo(numero, n):
+    if _web_listo(numero, n):
         return jsonify({"listo": True})
     prog = ""
-    lock = _carpeta_tono(numero, n) / ".lock"
-    if lock.exists():
-        try:
-            prog = lock.read_text().strip()
-        except Exception:
-            prog = ""
+    for lock in (_carpeta_tono(numero, n) / ".lock", _carpeta_tono(numero, n) / "web" / ".lock"):
+        if lock.exists():
+            try:
+                prog = lock.read_text().strip()
+            except Exception:
+                prog = ""
     return jsonify({"listo": False, "progreso": prog})
 
 
@@ -1647,7 +1713,7 @@ def servir_pista(numero, archivo):
         n = int(request.args.get("t", "0"))
     except ValueError:
         n = 0
-    base = _carpeta_tono(numero, n).resolve()
+    base = (_carpeta_tono(numero, n) / "web").resolve()
     ruta = (base / archivo).resolve()
     try:
         dentro = os.path.commonpath([str(base), str(ruta)]) == str(base)
@@ -1697,6 +1763,7 @@ def admin_pistas_subir():
         a.save(str(carpeta / nombre))
         guardadas += 1
     if guardadas:
+        threading.Thread(target=_asegurar_web, args=(int(numero), 0), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s) a la cancion #" + numero, "success")
     else:
         flash("No se subio ninguna pista (revisa el formato: mp3/m4a/ogg/wav)", "error")
@@ -1714,6 +1781,11 @@ def admin_pistas_eliminar(numero):
                 try:
                     f.unlink()
                     borradas += 1
+                except Exception:
+                    pass
+            elif f.is_dir() and (f.name == "web" or f.name.startswith("tono_")):
+                try:
+                    shutil.rmtree(str(f))
                 except Exception:
                     pass
     flash("OK: " + str(borradas) + " pista(s) eliminada(s) de #" + str(numero), "success")
@@ -1867,6 +1939,8 @@ def admin_nueva_pistas(numero):
                 continue
             a.save(str(carpeta / nombre))
             guardadas += 1
+        if guardadas:
+            threading.Thread(target=_asegurar_web, args=(numero, 0), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s)", "success")
         return redirect(url_for("admin_secciones", numero=numero, wizard=1))
     return render_template("admin_nueva_pistas.html", numero=numero, titulo=titulo)
@@ -2206,13 +2280,22 @@ def admin_editar_subir(numero):
 def admin_pista_borrar_una(numero):
     archivo = secure_filename(request.form.get("archivo", ""))
     if archivo:
-        ruta = CARPETA_PISTAS / str(numero) / archivo
-        if ruta.is_file():
-            try:
-                ruta.unlink()
-                flash("Pista eliminada: " + archivo, "success")
-            except Exception:
-                flash("No se pudo eliminar", "error")
+        stem = os.path.splitext(archivo)[0]
+        base = CARPETA_PISTAS / str(numero)
+        objetivos = [base / archivo, base / "web" / (stem + ".mp3")]
+        for d in base.glob("tono_*"):
+            if d.is_dir():
+                objetivos += [d / archivo, d / "web" / (stem + ".mp3")]
+        borro = False
+        for p in objetivos:
+            if p.is_file():
+                try:
+                    p.unlink()
+                    borro = True
+                except Exception:
+                    pass
+        flash("Pista eliminada: " + archivo if borro else "No se pudo eliminar",
+              "success" if borro else "error")
     return redirect(url_for("admin_editar", numero=numero))
 
 
