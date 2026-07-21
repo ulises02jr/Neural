@@ -1218,9 +1218,13 @@ struct AudioConfigPanel : public juce::Component
     juce::OwnedArray<juce::Label> famLabels;
     juce::OwnedArray<juce::ComboBox> routeBoxes;
     juce::TextButton closeBtn;
+    juce::ComboBox srBox;                  // selector de frecuencia (sample rate)
+    juce::Label srLbl;
+    juce::Array<double> srList;
     int numChans = 2;
     std::function<void (const juce::String&)> onDevice;
     std::function<void (int, int, int)> onRoute;   // fam, mode, base
+    std::function<void (double)> onSampleRate;     // 0 = automático (seguir dispositivo)
 
     AudioConfigPanel()
     {
@@ -1244,6 +1248,17 @@ struct AudioConfigPanel : public juce::Component
         devLbl.setFont (juce::Font (12.0f)); addAndMakeVisible (devLbl);
         chInfo.setColour (juce::Label::textColourId, juce::Colour (0xff7Cc6ff));
         chInfo.setFont (juce::Font (12.0f)); addAndMakeVisible (chInfo);
+
+        srLbl.setText (juce::String::fromUTF8 ("Frecuencia"), juce::dontSendNotification);
+        srLbl.setColour (juce::Label::textColourId, juce::Colour (0xffa3a3a3));
+        srLbl.setFont (juce::Font (12.0f)); addAndMakeVisible (srLbl);
+        addAndMakeVisible (srBox); dark (srBox);
+        srBox.onChange = [this]
+        {
+            const int id = srBox.getSelectedId();
+            double rate = (id >= 2 && id - 2 < srList.size()) ? srList[id - 2] : 0.0;
+            if (onSampleRate) onSampleRate (rate);
+        };
 
         for (int i = 0; i < kNumFam; ++i)
         {
@@ -1284,6 +1299,24 @@ struct AudioConfigPanel : public juce::Component
         }
     }
 
+    void setSampleRates (juce::Array<double> avail, double current, double preferred)
+    {
+        srBox.clear (juce::dontSendNotification);
+        srList.clearQuick();
+        const juce::String cur = current > 0.0 ? juce::String (current / 1000.0, 1) + " kHz" : juce::String();
+        srBox.addItem (juce::String::fromUTF8 ("Autom\xc3\xa1tico") + (cur.isNotEmpty() ? (" (" + cur + ")") : juce::String()), 1);
+        int sel = 1, id = 2;
+        for (double r : avail)
+        {
+            if (r < 22000.0) continue;
+            srList.add (r);
+            srBox.addItem (juce::String (r / 1000.0, 1) + " kHz", id);
+            if (preferred > 0.0 && std::abs (preferred - r) < 1.0) sel = id;
+            ++id;
+        }
+        srBox.setSelectedId (sel, juce::dontSendNotification);
+    }
+
     void setRoute (int fam, int mode, int base)
     {
         if (fam < 0 || fam >= routeBoxes.size()) return;
@@ -1303,7 +1336,7 @@ struct AudioConfigPanel : public juce::Component
         onRoute (fam, mode, base);
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (480, 560); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (480, 624); }
 
     void paint (juce::Graphics& g) override
     {
@@ -1323,6 +1356,9 @@ struct AudioConfigPanel : public juce::Component
         devLbl.setBounds (b.removeFromTop (16));
         deviceBox.setBounds (b.removeFromTop (30));
         chInfo.setBounds (b.removeFromTop (20));
+        b.removeFromTop (6);
+        srLbl.setBounds (b.removeFromTop (16));
+        srBox.setBounds (b.removeFromTop (30));
         b.removeFromTop (8);
         for (int i = 0; i < kNumFam; ++i)
         {
@@ -1728,6 +1764,11 @@ public:
 
         audioCfg.onDevice = [this] (const juce::String& d) { applyAudioDevice (d); };
         audioCfg.onRoute  = [this] (int f, int m, int b)   { setFamRoute (f, m, b); };
+        audioCfg.onSampleRate = [this] (double sr)
+        {
+            preferredSampleRate = sr;
+            applyAudioDevice (audioOutDevice.isEmpty() ? currentDeviceName() : audioOutDevice);
+        };
         addChildComponent (audioCfg);
 
         liveServer.getPage  = [] { return juce::String (juce::CharPointer_UTF8 (kMusicianPage)); };
@@ -1888,7 +1929,7 @@ public:
         setAudioChannels (0, 32);   // hasta 32 salidas (interfaces multicanal)
         auto setup = deviceManager.getAudioDeviceSetup();
         setup.bufferSize = 256;   // menor latencia de salida (sin comprometer estabilidad)
-        setup.sampleRate = 44100.0;
+        setup.sampleRate = 0.0;   // 0 = automático: seguir la frecuencia nativa del dispositivo
         deviceManager.setAudioDeviceSetup (setup, true);
 
         // Enrutamiento de salida: cargar config y aplicar dispositivo guardado (si está conectado)
@@ -2550,6 +2591,17 @@ private:
         }
     }
 
+    juce::Array<double> deviceSampleRates()
+    {
+        if (auto* dev = deviceManager.getCurrentAudioDevice()) return dev->getAvailableSampleRates();
+        return {};
+    }
+    double currentDeviceSampleRate()
+    {
+        if (auto* dev = deviceManager.getCurrentAudioDevice()) return dev->getCurrentSampleRate();
+        return deviceSampleRate;
+    }
+
     void applyAudioDevice (const juce::String& name)
     {
         auto setup = deviceManager.getAudioDeviceSetup();
@@ -2558,13 +2610,14 @@ private:
         setup.outputChannels.clear();
         setup.outputChannels.setRange (0, 32, true);
         setup.bufferSize = 256;
-        setup.sampleRate = 44100.0;
+        setup.sampleRate = preferredSampleRate;   // 0 = automático (sigue la frecuencia del dispositivo)
         deviceManager.setAudioDeviceSetup (setup, true);
         audioOutDevice = name;
         openOutChans = juce::jlimit (1, 32, currentOutputChannelCount());
         ensureDeviceRoutes (name);
         snapshotRoutes();
         audioCfg.buildRouteItems (openOutChans);
+        audioCfg.setSampleRates (deviceSampleRates(), currentDeviceSampleRate(), preferredSampleRate);
         applyRoutesToUI();
         saveAudioRouting();
     }
@@ -2615,6 +2668,7 @@ private:
         audioCfg.setBounds (getLocalBounds());
         audioCfg.setDevices (outputDeviceNames(), audioOutDevice);
         audioCfg.buildRouteItems (openOutChans);
+        audioCfg.setSampleRates (deviceSampleRates(), currentDeviceSampleRate(), preferredSampleRate);
         applyRoutesToUI();
         audioCfg.setVisible (true);
         audioCfg.toFront (true);
@@ -2636,6 +2690,7 @@ private:
     {
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
         root->setProperty ("device", audioOutDevice);
+        root->setProperty ("sample_rate", preferredSampleRate);
         juce::DynamicObject::Ptr dev = new juce::DynamicObject();
         for (auto& kv : routesByDevice)
         {
@@ -2660,6 +2715,7 @@ private:
         auto v = juce::JSON::parse (f.loadFileAsString());
         if (! v.isObject()) return;
         audioOutDevice = v.getProperty ("device", "").toString();
+        preferredSampleRate = (double) v.getProperty ("sample_rate", 0.0);
         auto routes = v.getProperty ("routes", juce::var());
         if (auto* obj = routes.getDynamicObject())
             for (auto& p : obj->getProperties())
@@ -3711,6 +3767,7 @@ private:
     int numTracks = 0;
     long long lengthSamples = 0;
     double deviceSampleRate = 44100.0;
+    double preferredSampleRate = 0.0;   // 0 = automático (seguir la frecuencia del dispositivo)
     int currentBlockSize = 0;
     juce::CriticalSection graphLock;
 
