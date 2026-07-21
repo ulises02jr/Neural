@@ -2723,7 +2723,43 @@ private:
             if (e.coverFile.existsAsFile()) e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         rebuildRepertoireStrip();
         if (! repertoire.isEmpty()) loadSong (0);
-        else { playing.store (false); currentSong = -1; repaint(); }   // repertorio vacío
+        else clearSong();   // repertorio vacío: descargar todo
+    }
+
+    void clearSong()   // descarga la canción actual: audio, mapping, secciones, MIDI
+    {
+        if (mixBuilder) { mixBuilder->stopThread (2000); mixBuilder = nullptr; }
+        {
+            const juce::ScopedLock sl (graphLock);
+            loadingSong.store (true);
+            playing.store (false);
+            positionOut.store (0);
+            seekTo.store (-1);
+            resamplers.clear();
+            bufferingSources.clear();
+            readerSources.clear();
+            fileRates.clear();
+            trackNames.clear();
+            trackServerFam.clear();
+            stemFiles.clear();
+            curFamFiles.clear();
+            curFamNames.clear();
+            lengthSamples = 0;
+            numTracks = 0;
+            loadingSong.store (false);
+        }
+        sectionTimes.clear();
+        sectionNames.clear();
+        { const juce::ScopedLock sl (midiLock); currentMidiBoxes.clear(); flushMidiOffs(); }
+        thumb.clear();
+        currentSong = -1;
+        { const juce::ScopedLock l (chartLock); currentChartJson = "{}"; }
+        liveSongVer.fetch_add (1);
+        playButton.setButtonText ("Play");
+        rebuildMixerUI();
+        highlightSongButton();
+        resized();
+        repaint();
     }
 
     void rebuildRepertoireStrip()
