@@ -2235,7 +2235,7 @@ public:
             if (currentSong >= 0)                     msg = juce::String ("Cargando forma de onda...");
             else if (! repertoire.isEmpty())          msg = juce::String::fromUTF8 ("Descargando repertorio\xe2\x80\xa6");
             else if (serverToken.isEmpty())           msg = juce::String ("Conecta para traer el repertorio");
-            else if (currentSetlistName.isNotEmpty()) msg = juce::String::fromUTF8 ("Repertorio vac\xc3\xado \xe2\x80\x94 agreg\xc3\xa1 canciones con +");
+            else if (currentSetlistName.isNotEmpty()) msg = juce::String::fromUTF8 ("Empez\xc3\xa1 a agregar canciones a este repertorio con +");
             else                                      msg = juce::String::fromUTF8 ("Abr\xc3\xad un repertorio o cre\xc3\xa1 uno nuevo");
             g.drawText (msg, inner, juce::Justification::centred, true);
         }
@@ -3219,6 +3219,8 @@ private:
     // FASE B lista: todo el audio descargado
     void onRepertoireLoaded (juce::Array<SongEntry> songs)
     {
+        if (loader && loader->resolvedId.isNotEmpty()) lastSetlistId = loader->resolvedId;
+        if (loader) currentSetlistName = loader->resolvedName;   // repertorio vacío llega por acá (sin onMeta)
         repertoire = songs;
         for (auto& e : repertoire)              // la copia del loader trae la ruta pero no la imagen: recargar portadas
             if (! e.cover.isValid() && e.coverFile.existsAsFile())
