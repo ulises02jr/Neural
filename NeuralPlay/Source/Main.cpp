@@ -565,7 +565,13 @@ struct RepertoireLoader : public juce::Thread
         resolvedId = sl.getProperty ("id", "").toString();
         juce::String slName = sl.getProperty ("nombre", "Repertorio").toString();
         auto* cs = sl.getProperty ("canciones", juce::var()).getArray();
-        if (cs == nullptr || cs->isEmpty()) { status ("Repertorio vacio"); return; }
+        if (cs == nullptr || cs->isEmpty())   // setlist vacío: cargarlo igual (para ir agregando)
+        {
+            status ("Repertorio vac\xc3\xado (agreg\xc3\xa1 canciones)");
+            juce::Array<SongEntry> out;
+            if (onDone) { auto cb = onDone; juce::MessageManager::callAsync ([cb, out] { cb (out); }); }
+            return;
+        }
 
         juce::Array<SongEntry> out;
         for (int i = 0; i < cs->size(); ++i)
@@ -1186,7 +1192,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::String serverUrl, token;
 
     struct BibItem { int id = 0; juce::String titulo, tono; };
-    juce::Array<BibItem> bib;
+    juce::Array<BibItem> bib, bibAll;
+    juce::TextEditor searchBox;
 
     int songId = 0; juce::String songTitle; bool addFlow = false;
     struct Key { juce::String nombre; int sem = 0; bool rendered = false; };
@@ -1205,12 +1212,30 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         closeBtn.onClick = [this] { stopTimer(); renderingSem = 99; setVisible (false); };
         addAndMakeVisible (closeBtn);
+
+        searchBox.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Buscar canci\xc3\xb3n\xe2\x80\xa6"), juce::Colour (0xff777777));
+        searchBox.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1c1c1c));
+        searchBox.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+        searchBox.setColour (juce::TextEditor::outlineColourId, juce::Colour (0x33ffffff));
+        searchBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (0x66ffffff));
+        searchBox.onTextChange = [this] { applyFilter(); };
+        addChildComponent (searchBox);
+    }
+
+    void applyFilter()
+    {
+        const auto q = searchBox.getText().trim();
+        bib.clearQuick();
+        for (auto& b : bibAll) if (q.isEmpty() || b.titulo.containsIgnoreCase (q)) bib.add (b);
+        repaint();
     }
 
     void openBiblioteca (juce::Array<BibItem> items)
-    { mode = Biblioteca; bib = std::move (items); renderingSem = 99; stopTimer(); resized(); repaint(); }
+    { mode = Biblioteca; bibAll = std::move (items); searchBox.setText ("", false); searchBox.setVisible (true);
+      applyFilter(); renderingSem = 99; stopTimer(); resized(); repaint(); }
     void openTono (int id, juce::String title, bool add, juce::Array<Key> ks)
-    { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); renderingSem = 99; stopTimer(); resized(); repaint(); }
+    { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
+      renderingSem = 99; stopTimer(); resized(); repaint(); }
 
     juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 520); }
 
@@ -1222,8 +1247,13 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     }
     juce::Rectangle<int> bibRect (int i) const
     {
-        auto p = panelBounds().reduced (18); p.removeFromTop (52);
-        return { p.getX(), p.getY() + i * 48, p.getWidth(), 42 };
+        auto p = panelBounds().reduced (18); p.removeFromTop (52 + 44);   // título + buscador
+        return { p.getX(), p.getY() + i * 46, p.getWidth(), 40 };
+    }
+    juce::Rectangle<int> searchRect() const
+    {
+        auto p = panelBounds().reduced (18); p.removeFromTop (50);
+        return p.removeFromTop (36);
     }
 
     void paint (juce::Graphics& g) override
@@ -1240,7 +1270,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
         if (mode == Biblioteca)
         {
-            for (int i = 0; i < bib.size(); ++i)
+            for (int i = 0; i < bib.size() && i < 8; ++i)
             {
                 auto r = bibRect (i).toFloat();
                 g.setColour (juce::Colour (0xff1c1c1c)); g.fillRoundedRectangle (r, 9.0f);
@@ -1283,7 +1313,11 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         }
     }
 
-    void resized() override { closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30); }
+    void resized() override
+    {
+        closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30);
+        searchBox.setBounds (searchRect());
+    }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
@@ -1291,7 +1325,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         if (renderingSem != 99) return;   // ocupado renderizando
         if (mode == Biblioteca)
         {
-            for (int i = 0; i < bib.size(); ++i)
+            for (int i = 0; i < bib.size() && i < 8; ++i)
                 if (bibRect (i).contains (e.getPosition())) { if (onPickSong) onPickSong (bib[i].id); return; }
         }
         else
@@ -2501,6 +2535,10 @@ private:
         editBtn.setColour (juce::TextButton::buttonColourId, editMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));
         editBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         editBtn.repaint();
+        if (editMode) playing.store (false);          // en edición no se reproduce
+        playButton.setEnabled (! editMode);
+        returnButton.setEnabled (! editMode);
+        fadeButton.setEnabled (! editMode);
         rebuildRepertoireStrip();
     }
 
@@ -2685,6 +2723,7 @@ private:
             if (e.coverFile.existsAsFile()) e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         rebuildRepertoireStrip();
         if (! repertoire.isEmpty()) loadSong (0);
+        else { playing.store (false); currentSong = -1; repaint(); }   // repertorio vacío
     }
 
     void rebuildRepertoireStrip()
@@ -3211,7 +3250,7 @@ private:
     }
     void togglePlay()
     {
-        if (resamplers.isEmpty()) return;
+        if (editMode || resamplers.isEmpty()) return;   // en edición no se reproduce
         const bool p = ! playing.load();
         if (p && positionSeconds() >= totalSeconds() - 0.1) seekSeconds (0.0);
         playing.store (p);
