@@ -121,14 +121,7 @@ def cargar_config():
             })
             print(f"✓ Setlist viejo migrado a multi-setlists")
         cambios = True
-    # Limpiar setlists con fecha pasada (más de 1 día atrás)
-    if "setlists" in cfg and cfg["setlists"]:
-        hoy = _hoy_iso()
-        antes = len(cfg["setlists"])
-        cfg["setlists"] = [s for s in cfg["setlists"] if s.get("fecha", "9999") >= hoy]
-        if len(cfg["setlists"]) < antes:
-            cambios = True
-            print(f"🗑  Eliminados {antes - len(cfg['setlists'])} setlist(s) con fecha pasada")
+    # (Los repertorios ya NO se borran automáticamente por fecha; el usuario los elimina cuando quiera.)
     if cambios:
         with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
@@ -886,6 +879,57 @@ def api_live_tonos(numero):
         nombre=transponer_acorde(orig,d,usar_sost=usar_sostenidos(ts)) if orig else k
         keys.append({"nombre":nombre,"semitonos":d,"rendered":d in rendered})
     return jsonify({"ok": True, "numero": numero, "tono_original": orig, "rendered": rendered, "keys": keys})
+
+
+@app.route("/api/live/mix/<int:numero>", methods=["GET"])
+def api_live_mix_get(numero):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    f = CARPETA_PISTAS / str(numero) / "mix.json"
+    if f.is_file():
+        try:
+            return jsonify({"ok": True, "mix": json.loads(f.read_text())})
+        except Exception:
+            pass
+    return jsonify({"ok": True, "mix": None})
+
+
+@app.route("/api/live/mix/<int:numero>", methods=["POST"])
+def api_live_mix_save(numero):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    try:
+        mix = json.loads(request.values.get("data", ""))
+    except Exception:
+        return jsonify({"ok": False, "error": "json"}), 400
+    d = CARPETA_PISTAS / str(numero)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "mix.json").write_text(json.dumps(mix, ensure_ascii=False))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/live/setlist/<sid>/orden", methods=["POST"])
+def api_live_setlist_orden(sid):
+    if not _token_ok(): return jsonify({"ok": False}), 403
+    try:
+        order = [int(x) for x in request.values.get("ids", "").split(",") if x.strip()]
+    except ValueError:
+        return jsonify({"ok": False}), 400
+    cfg = get_config()
+    s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
+    if not s: return jsonify({"ok": False}), 404
+    cs = s.get("canciones", [])
+    buckets = {}
+    for c in cs:
+        buckets.setdefault(c.get("id"), []).append(c)
+    newcs = []
+    for i in order:
+        if buckets.get(i):
+            newcs.append(buckets[i].pop(0))
+    for c in cs:
+        if c not in newcs:
+            newcs.append(c)
+    s["canciones"] = newcs
+    guardar_config(cfg)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/cancion/<int:numero>")
