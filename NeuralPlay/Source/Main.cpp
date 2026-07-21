@@ -355,6 +355,7 @@ struct SongCard : public juce::Component
     int index = 0;
     std::function<void()> onClick, onRemove, onTono;
     std::function<void (int fromIndex, int toIndex)> onReorder;   // arrastrar para reordenar
+    float dlProgress = -1.0f;   // -1 = sin barra; 0..1 = descargando
 
     int homeX = 0; bool dragging = false;
 
@@ -436,6 +437,17 @@ struct SongCard : public juce::Component
             g.setColour (juce::Colour (0x44ffffff)); g.drawRoundedRectangle (tb, 8.0f, 1.2f);
             g.setColour (juce::Colours::white); g.setFont (juce::Font (22.0f, juce::Font::bold));
             g.drawText (juce::String::fromUTF8 ("\xe2\x8b\xaf"), tb, juce::Justification::centred);   // ⋯
+        }
+
+        if (dlProgress >= 0.0f && dlProgress < 1.0f)   // barra de descarga sobre la portada
+        {
+            auto c = coverRect();
+            { juce::Path clip; clip.addRoundedRectangle (c, 9.0f); g.saveState(); g.reduceClipRegion (clip);
+              g.setColour (juce::Colour (0x99000000)); g.fillRect (c); g.restoreState(); }
+            auto bar = juce::Rectangle<float> (c.getX() + 18.0f, c.getCentreY() - 4.0f, c.getWidth() - 36.0f, 8.0f);
+            g.setColour (juce::Colour (0x33ffffff)); g.fillRoundedRectangle (bar, 4.0f);
+            g.setColour (juce::Colour (0xff2E6BE6));
+            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, dlProgress)), 4.0f);
         }
     }
 };
@@ -650,11 +662,17 @@ struct RepertoireLoader : public juce::Thread
     ~RepertoireLoader() override { stopThread (6000); }
 
     std::function<void (juce::String)> onStatus;
+    std::function<void (juce::Array<SongEntry>)> onMeta;   // metadata + portadas lista (arma tarjetas)
+    std::function<void (int, double)> onProgress;          // descarga: (indice de canción, fracción 0..1)
     std::function<void (juce::Array<SongEntry>)> onDone;
 
     void status (const juce::String& s)
     {
         if (onStatus) { auto cb = onStatus; juce::MessageManager::callAsync ([cb, s] { cb (s); }); }
+    }
+    void progress (int i, double f)
+    {
+        if (onProgress) { auto cb = onProgress; juce::MessageManager::callAsync ([cb, i, f] { cb (i, f); }); }
     }
 
     void run() override
@@ -749,26 +767,10 @@ struct RepertoireLoader : public juce::Thread
             if (auto* stems = pv.getProperty ("stems", juce::var()).getArray())
                 for (auto& st : *stems)
                 {
-                    if (threadShouldExit()) return;
                     auto fn = st.getProperty ("file", "").toString();
                     if (fn.isEmpty()) continue;
                     e.famFiles.add (fn);
                     e.famNames.add (st.getProperty ("familia", "").toString());
-                    auto dest = e.folder.getChildFile (fn);
-                    if (! dest.existsAsFile() || dest.getSize() < 2000)
-                    {
-                        const auto durl = serverUrl + "/api/live/pista/" + juce::String (e.id) + "/"
-                                          + juce::URL::addEscapeChars (fn, false) + "?t=" + juce::String (e.tono);
-                        const auto tit = e.titulo;
-                        bool ok = false;
-                        for (int intento = 0; intento < 3 && ! ok && ! threadShouldExit(); ++intento)
-                            ok = httpDownload (durl, token, dest,
-                                    [this, tit, fn] (double p)
-                                    { status ("Descargando " + tit + " \xe2\x80\x93 " + fn
-                                              + "   " + juce::String ((int) (p * 100.0)) + "%"); },
-                                    [this] { return threadShouldExit(); });
-                        if (! ok) status (juce::String::fromUTF8 ("No se pudo descargar ") + fn + " (se reintentar\xc3\xa1)");
-                    }
                 }
 
             // Cajas MIDI + notas del servidor
@@ -795,6 +797,36 @@ struct RepertoireLoader : public juce::Thread
             }
             out.add (e);
         }
+
+        // FASE A lista: metadata + portadas -> ya se pueden mostrar las tarjetas
+        if (onMeta) { auto cb = onMeta; juce::MessageManager::callAsync ([cb, out] { cb (out); }); }
+
+        // FASE B: descargar el audio de cada canción, reportando el % por tarjeta
+        for (int i = 0; i < out.size() && ! threadShouldExit(); ++i)
+        {
+            auto& e = out.getReference (i);
+            const int N = juce::jmax (1, e.famFiles.size());
+            for (int k = 0; k < e.famFiles.size(); ++k)
+            {
+                if (threadShouldExit()) return;
+                const auto fn = e.famFiles[k];
+                auto dest = e.folder.getChildFile (fn);
+                if (! dest.existsAsFile() || dest.getSize() < 2000)
+                {
+                    const auto durl = serverUrl + "/api/live/pista/" + juce::String (e.id) + "/"
+                                      + juce::URL::addEscapeChars (fn, false) + "?t=" + juce::String (e.tono);
+                    const int kk = k, ii = i;
+                    bool ok = false;
+                    for (int intento = 0; intento < 3 && ! ok && ! threadShouldExit(); ++intento)
+                        ok = httpDownload (durl, token, dest,
+                                [this, ii, kk, N] (double p) { progress (ii, (kk + p) / (double) N); },
+                                [this] { return threadShouldExit(); });
+                }
+                progress (i, (double) (k + 1) / (double) N);
+            }
+            progress (i, 1.0);   // canción i lista para tocar
+        }
+
         status ("Repertorio listo: " + slName);
         if (onDone) { auto cb = onDone; juce::MessageManager::callAsync ([cb, out] { cb (out); }); }
     }
@@ -2199,10 +2231,10 @@ public:
         {
             g.setColour (juce::Colour (0xff8a94a6));
             g.setFont (13.0f);
-            juce::String msg = (currentSong < 0)
-                ? (connStatus.getText().isNotEmpty() ? connStatus.getText()
-                                                     : juce::String ("Conecta para traer el repertorio"))
-                : juce::String ("Cargando forma de onda...");
+            juce::String msg = (currentSong >= 0)
+                ? juce::String ("Cargando forma de onda...")
+                : (repertoire.isEmpty() ? juce::String ("Conecta para traer el repertorio")
+                                        : juce::String::fromUTF8 ("Descargando repertorio\xe2\x80\xa6"));
             g.drawText (msg, inner, juce::Justification::centred, true);
         }
 
@@ -3086,6 +3118,8 @@ private:
         loader->wantedId = setlistId;
         juce::Component::SafePointer<MainComponent> sp (this);
         loader->onStatus = [sp] (juce::String s) { if (sp) { sp->connStatus.setText (s, juce::dontSendNotification); sp->repaint (sp->mapBounds); } };
+        loader->onMeta   = [sp] (juce::Array<SongEntry> songs) { if (sp) sp->onRepertoireMeta (songs); };
+        loader->onProgress = [sp] (int i, double f) { if (sp) sp->onSongProgress (i, f); };
         loader->onDone   = [sp] (juce::Array<SongEntry> songs) { if (sp) sp->onRepertoireLoaded (songs); };
         loader->startThread();
     }
@@ -3124,23 +3158,54 @@ private:
         });
     }
 
-    void onRepertoireLoaded (juce::Array<SongEntry> songs)
+    // FASE A: metadata + portadas -> muestra las tarjetas con barra de descarga (aún sin audio)
+    void onRepertoireMeta (juce::Array<SongEntry> songs)
     {
-        if (loader && loader->resolvedId.isNotEmpty()) lastSetlistId = loader->resolvedId;   // id real del setlist
+        if (loader && loader->resolvedId.isNotEmpty()) lastSetlistId = loader->resolvedId;
         if (loader) currentSetlistName = loader->resolvedName;
         repertoire = songs;
         songMaster.clearQuick();
         songMixCache.clearQuick();
+        songReady.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i)
         {
             songMaster.add (0.0);
-            songMixCache.add (repertoire.getReference (i).mix);   // mezcla guardada (o var vacío)
+            songMixCache.add (repertoire.getReference (i).mix);
+            songReady.add (false);
         }
         for (auto& e : repertoire)
             if (e.coverFile.existsAsFile()) e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
+        currentSong = -1;
+        clearSong();
         rebuildRepertoireStrip();
-        if (! repertoire.isEmpty()) loadSong (0);
-        else clearSong();   // repertorio vacío: descargar todo
+        for (auto* c : songCards) c->dlProgress = 0.0f;   // barrita hasta que baje su audio
+        repaint();
+    }
+
+    // FASE B: avance de descarga de la canción i (0..1)
+    void onSongProgress (int i, double f)
+    {
+        if (i >= 0 && i < songCards.size())
+        {
+            songCards[i]->dlProgress = (f >= 1.0) ? -1.0f : (float) f;
+            songCards[i]->repaint();
+        }
+        if (f >= 1.0 && i >= 0 && i < songReady.size())
+        {
+            songReady.set (i, true);
+            if (i == 0 && currentSong < 0) loadSong (0);   // apenas esté la 1a, cargarla
+        }
+    }
+
+    // FASE B lista: todo el audio descargado
+    void onRepertoireLoaded (juce::Array<SongEntry> songs)
+    {
+        repertoire = songs;
+        for (auto* c : songCards) c->dlProgress = -1.0f;
+        for (int i = 0; i < songReady.size(); ++i) songReady.set (i, true);
+        if (repertoire.isEmpty()) { clearSong(); return; }
+        if (currentSong < 0) loadSong (0);
+        else repaint (mapBounds);
     }
 
     void clearSong()   // descarga la canción actual: audio, mapping, secciones, MIDI
@@ -3274,6 +3339,7 @@ private:
     void loadSong (int index)
     {
         if (index < 0 || index >= repertoire.size()) return;
+        if (index < songReady.size() && ! songReady[index]) return;   // audio aún no descargado
         snapshotCurrentMix();   // recuerda la mezcla de la canción anterior
         currentSong = index;
         const auto& sng = repertoire.getReference (index);
@@ -3778,6 +3844,7 @@ private:
     juce::Array<SongEntry> repertoire;
     juce::Array<double> songMaster;   // master (dB) independiente por cancion
     juce::Array<juce::var> songMixCache;   // mezcla por cancion (del repertorio cargado)
+    juce::Array<bool> songReady;      // audio de la canción ya descargado
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
 
