@@ -270,7 +270,11 @@ struct SongCard : public juce::Component
     juce::String titulo, tono;
     bool active = false;
     bool editMode = false;
+    int index = 0;
     std::function<void()> onClick, onRemove, onTono;
+    std::function<void (int fromIndex, int toIndex)> onReorder;   // arrastrar para reordenar
+
+    int homeX = 0; bool dragging = false;
 
     juce::Rectangle<float> coverRect() const
     {
@@ -281,8 +285,31 @@ struct SongCard : public juce::Component
     juce::Rectangle<float> removeBtnRect() const { auto c = coverRect(); return { c.getRight() - 34.0f, c.getY() + 8.0f, 26.0f, 26.0f }; }
     juce::Rectangle<float> tonoBtnRect()   const { auto c = coverRect(); return { c.getCentreX() - 22.0f, c.getCentreY() - 18.0f, 44.0f, 36.0f }; }
 
+    void mouseDown (const juce::MouseEvent&) override
+    {
+        homeX = getX(); dragging = false;
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! editMode) return;
+        const int dx = e.getDistanceFromDragStartX();
+        if (dragging || std::abs (dx) > 5)
+        {
+            dragging = true;
+            toFront (false);
+            setTopLeftPosition (homeX + dx, getY());
+        }
+    }
     void mouseUp (const juce::MouseEvent& e) override
     {
+        if (editMode && dragging)
+        {
+            dragging = false;
+            const int step  = juce::jmax (1, getWidth() + 10);
+            const int steps = juce::roundToInt ((float) e.getDistanceFromDragStartX() / (float) step);
+            if (onReorder) onReorder (index, index + steps);   // el contenedor re-acomoda y snap
+            return;
+        }
         if (! e.mouseWasClicked()) return;
         if (editMode)
         {
@@ -564,6 +591,7 @@ struct RepertoireLoader : public juce::Thread
                 if (s.getProperty ("id", "").toString() == wantedId) { sl = s; break; }
         resolvedId = sl.getProperty ("id", "").toString();
         juce::String slName = sl.getProperty ("nombre", "Repertorio").toString();
+        resolvedName = slName;
         auto* cs = sl.getProperty ("canciones", juce::var()).getArray();
         if (cs == nullptr || cs->isEmpty())   // setlist vacío: cargarlo igual (para ir agregando)
         {
@@ -681,8 +709,9 @@ struct RepertoireLoader : public juce::Thread
     }
 
     juce::String serverUrl, token;
-    juce::String wantedId;    // setlist elegido (vacio = el primero)
-    juce::String resolvedId;  // id real del setlist cargado (lo llena run())
+    juce::String wantedId;     // setlist elegido (vacio = el primero)
+    juce::String resolvedId;   // id real del setlist cargado (lo llena run())
+    juce::String resolvedName; // nombre del setlist cargado
     juce::File cacheDir;
 };
 
@@ -845,8 +874,9 @@ struct RepertoirePicker : public juce::Component
     int selected = -1;
     bool loading = true;
     std::function<void (juce::String)> onLoad;
+    std::function<void (juce::String)> onDelete;
     std::function<void()> onNew;
-    juce::TextButton loadBtn, newBtn, closeBtn;
+    juce::TextButton loadBtn, delBtn, newBtn, closeBtn;
 
     RepertoirePicker()
     {
@@ -859,6 +889,15 @@ struct RepertoirePicker : public juce::Component
             { setVisible (false); onLoad (items[selected].id); }
         };
         addAndMakeVisible (loadBtn);
+        delBtn.setButtonText ("Borrar");
+        delBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a1414));
+        delBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe05555));
+        delBtn.onClick = [this]
+        {
+            if (selected >= 0 && selected < items.size() && onDelete)
+                onDelete (items[selected].id);
+        };
+        addAndMakeVisible (delBtn);
         newBtn.setButtonText (juce::String::fromUTF8 ("+ Nuevo"));
         newBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         newBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff7Cc6ff));
@@ -934,8 +973,10 @@ struct RepertoirePicker : public juce::Component
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
         auto brow = juce::Rectangle<int> (p.getX() + 20, p.getBottom() - 54, p.getWidth() - 40, 36);
-        newBtn.setBounds (brow.removeFromLeft (110));
-        loadBtn.setBounds (brow.removeFromRight (130));
+        newBtn.setBounds (brow.removeFromLeft (100));
+        loadBtn.setBounds (brow.removeFromRight (120));
+        brow.removeFromRight (8);
+        delBtn.setBounds (brow.removeFromRight (96));
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -1555,6 +1596,7 @@ public:
         repertoireBtn.onClick = [this] { openRepertoirePicker(); };
         repPicker.onLoad = [this] (juce::String id) { startLoadId (id); };
         repPicker.onNew  = [this] { createSetlist(); };
+        repPicker.onDelete = [this] (juce::String id) { confirmDeleteSetlist (id); };
         addChildComponent (repPicker);
 
         settingsBtn.onClick = [this]
@@ -1588,6 +1630,12 @@ public:
         editBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         editBtn.onClick = [this] { toggleEdit(); };
         addAndMakeVisible (editBtn);
+
+        guardarBtn.setButtonText (juce::String::fromUTF8 ("Guardar"));
+        guardarBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        guardarBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff5CD98A));
+        guardarBtn.onClick = [this] { saveMix(); };
+        addAndMakeVisible (guardarBtn);
 
         addCard.onClick = [this] { openBibliotecaForAdd(); };
         addChildComponent (addCard);
@@ -1909,6 +1957,18 @@ public:
             }
         }
 
+        if (currentSetlistName.isNotEmpty() && ! setlistBandBounds.isEmpty())   // nombre del repertorio
+        {
+            g.setColour (juce::Colour (0xff7a7a7a));
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText (juce::String::fromUTF8 ("REPERTORIO"),
+                        setlistBandBounds.withWidth (92), juce::Justification::centredLeft, false);
+            g.setColour (juce::Colour (0xffe8e8e8));
+            g.setFont (juce::Font (14.0f, juce::Font::bold));
+            g.drawText (currentSetlistName, setlistBandBounds.withTrimmedLeft (98),
+                        juce::Justification::centredLeft, true);
+        }
+
         auto mb = mapBounds;
         g.setColour (juce::Colour (0xff0d0d0d));
         g.fillRoundedRectangle (mb.toFloat(), 8.0f);
@@ -2116,6 +2176,8 @@ public:
             repertoireBtn.setBounds (rr.removeFromRight (BW).withSizeKeepingCentre (BW, BH));
             rr.removeFromRight (G);
             editBtn.setBounds       (rr.removeFromRight (BW).withSizeKeepingCentre (BW, BH));
+            rr.removeFromRight (G);
+            guardarBtn.setBounds    (rr.removeFromRight (BW).withSizeKeepingCentre (BW, BH));
 
             // Centro: Inicio  Play  Fade (misma medida)
             const int cx = topbar.getCentreX();
@@ -2125,6 +2187,10 @@ public:
         }
         connStatus.setVisible (false);
         area.removeFromTop (6);
+
+        // Franja con el nombre del repertorio (solo si hay uno cargado)
+        if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (20); area.removeFromTop (2); }
+        else                                   setlistBandBounds = {};
 
         // Tarjetas verticales grandes: portada arriba + nombre abajo
         auto strip = area.removeFromTop (180);
@@ -2571,28 +2637,119 @@ private:
         postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/agregar", p);
     }
 
+    // ───────── Guardar/aplicar mezcla por canción ─────────
+    void saveMix()
+    {
+        if (currentSong < 0 || currentSong >= repertoire.size() || serverUrl.isEmpty()) return;
+        const int songId = repertoire.getReference (currentSong).id;
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("master", masterSlider.getValue());
+        juce::Array<juce::var> tr;
+        for (int i = 0; i < trackSliders.size(); ++i)
+        {
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("n", i < trackNames.size() ? trackNames[i] : juce::String());
+            o->setProperty ("g", trackSliders[i]->getValue());
+            o->setProperty ("m", trackMuted[i].load());
+            o->setProperty ("s", trackSolo[i].load());
+            tr.add (juce::var (o.get()));
+        }
+        root->setProperty ("tracks", tr);
+        juce::Array<juce::var> bu;
+        for (int f = 0; f < busSliders.size(); ++f)
+        {
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("n", f < familyNames.size() ? familyNames[f] : juce::String());
+            o->setProperty ("g", busSliders[f]->getValue());
+            bu.add (juce::var (o.get()));
+        }
+        root->setProperty ("buses", bu);
+        const auto data = juce::JSON::toString (juce::var (root.get()));
+        const auto base = serverUrl + "/api/live/mix/" + juce::String (songId);
+        const auto tok = serverToken;
+        juce::StringPairArray p; p.set ("data", data);
+        juce::Thread::launch ([base, p, tok] { httpPostForm (base, p, tok); });
+
+        guardarBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x9c\x93 Guardado"));
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Timer::callAfterDelay (1300, [sp] { if (sp) sp->guardarBtn.setButtonText (juce::String::fromUTF8 ("Guardar")); });
+    }
+
+    void fetchAndApplyMix (int songId)
+    {
+        if (serverUrl.isEmpty()) return;
+        const auto url = serverUrl + "/api/live/mix/" + juce::String (songId) + "?token=" + serverToken;
+        const auto tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        const int sid = songId;
+        juce::Thread::launch ([sp, url, tok, sid]
+        {
+            auto v = juce::JSON::parse (httpGet (url, tok));
+            juce::MessageManager::callAsync ([sp, v, sid]
+            {
+                if (sp == nullptr) return;
+                if (sp->currentSong < 0 || sp->currentSong >= sp->repertoire.size()) return;
+                if (sp->repertoire.getReference (sp->currentSong).id != sid) return;   // ya cambió de canción
+                auto mix = v.getProperty ("mix", juce::var());
+                if (mix.isObject()) sp->applyMix (mix);
+            });
+        });
+    }
+
+    void applyMix (const juce::var& mix)
+    {
+        if (mix.hasProperty ("master"))
+            masterSlider.setValue ((double) mix.getProperty ("master", 0.0), juce::sendNotificationSync);
+        if (auto* tr = mix.getProperty ("tracks", juce::var()).getArray())
+            for (auto& t : *tr)
+            {
+                const int i = trackNames.indexOf (t.getProperty ("n", "").toString());
+                if (i < 0 || i >= trackSliders.size()) continue;
+                trackSliders[i]->setValue ((double) t.getProperty ("g", 0.0), juce::sendNotificationSync);
+                const bool m = (bool) t.getProperty ("m", false), s = (bool) t.getProperty ("s", false);
+                trackMuted[i].store (m);
+                trackLabels[i]->setColour (juce::Label::textColourId, m ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
+                trackLabels[i]->repaint();
+                trackSliders[i]->getProperties().set ("muted", m); trackSliders[i]->repaint();
+                trackSolo[i].store (s); if (i < soloDots.size()) { soloDots[i]->on = s; soloDots[i]->repaint(); }
+            }
+        if (auto* bu = mix.getProperty ("buses", juce::var()).getArray())
+            for (auto& b : *bu)
+            {
+                const int f = familyNames.indexOf (b.getProperty ("n", "").toString());
+                if (f >= 0 && f < busSliders.size())
+                    busSliders[f]->setValue ((double) b.getProperty ("g", 0.0), juce::sendNotificationSync);
+            }
+    }
+
     void createSetlist()
     {
+        const auto now = juce::Time::getCurrentTime();
+        const auto hoy = juce::String::formatted ("%04d-%02d-%02d",
+                                                  now.getYear(), now.getMonth() + 1, now.getDayOfMonth());
         auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Nuevo repertorio"),
-                                          juce::String::fromUTF8 ("Nombre del repertorio:"),
+                                          juce::String::fromUTF8 ("Nombre y fecha del repertorio:"),
                                           juce::MessageBoxIconType::NoIcon);
-        aw->addTextEditor ("n", "");
+        aw->addTextEditor ("n", "", juce::String::fromUTF8 ("Nombre:"));
+        aw->addTextEditor ("f", hoy, juce::String::fromUTF8 ("Fecha (AAAA-MM-DD):"));
         aw->addButton ("Crear", 1);
         aw->addButton ("Cancelar", 0);
         juce::Component::SafePointer<MainComponent> sp (this);
         aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
         {
             const juce::String nombre = aw->getTextEditorContents ("n").trim();
+            const juce::String fecha  = aw->getTextEditorContents ("f").trim();
             if (r == 1 && sp != nullptr)
-                sp->doCreateSetlist (nombre.isNotEmpty() ? nombre : juce::String ("Nuevo repertorio"));
+                sp->doCreateSetlist (nombre.isNotEmpty() ? nombre : juce::String ("Nuevo repertorio"), fecha);
         }), true);
     }
 
-    void doCreateSetlist (juce::String nombre)
+    void doCreateSetlist (juce::String nombre, juce::String fecha)
     {
         if (serverUrl.isEmpty()) return;
         const auto base = serverUrl + "/api/live/setlist/crear"; const auto tok = serverToken;
         juce::StringPairArray p; p.set ("nombre", nombre);
+        if (fecha.isNotEmpty()) p.set ("fecha", fecha);
         juce::Component::SafePointer<MainComponent> sp (this);
         juce::Thread::launch ([sp, base, p, tok]
         {
@@ -2603,6 +2760,48 @@ private:
                 if (sp == nullptr || id.isEmpty()) return;
                 if (! sp->editMode) sp->toggleEdit();   // entrar en modo edición para agregar canciones
                 sp->startLoadId (id);
+            });
+        });
+    }
+
+    void confirmDeleteSetlist (juce::String id)
+    {
+        juce::String nombre = id;
+        for (auto& it : repPicker.items) if (it.id == id) { nombre = it.nombre; break; }
+        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Borrar repertorio"),
+                                          juce::String::fromUTF8 ("\xc2\xbf" "Borrar \"") + nombre
+                                              + juce::String::fromUTF8 ("\"? No se puede deshacer."),
+                                          juce::MessageBoxIconType::NoIcon);
+        aw->addButton ("Borrar", 1);
+        aw->addButton ("Cancelar", 0);
+        juce::Component::SafePointer<MainComponent> sp (this);
+        aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, id] (int r)
+        {
+            if (r == 1 && sp != nullptr) sp->doDeleteSetlist (id);
+        }), true);
+    }
+
+    void doDeleteSetlist (juce::String id)
+    {
+        if (serverUrl.isEmpty()) return;
+        const auto base = serverUrl + "/api/live/setlist/" + id + "/eliminar";
+        const auto tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, base, tok, id]
+        {
+            httpPostForm (base, {}, tok);
+            juce::MessageManager::callAsync ([sp, id]
+            {
+                if (sp == nullptr) return;
+                if (sp->lastSetlistId == id)   // borramos el que estaba cargado: limpiar
+                {
+                    sp->lastSetlistId.clear();
+                    sp->currentSetlistName.clear();
+                    sp->repertoire.clearQuick();
+                    sp->rebuildRepertoireStrip();
+                    sp->clearSong();
+                }
+                if (sp->repPicker.isVisible()) sp->openRepertoirePicker();   // refrescar la lista
             });
         });
     }
@@ -2716,6 +2915,7 @@ private:
     void onRepertoireLoaded (juce::Array<SongEntry> songs)
     {
         if (loader && loader->resolvedId.isNotEmpty()) lastSetlistId = loader->resolvedId;   // id real del setlist
+        if (loader) currentSetlistName = loader->resolvedName;
         repertoire = songs;
         songMaster.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i) songMaster.add (0.0);
@@ -2762,6 +2962,36 @@ private:
         repaint();
     }
 
+    void reorderSong (int fromIdx, int toIdx)
+    {
+        toIdx = juce::jlimit (0, juce::jmax (0, repertoire.size() - 1), toIdx);
+        if (fromIdx < 0 || fromIdx >= repertoire.size()) { rebuildRepertoireStrip(); return; }
+
+        const int curId = (currentSong >= 0 && currentSong < repertoire.size())
+                              ? repertoire.getReference (currentSong).id : -1;
+
+        if (toIdx != fromIdx)
+        {
+            repertoire.move (fromIdx, toIdx);
+            if (fromIdx < songMaster.size() && toIdx < songMaster.size()) songMaster.move (fromIdx, toIdx);
+
+            if (curId >= 0)
+                for (int i = 0; i < repertoire.size(); ++i)
+                    if (repertoire.getReference (i).id == curId) { currentSong = i; break; }
+
+            if (! lastSetlistId.isEmpty() && ! serverUrl.isEmpty())   // persistir el orden en el servidor
+            {
+                juce::StringArray ids;
+                for (auto& e : repertoire) ids.add (juce::String (e.id));
+                juce::StringPairArray p; p.set ("ids", ids.joinIntoString (","));
+                const auto base = serverUrl + "/api/live/setlist/" + lastSetlistId + "/orden";
+                const auto tok = serverToken;
+                juce::Thread::launch ([base, p, tok] { httpPostForm (base, p, tok); });
+            }
+        }
+        rebuildRepertoireStrip();   // re-acomoda las tarjetas (y hace snap si no cambió)
+    }
+
     void rebuildRepertoireStrip()
     {
         songCards.clear();
@@ -2773,10 +3003,12 @@ private:
             c->titulo = s.titulo;
             c->tono = s.tonoNombre;
             c->editMode = editMode;
+            c->index = i;
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
-            c->onClick  = [this, idx] { loadSong (idx); };
-            c->onRemove = [this, sid] { removeSong (sid); };
-            c->onTono   = [this, sid, title] { openTonoFor (sid, title, false); };
+            c->onClick   = [this, idx] { loadSong (idx); };
+            c->onRemove  = [this, sid] { removeSong (sid); };
+            c->onTono    = [this, sid, title] { openTonoFor (sid, title, false); };
+            c->onReorder = [this] (int from, int to) { reorderSong (from, to); };
             addAndMakeVisible (c);
         }
         addCard.setVisible (editMode);
@@ -2894,6 +3126,7 @@ private:
         if (syncEnabled) fetchLiveChart (sng.id, sng.tono);
 
         rebuildMixerUI();
+        fetchAndApplyMix (sng.id);
         highlightSongButton();
         resized();
         repaint();
@@ -3390,7 +3623,7 @@ private:
     bool fadedDown = false;
     juce::Label connStatus, timeLabel, masterLabel;
     juce::Slider masterSlider;
-    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn;
+    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn, guardarBtn;
     IconButton faderViewBtn, repeatBtn, infiniteBtn, settingsBtn, repertoireBtn;
     FaderStripComp faderStrip;
     juce::Viewport faderViewport;
@@ -3398,6 +3631,8 @@ private:
     RepertoirePicker repPicker;
     SettingsPanel settingsPanel;
     juce::String lastSetlistId;   // setlist cargado (para "Actualizar")
+    juce::String currentSetlistName;
+    juce::Rectangle<int> setlistBandBounds;   // franja donde se dibuja el nombre del repertorio
     RepEditPanel repEdit;
     AddCard addCard;
     bool editMode = false;
