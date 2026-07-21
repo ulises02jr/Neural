@@ -2286,8 +2286,36 @@ def admin_editar_subir(numero):
             continue
         a.save(str(carpeta / nombre))
         guardadas += 1
+    if guardadas:
+        _invalidar_tonos(numero)
+        threading.Thread(target=_asegurar_web, args=(numero, 0), daemon=True).start()
     flash("OK: " + str(guardadas) + " pista(s) agregada(s)", "success")
     return redirect(url_for("admin_editar", numero=numero))
+
+
+@app.route("/admin/pistas/<int:numero>/agregar_uno", methods=["POST"])
+@login_required("admin")
+def admin_editar_subir_uno(numero):
+    a = request.files.get("pista")
+    if not a or a.filename == "":
+        return jsonify({"ok": False, "error": "sin archivo"}), 400
+    if os.path.splitext(a.filename)[1].lower() not in _EXT_AUDIO_ENSAYO:
+        return jsonify({"ok": False, "error": "formato"}), 400
+    nombre = secure_filename(a.filename)
+    if not nombre:
+        return jsonify({"ok": False, "error": "nombre"}), 400
+    carpeta = CARPETA_PISTAS / str(numero)
+    carpeta.mkdir(exist_ok=True)
+    a.save(str(carpeta / nombre))
+    return jsonify({"ok": True, "name": nombre})
+
+
+@app.route("/admin/pistas/<int:numero>/subir_fin", methods=["POST"])
+@login_required("admin")
+def admin_editar_subir_fin(numero):
+    _invalidar_tonos(numero)
+    threading.Thread(target=_asegurar_web, args=(numero, 0), daemon=True).start()
+    return jsonify({"ok": True})
 
 
 @app.route("/admin/pistas/<int:numero>/borrar_una", methods=["POST"])
