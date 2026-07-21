@@ -46,7 +46,9 @@ static juce::String httpGet (const juce::String& url, const juce::String& token)
     if (in == nullptr) return {};
     return in->readEntireStreamAsString();
 }
-static bool httpDownload (const juce::String& url, const juce::String& token, const juce::File& dest)
+static bool httpDownload (const juce::String& url, const juce::String& token, const juce::File& dest,
+                          std::function<void (double)> onProgress = {},
+                          std::function<bool()> cancel = {})
 {
     juce::URL u (url);
     auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
@@ -54,13 +56,25 @@ static bool httpDownload (const juce::String& url, const juce::String& token, co
                     .withConnectionTimeoutMs (30000);
     std::unique_ptr<juce::InputStream> in (u.createInputStream (opts));
     if (in == nullptr) return false;
+    const juce::int64 expected = in->getTotalLength();   // -1 si el server no da Content-Length
     dest.getParentDirectory().createDirectory();
     juce::TemporaryFile tmp (dest);
+    juce::int64 written = 0;
     {
         std::unique_ptr<juce::FileOutputStream> out (tmp.getFile().createOutputStream());
         if (out == nullptr) return false;
-        out->writeFromInputStream (*in, -1);
+        juce::HeapBlock<char> buf (1 << 16);
+        while (! in->isExhausted())
+        {
+            if (cancel && cancel()) return false;               // salida rápida (cierre de la app)
+            const int got = in->read (buf, 1 << 16);
+            if (got <= 0) break;
+            out->write (buf, (size_t) got);
+            written += got;
+            if (onProgress && expected > 0) onProgress ((double) written / (double) expected);
+        }
     }
+    if (expected > 0 && written != expected) return false;      // descarga incompleta -> descartar el temporal
     return tmp.overwriteTargetFileWithTemporary();
 }
 
@@ -743,10 +757,17 @@ struct RepertoireLoader : public juce::Thread
                     auto dest = e.folder.getChildFile (fn);
                     if (! dest.existsAsFile() || dest.getSize() < 2000)
                     {
-                        status ("Descargando: " + e.titulo + "  -  " + fn);
-                        httpDownload (serverUrl + "/api/live/pista/" + juce::String (e.id) + "/"
-                                      + juce::URL::addEscapeChars (fn, false)
-                                      + "?t=" + juce::String (e.tono), token, dest);
+                        const auto durl = serverUrl + "/api/live/pista/" + juce::String (e.id) + "/"
+                                          + juce::URL::addEscapeChars (fn, false) + "?t=" + juce::String (e.tono);
+                        const auto tit = e.titulo;
+                        bool ok = false;
+                        for (int intento = 0; intento < 3 && ! ok && ! threadShouldExit(); ++intento)
+                            ok = httpDownload (durl, token, dest,
+                                    [this, tit, fn] (double p)
+                                    { status ("Descargando " + tit + " \xe2\x80\x93 " + fn
+                                              + "   " + juce::String ((int) (p * 100.0)) + "%"); },
+                                    [this] { return threadShouldExit(); });
+                        if (! ok) status (juce::String::fromUTF8 ("No se pudo descargar ") + fn + " (se reintentar\xc3\xa1)");
                     }
                 }
 
@@ -1011,7 +1032,7 @@ struct RepertoirePicker : public juce::Component
 
         g.setColour (juce::Colours::white);
         g.setFont (juce::Font (17.0f, juce::Font::bold));
-        g.drawText ("Abrir repertorio", panelBounds().removeFromTop (56).reduced (22, 0),
+        g.drawText ("Repertorio", panelBounds().removeFromTop (56).reduced (22, 0),
                     juce::Justification::centredLeft);
         if (juce::Time::getMillisecondCounter() - savedAt < 1600)
         {
@@ -1217,7 +1238,7 @@ struct AudioConfigPanel : public juce::Component
     juce::Label title, devLbl, chInfo;
     juce::OwnedArray<juce::Label> famLabels;
     juce::OwnedArray<juce::ComboBox> routeBoxes;
-    juce::TextButton closeBtn;
+    juce::TextButton closeBtn, backBtn;
     juce::ComboBox srBox;                  // selector de frecuencia (sample rate)
     juce::Label srLbl;
     juce::Array<double> srList;
@@ -1225,6 +1246,7 @@ struct AudioConfigPanel : public juce::Component
     std::function<void (const juce::String&)> onDevice;
     std::function<void (int, int, int)> onRoute;   // fam, mode, base
     std::function<void (double)> onSampleRate;     // 0 = automático (seguir dispositivo)
+    std::function<void()> onBack;                  // volver al Menú
 
     AudioConfigPanel()
     {
@@ -1276,6 +1298,12 @@ struct AudioConfigPanel : public juce::Component
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         closeBtn.onClick = [this] { setVisible (false); };
         addAndMakeVisible (closeBtn);
+
+        backBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xb9 Men\xc3\xba"));
+        backBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        backBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        backBtn.onClick = [this] { setVisible (false); if (onBack) onBack(); };
+        addAndMakeVisible (backBtn);
     }
 
     void setDevices (const juce::StringArray& names, const juce::String& current)
@@ -1350,8 +1378,9 @@ struct AudioConfigPanel : public juce::Component
     {
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
+        backBtn.setBounds (p.getX() + 14, p.getY() + 13, 76, 28);
         auto b = p.reduced (22);
-        title.setBounds (b.removeFromTop (34));
+        title.setBounds (b.removeFromTop (34).withTrimmedLeft (78));
         b.removeFromTop (4);
         devLbl.setBounds (b.removeFromTop (16));
         deviceBox.setBounds (b.removeFromTop (30));
@@ -1769,6 +1798,13 @@ public:
             preferredSampleRate = sr;
             applyAudioDevice (audioOutDevice.isEmpty() ? currentDeviceName() : audioOutDevice);
         };
+        audioCfg.onBack = [this]
+        {
+            settingsPanel.setState (syncEnabled, syncLinked.load());
+            settingsPanel.setBounds (getLocalBounds());
+            settingsPanel.setVisible (true);
+            settingsPanel.toFront (true);
+        };
         addChildComponent (audioCfg);
 
         liveServer.getPage  = [] { return juce::String (juce::CharPointer_UTF8 (kMusicianPage)); };
@@ -2161,10 +2197,13 @@ public:
         }
         else
         {
-            g.setColour (juce::Colour (0xff5a6577));
-            g.setFont (12.0f);
-            g.drawText (currentSong < 0 ? "Conecta para traer el repertorio" : "Cargando forma de onda...",
-                        inner, juce::Justification::centred);
+            g.setColour (juce::Colour (0xff8a94a6));
+            g.setFont (13.0f);
+            juce::String msg = (currentSong < 0)
+                ? (connStatus.getText().isNotEmpty() ? connStatus.getText()
+                                                     : juce::String ("Conecta para traer el repertorio"))
+                : juce::String ("Cargando forma de onda...");
+            g.drawText (msg, inner, juce::Justification::centred, true);
         }
 
         {
@@ -3046,7 +3085,7 @@ private:
         loader = std::make_unique<RepertoireLoader> (serverUrl, serverToken, npAppDir().getChildFile ("cache"));
         loader->wantedId = setlistId;
         juce::Component::SafePointer<MainComponent> sp (this);
-        loader->onStatus = [sp] (juce::String s) { if (sp) sp->connStatus.setText (s, juce::dontSendNotification); };
+        loader->onStatus = [sp] (juce::String s) { if (sp) { sp->connStatus.setText (s, juce::dontSendNotification); sp->repaint (sp->mapBounds); } };
         loader->onDone   = [sp] (juce::Array<SongEntry> songs) { if (sp) sp->onRepertoireLoaded (songs); };
         loader->startThread();
     }
