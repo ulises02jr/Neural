@@ -3209,6 +3209,9 @@ private:
     void onRepertoireLoaded (juce::Array<SongEntry> songs)
     {
         repertoire = songs;
+        for (auto& e : repertoire)              // la copia del loader trae la ruta pero no la imagen: recargar portadas
+            if (! e.cover.isValid() && e.coverFile.existsAsFile())
+                e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         for (auto* c : songCards) c->dlProgress = -1.0f;
         for (int i = 0; i < songReady.size(); ++i) songReady.set (i, true);
         if (repertoire.isEmpty()) { clearSong(); return; }
