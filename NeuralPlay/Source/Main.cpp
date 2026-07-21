@@ -3182,6 +3182,7 @@ private:
     {
         if (loader && loader->resolvedId.isNotEmpty()) lastSetlistId = loader->resolvedId;
         if (loader) currentSetlistName = loader->resolvedName;
+        refreshEditAvailability();   // al cargar (incl. al abrir la app) re-habilitar Editar si ya hay repertorio
         repertoire = songs;
         songMaster.clearQuick();
         songMixCache.clearQuick();
@@ -3232,6 +3233,7 @@ private:
     {
         if (loader && loader->resolvedId.isNotEmpty()) lastSetlistId = loader->resolvedId;
         if (loader) currentSetlistName = loader->resolvedName;   // repertorio vacío llega por acá (sin onMeta)
+        refreshEditAvailability();
         repertoire = songs;
         for (auto& e : repertoire)              // la copia del loader trae la ruta pero no la imagen: recargar portadas
             if (! e.cover.isValid() && e.coverFile.existsAsFile())
