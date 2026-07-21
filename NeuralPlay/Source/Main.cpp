@@ -3317,6 +3317,8 @@ private:
         for (auto& f : files)
         {
             if (f.getFileName().startsWithChar ('.')) continue;
+            // Solo stems reales del servidor: ignora (y borra) temporales/huérfanos de descargas cortadas
+            if (! curFamFiles.isEmpty() && ! curFamFiles.contains (f.getFileName())) { f.deleteFile(); continue; }
             auto* reader = formatManager.createReaderFor (f);
             if (reader == nullptr) continue;
             lengthSamples = juce::jmax (lengthSamples, (long long) reader->lengthInSamples);
