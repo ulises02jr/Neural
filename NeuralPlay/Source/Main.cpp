@@ -854,6 +854,7 @@ struct MidiPanel : public juce::Component
         juce::ComboBox port, chan;
         juce::ToggleButton on;
         juce::Rectangle<int> swatch;
+        bool noChan = false;               // fila especial (MIDI Clock): sin selector de canal
     };
     juce::OwnedArray<Row> rows;
     juce::File cfgFile;
@@ -883,6 +884,22 @@ struct MidiPanel : public juce::Component
             r->chan.setSelectedId (chd[i], juce::dontSendNotification);
             r->chan.onChange = [this] { saveCfg(); };
             addAndMakeVisible (r->chan);
+            r->port.onChange = [this] { saveCfg(); };
+            addAndMakeVisible (r->port);
+            r->on.onClick = [this] { saveCfg(); };
+            addAndMakeVisible (r->on);
+        }
+        {   // fila especial: MIDI Clock (solo salida, sin canal)
+            auto* r = rows.add (new Row());
+            r->cajaId = "clock"; r->noChan = true;
+            r->name.setText ("MIDI Clock", juce::dontSendNotification);
+            r->name.setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
+            r->name.setFont (juce::Font (14.5f, juce::Font::bold));
+            addAndMakeVisible (r->name);
+            r->port.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff1f1f1f));
+            r->port.setColour (juce::ComboBox::textColourId, juce::Colour (0xfff2f2f2));
+            r->port.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff2a2a2a));
+            r->port.setColour (juce::ComboBox::arrowColourId, juce::Colour (0xffa3a3a3));
             r->port.onChange = [this] { saveCfg(); };
             addAndMakeVisible (r->port);
             r->on.onClick = [this] { saveCfg(); };
@@ -925,7 +942,7 @@ struct MidiPanel : public juce::Component
         for (int i = 0; i < rows.size(); ++i)
         {
             auto s = rows[i]->swatch.toFloat();
-            g.setColour (cajaColour (i));
+            g.setColour (rows[i]->noChan ? juce::Colour (0xffC9A96E) : cajaColour (i));
             g.fillEllipse (s.getCentreX() - 5.5f, s.getCentreY() - 5.5f, 11.0f, 11.0f);
         }
     }
@@ -941,8 +958,11 @@ struct MidiPanel : public juce::Component
             r->name.setBounds (row.removeFromLeft (140));
             r->on.setBounds   (row.removeFromRight (54));
             row.removeFromRight (12);
-            r->chan.setBounds (row.removeFromRight (120));
-            row.removeFromRight (12);
+            if (! r->noChan)
+            {
+                r->chan.setBounds (row.removeFromRight (120));
+                row.removeFromRight (12);
+            }
             r->port.setBounds (row);
         }
     }
@@ -951,6 +971,8 @@ struct MidiPanel : public juce::Component
     int  channel (int i) const { return (i >= 0 && i < rows.size()) ? rows[i]->chan.getSelectedId() : 1; }
     juce::String portName (int i) const { return (i >= 0 && i < rows.size() && rows[i]->port.getSelectedId() > 1) ? rows[i]->port.getText() : juce::String(); }
     int count() const { return rows.size(); }
+    juce::String clockPortName() const { for (auto* r : rows) if (r->cajaId == "clock") return (r->port.getSelectedId() > 1 ? r->port.getText() : juce::String()); return {}; }
+    bool clockOn() const { for (auto* r : rows) if (r->cajaId == "clock") return r->on.getToggleState(); return false; }
 
     void saveCfg()
     {
@@ -3809,6 +3831,24 @@ private:
             cajaOnArr[i]   = midiPanel.isOn (i);
             cajaChanArr[i] = midiPanel.channel (i);
         }
+        // salida del MIDI Clock (sin canal)
+        midiClockOutPtr  = nullptr;
+        clockEnabledFlag = midiPanel.clockOn();
+        {
+            const auto pn = midiPanel.clockPortName();
+            if (pn.isNotEmpty())
+            {
+                juce::String ident;
+                for (auto& d : devs) if (d.name == pn) { ident = d.identifier; break; }
+                if (ident.isNotEmpty())
+                {
+                    const int idx = openedIds.indexOf (ident);
+                    if (idx >= 0) midiClockOutPtr = midiOuts[idx];
+                    else if (auto mo = juce::MidiOutput::openDevice (ident))
+                    { openedIds.add (ident); midiClockOutPtr = mo.get(); midiOuts.add (mo.release()); }
+                }
+            }
+        }
     }
     void flushMidiOffs()
     {
@@ -3828,6 +3868,42 @@ private:
             midiNext[ci] = idx;
         }
     }
+    void procesarClock (bool pl, double cur)   // MIDI Clock (24 PPQN) enganchado al audio; sin canal
+    {
+        if (midiClockOutPtr == nullptr || ! clockEnabledFlag || bpm <= 0.0)
+        {
+            if (clockRunning && midiClockOutPtr != nullptr) midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiStop());
+            clockRunning = false;
+            return;
+        }
+        if (! pl)
+        {
+            if (clockRunning) { midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiStop()); clockRunning = false; }
+            return;
+        }
+        const double ppqPerSec = (bpm / 60.0) * 24.0;
+        const long long target = (long long) std::floor (cur * ppqPerSec);
+        if (! clockRunning)
+        {
+            const int spp = (int) std::floor (cur * (bpm / 60.0) * 4.0);   // posición en semicorcheas
+            if (cur > 0.05) { midiClockOutPtr->sendMessageNow (juce::MidiMessage::songPositionPointer (spp)); midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiContinue()); }
+            else            { midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiStart()); }
+            clockPulses = target; clockRunning = true;
+            return;
+        }
+        long long delta = target - clockPulses;
+        if (delta < 0 || delta > 48)   // seek: resincronizar sin inundar de pulsos
+        {
+            const int spp = (int) std::floor (cur * (bpm / 60.0) * 4.0);
+            midiClockOutPtr->sendMessageNow (juce::MidiMessage::songPositionPointer (spp));
+            midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiContinue());
+            clockPulses = target;
+            return;
+        }
+        for (long long k = 0; k < delta; ++k) midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiClock());
+        clockPulses = target;
+    }
+
     void fireMidiRT()   // hilo dedicado de alta resolucion (~1ms)
     {
         const juce::ScopedLock sl (midiLock);
@@ -3840,6 +3916,7 @@ private:
             }
         const bool pl = playing.load();
         const double cur = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
+        procesarClock (pl, cur);
         if (! pl)
         {
             if (! midiOffs.isEmpty()) flushMidiOffs();
@@ -4109,6 +4186,9 @@ private:
     juce::Array<MidiBox> currentMidiBoxes;
     juce::OwnedArray<juce::MidiOutput> midiOuts;
     juce::Array<juce::MidiOutput*> cajaOut;
+    juce::MidiOutput* midiClockOutPtr = nullptr;   // salida del MIDI Clock (sin canal)
+    bool clockEnabledFlag = false, clockRunning = false;
+    long long clockPulses = 0;
     int midiNext[8] = { 0 };
     double midiCursor = 0.0;
     struct POff { juce::MidiOutput* out = nullptr; int chan = 1; int note = 0; juce::uint32 t = 0; };
