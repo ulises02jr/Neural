@@ -493,9 +493,9 @@ const OCTAVAS_MIDI = [-1,0,1,2,3,4,5,6,7,8];
 const CAJAS_DEF = [
   {id:'lyrics',nombre:'Lyrics'},{id:'lights1',nombre:'Lights 1'},{id:'lights2',nombre:'Lights 2'},
   {id:'patches1',nombre:'Patches 1'},{id:'patches2',nombre:'Patches 2'},{id:'guitar',nombre:'Guitar'},
-  {id:'aux1',nombre:'Aux 1'},{id:'aux2',nombre:'Aux 2'}
+  {id:'aux1',nombre:'Aux 1'}
 ];
-const CANAL_DEF = {lyrics:16,lights1:1,lights2:2,patches1:3,patches2:4,guitar:5,aux1:6,aux2:7};
+const CANAL_DEF = {lyrics:16,lights1:1,lights2:2,patches1:3,patches2:4,guitar:5,aux1:6};
 const MIDI = {{ midi|tojson }};
 function escA(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function opcsMidi(arr, sel){ return arr.map(function(v){ return '<option value="'+v+'"'+(String(v)===String(sel)?' selected':'')+'>'+v+'</option>'; }).join(''); }

@@ -130,6 +130,7 @@ struct SongEntry
     juce::StringArray secNames;
     juce::StringArray famFiles, famNames;   // familia por stem (del servidor)
     juce::Array<MidiBox> midiBoxes;         // cajas MIDI + notas (del servidor)
+    juce::Array<double> beatGrid;           // negras (seg) para el MIDI clock variable
     juce::String portada;
     juce::File coverFile;
     juce::Image cover;
@@ -795,6 +796,11 @@ struct RepertoireLoader : public juce::Thread
                         e.midiBoxes.add (mb);
                     }
             }
+            {   // grilla de negras para el MIDI clock (sigue cambios de tempo / medleys)
+                auto bg = juce::JSON::parse (httpGet (serverUrl + "/api/live/beatgrid/" + juce::String (e.id), token));
+                if (auto* arr = bg.getProperty ("grid", juce::var()).getArray())
+                    for (auto& x : *arr) e.beatGrid.add ((double) x);
+            }
             out.add (e);
         }
 
@@ -862,10 +868,10 @@ struct MidiPanel : public juce::Component
 
     MidiPanel()
     {
-        static const char* nm[8]  = { "Lyrics","Lights 1","Lights 2","Patches 1","Patches 2","Guitar","Aux 1","Aux 2" };
-        static const char* ids[8] = { "lyrics","lights1","lights2","patches1","patches2","guitar","aux1","aux2" };
-        static const int   chd[8] = { 16,1,2,3,4,5,6,7 };
-        for (int i = 0; i < 8; ++i)
+        static const char* nm[7]  = { "Lyrics","Lights 1","Lights 2","Patches 1","Patches 2","Guitar","Aux 1" };
+        static const char* ids[7] = { "lyrics","lights1","lights2","patches1","patches2","guitar","aux1" };
+        static const int   chd[7] = { 16,1,2,3,4,5,6 };
+        for (int i = 0; i < 7; ++i)
         {
             auto* r = rows.add (new Row());
             r->cajaId = ids[i];
@@ -3584,6 +3590,7 @@ private:
         {
             const juce::ScopedLock sl (midiLock);
             currentMidiBoxes = sng.midiBoxes;
+            currentBeatGrid  = sng.beatGrid;
             flushMidiOffs();
             recalcMidiNext (0.0);
             midiCursor = 0.0;
@@ -3868,9 +3875,24 @@ private:
             midiNext[ci] = idx;
         }
     }
+    double pulsesAt (double t) const   // pulsos de MIDI clock (24 PPQN) acumulados hasta t
+    {
+        const auto& g = currentBeatGrid;
+        const int n = g.size();
+        if (n >= 2)   // grilla de negras: sigue cualquier cambio de tempo (medleys/rubato)
+        {
+            if (t <= g[0]) { const double dt = g[1] - g[0]; return dt > 0 ? 24.0 * (t - g[0]) / dt : 0.0; }
+            for (int i = 0; i + 1 < n; ++i)
+                if (t < g[i + 1]) { const double dt = g[i + 1] - g[i]; return dt > 0 ? i * 24.0 + 24.0 * (t - g[i]) / dt : i * 24.0; }
+            const double dt = g[n - 1] - g[n - 2];
+            return dt > 0 ? (n - 1) * 24.0 + 24.0 * (t - g[n - 1]) / dt : (n - 1) * 24.0;
+        }
+        return t * (bpm / 60.0) * 24.0;   // fallback: tempo único
+    }
+
     void procesarClock (bool pl, double cur)   // MIDI Clock (24 PPQN) enganchado al audio; sin canal
     {
-        if (midiClockOutPtr == nullptr || ! clockEnabledFlag || bpm <= 0.0)
+        if (midiClockOutPtr == nullptr || ! clockEnabledFlag || (bpm <= 0.0 && currentBeatGrid.size() < 2))
         {
             if (clockRunning && midiClockOutPtr != nullptr) midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiStop());
             clockRunning = false;
@@ -3881,11 +3903,10 @@ private:
             if (clockRunning) { midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiStop()); clockRunning = false; }
             return;
         }
-        const double ppqPerSec = (bpm / 60.0) * 24.0;
-        const long long target = (long long) std::floor (cur * ppqPerSec);
+        const long long target = (long long) std::floor (pulsesAt (cur));
         if (! clockRunning)
         {
-            const int spp = (int) std::floor (cur * (bpm / 60.0) * 4.0);   // posición en semicorcheas
+            const int spp = (int) std::floor (pulsesAt (cur) / 6.0);   // posición en semicorcheas (6 pulsos)
             if (cur > 0.05) { midiClockOutPtr->sendMessageNow (juce::MidiMessage::songPositionPointer (spp)); midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiContinue()); }
             else            { midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiStart()); }
             clockPulses = target; clockRunning = true;
@@ -3894,7 +3915,7 @@ private:
         long long delta = target - clockPulses;
         if (delta < 0 || delta > 48)   // seek: resincronizar sin inundar de pulsos
         {
-            const int spp = (int) std::floor (cur * (bpm / 60.0) * 4.0);
+            const int spp = (int) std::floor (pulsesAt (cur) / 6.0);
             midiClockOutPtr->sendMessageNow (juce::MidiMessage::songPositionPointer (spp));
             midiClockOutPtr->sendMessageNow (juce::MidiMessage::midiContinue());
             clockPulses = target;
@@ -4184,6 +4205,7 @@ private:
     int trackRouteFam[kMaxTracks] = { 0 };
     int openOutChans = 2;
     juce::Array<MidiBox> currentMidiBoxes;
+    juce::Array<double> currentBeatGrid;           // negras (seg) de la canción actual, para el MIDI clock
     juce::OwnedArray<juce::MidiOutput> midiOuts;
     juce::Array<juce::MidiOutput*> cajaOut;
     juce::MidiOutput* midiClockOutPtr = nullptr;   // salida del MIDI Clock (sin canal)

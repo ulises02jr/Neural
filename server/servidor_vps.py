@@ -715,6 +715,55 @@ def api_live_chart(numero):
     })
 
 
+def _beatgrid_musical(numero):
+    """Grilla de negras (tiempos en seg) para el MIDI clock variable. Cacheada.
+    Dobla los golpes del click a negras usando el factor (click en corcheas = x2)."""
+    d = _admin_audio_dir(numero)
+    cache = d / "beatgrid.json"
+    if cache.exists():
+        try:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    res = _detectar_beats_click(numero)
+    if not res.get("ok"):
+        return {"ok": False, "grid": [], "bpm": 0}
+    beats = res.get("beats", [])
+    bpm_prom = res.get("bpm_prom", 0) or 0
+    can = cargar_biblioteca().get(numero) or {}
+    try:
+        song_bpm = float(can.get("tempo") or 0)
+    except Exception:
+        song_bpm = 0.0
+    factor = 1
+    if song_bpm > 0 and bpm_prom > 0:
+        r = bpm_prom / song_bpm
+        f = int(round(r))
+        if 1 <= f <= 4 and abs(r - f) <= 0.2:
+            factor = f
+    grid = [round(float(beats[i]), 4) for i in range(0, len(beats), factor)]
+    bpm_real = int(round(bpm_prom / factor)) if factor else int(bpm_prom)
+    out = {"ok": True, "grid": grid, "bpm": bpm_real}
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(out), encoding="utf-8")
+    except Exception:
+        pass
+    return out
+
+
+@app.route("/api/live/beatgrid/<int:numero>")
+def api_live_beatgrid(numero):
+    """NeuralPlay: grilla de negras para el MIDI clock (sigue cambios de tempo)."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    try:
+        return jsonify(_beatgrid_musical(numero))
+    except Exception as e:
+        logging.error("beatgrid %s: %s", numero, e)
+        return jsonify({"ok": False, "grid": [], "bpm": 0})
+
+
 @app.route("/api/live/render/<int:numero>/<t>", methods=["POST"])
 def api_live_render(numero, t):
     """NeuralPlay: dispara el render de un tono (semitonos). Token."""
@@ -2261,7 +2310,7 @@ def _archivo_midi(numero):
 MIDI_CAJAS = [
     ("lyrics", "Lyrics", 16), ("lights1", "Lights 1", 1), ("lights2", "Lights 2", 2),
     ("patches1", "Patches 1", 3), ("patches2", "Patches 2", 4), ("guitar", "Guitar", 5),
-    ("aux1", "Aux 1", 6), ("aux2", "Aux 2", 7),
+    ("aux1", "Aux 1", 6),
 ]
 
 def _midi_default():
