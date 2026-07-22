@@ -56,7 +56,7 @@
   .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
   .lyrics .tok{display:inline-flex;flex-direction:column}
   .chord{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
-    font-size:var(--chord-size);font-weight:700;color:var(--accent);
+    font-size:var(--chord-size);font-weight:700;color:var(--chord-color,var(--accent));
     min-height:var(--chord-min);line-height:var(--chord-min);white-space:pre}
   .lyric{font-size:var(--lyric-size);color:var(--txt);line-height:1.35;white-space:pre}
   @media (max-height:700px){
@@ -159,6 +159,23 @@
   .size-big:active{background:var(--accent-soft)}
   .size-big:disabled{opacity:.35}
   .size-lbl{font-size:16px;color:var(--accent);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
+  body.claro{--bg:#f4f4f6;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95}
+  body.claro .pill.active{background:var(--accent);border-color:var(--accent);color:#1a1407}
+  body.solo-acordes .lyric{display:none}
+  body.solo-letra .chord{display:none}
+  body[data-grosor="fino"] .chord{font-weight:400;-webkit-text-stroke:0}
+  body[data-grosor="normal"] .chord{font-weight:700;-webkit-text-stroke:0}
+  body[data-grosor="grueso"] .chord{font-weight:800;-webkit-text-stroke:.45px currentColor}
+  .aj-lbl{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1.2px;font-weight:600;margin:16px 0 8px}
+  .seg{display:flex;gap:6px;flex-wrap:wrap}
+  .seg button{flex:1;min-width:72px;background:var(--raised);border:1px solid var(--line);color:var(--txt);padding:10px 8px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit}
+  .seg button.active{background:var(--accent);color:#1a1407;border-color:var(--accent);font-weight:600}
+  .seg.colores{gap:9px}
+  .seg.colores button{flex:0 0 auto;min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
+  .seg.colores button.active{border-color:var(--txt)}
+  .seg.colores input[type=color]{width:34px;height:34px;border:2px solid var(--line);border-radius:50%;padding:0;background:none;cursor:pointer}
+  .seg.colores input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+  .seg.colores input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
 </style>
 </head>
 <body>
@@ -166,12 +183,38 @@
 
 <div class="sheet-bg" id="bg-ajustes" onclick="cerrarAjustes()"></div>
 <div class="sheet" id="sheet-ajustes">
-  <div class="sheet-h"><div class="sheet-t">Tamaño de letra</div><button class="sheet-x" onclick="cerrarAjustes()">Listo</button></div>
-  <div class="sheet-sub">Ajustá qué tan grande se ve la letra y los acordes.</div>
+  <div class="sheet-h"><div class="sheet-t">Ajustes de vista</div><button class="sheet-x" onclick="cerrarAjustes()">Listo</button></div>
+  <div class="aj-lbl">Tamaño de letra</div>
   <div class="size-row">
     <button class="size-big" id="size-minus" onclick="tamanoMenos()">A−</button>
     <span class="size-lbl" id="size-label">M</span>
     <button class="size-big" id="size-plus" onclick="tamanoMas()">A+</button>
+  </div>
+  <div class="aj-lbl">Tema</div>
+  <div class="seg" id="seg-tema"><button data-val="oscuro" onclick="setVista('tema','oscuro')">Oscuro</button><button data-val="claro" onclick="setVista('tema','claro')">Día</button></div>
+  <div class="aj-lbl">Mostrar</div>
+  <div class="seg" id="seg-modo"><button data-val="ambos" onclick="setVista('modo','ambos')">Ambos</button><button data-val="acordes" onclick="setVista('modo','acordes')">Solo acordes</button><button data-val="letra" onclick="setVista('modo','letra')">Solo letra</button></div>
+  <div class="aj-lbl">Color de acordes</div>
+  <div class="seg colores" id="seg-color">
+    <button data-val="" onclick="setVista('color','')" title="Por defecto" style="background:var(--accent)"></button>
+    <button data-val="#ffffff" onclick="setVista('color','#ffffff')" title="Blanco" style="background:#ffffff"></button>
+    <button data-val="#ffd23f" onclick="setVista('color','#ffd23f')" title="Amarillo" style="background:#ffd23f"></button>
+    <button data-val="#8fd3ff" onclick="setVista('color','#8fd3ff')" title="Celeste" style="background:#8fd3ff"></button>
+    <button data-val="#8fe0a0" onclick="setVista('color','#8fe0a0')" title="Verde" style="background:#8fe0a0"></button>
+    <button data-val="#ff9d5c" onclick="setVista('color','#ff9d5c')" title="Naranja" style="background:#ff9d5c"></button>
+  </div>
+  <div class="aj-lbl">Grosor de acordes</div>
+  <div class="seg" id="seg-grosor"><button data-val="fino" onclick="setVista('grosor','fino')">Fino</button><button data-val="normal" onclick="setVista('grosor','normal')">Normal</button><button data-val="grueso" onclick="setVista('grosor','grueso')">Grueso</button></div>
+  <div class="aj-lbl">Color de acento (interfaz)</div>
+  <div class="seg colores" id="seg-acento">
+    <button data-val="" onclick="setAcento('')" title="Por defecto" style="background:#C9A96E"></button>
+    <button data-val="#5B8DEF" onclick="setAcento('#5B8DEF')" title="Azul" style="background:#5B8DEF"></button>
+    <button data-val="#3FB950" onclick="setAcento('#3FB950')" title="Verde" style="background:#3FB950"></button>
+    <button data-val="#A371F7" onclick="setAcento('#A371F7')" title="Morado" style="background:#A371F7"></button>
+    <button data-val="#E5534B" onclick="setAcento('#E5534B')" title="Rojo" style="background:#E5534B"></button>
+    <button data-val="#2DB7A3" onclick="setAcento('#2DB7A3')" title="Turquesa" style="background:#2DB7A3"></button>
+    <button data-val="#FFFFFF" onclick="setAcento('#FFFFFF')" title="Blanco" style="background:#FFFFFF"></button>
+    <input type="color" id="acento-custom-v" title="Color personalizado" onchange="setAcento(this.value)">
   </div>
 </div>
 
@@ -225,6 +268,23 @@ function htmlBotonesTamano(){
 function abrirAjustes(){ refrescarBotonesTamano(); document.getElementById('bg-ajustes').classList.add('open'); document.getElementById('sheet-ajustes').classList.add('open'); }
 function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
 aplicarTamano();  // aplica el nivel guardado al cargar
+// ---- Ajustes de vista (tema / mostrar / color / grosor / acento) ----
+var VISTA={tema:'oscuro',modo:'ambos',color:'',grosor:'normal'};
+function marcarV(id,val){ var s=document.getElementById(id); if(!s)return; s.querySelectorAll('button').forEach(function(b){ b.classList.toggle('active', b.dataset.val===val); }); }
+function aplicarVista(){
+  document.body.classList.toggle('claro', VISTA.tema==='claro');
+  document.body.classList.toggle('solo-acordes', VISTA.modo==='acordes');
+  document.body.classList.toggle('solo-letra', VISTA.modo==='letra');
+  if(VISTA.color){ document.body.style.setProperty('--chord-color', VISTA.color); } else { document.body.style.removeProperty('--chord-color'); }
+  document.body.dataset.grosor=VISTA.grosor;
+  marcarV('seg-tema',VISTA.tema); marcarV('seg-modo',VISTA.modo); marcarV('seg-color',VISTA.color); marcarV('seg-grosor',VISTA.grosor);
+}
+function cargarVista(){ try{ VISTA.tema=localStorage.getItem('charts_tema')||'oscuro'; VISTA.modo=localStorage.getItem('charts_modo')||'ambos'; VISTA.color=localStorage.getItem('charts_color')||''; VISTA.grosor=localStorage.getItem('charts_grosor')||'normal'; if(['fino','normal','grueso'].indexOf(VISTA.grosor)<0)VISTA.grosor='normal'; }catch(e){} aplicarVista(); }
+function setVista(clave,val){ VISTA[clave]=val; try{localStorage.setItem('charts_'+clave,val);}catch(e){} aplicarVista(); }
+function hexRgbaV(hex,a){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return 'rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+','+a+')'; }
+function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}catch(e){} var d=document.documentElement.style; if(c){ d.setProperty('--accent',c); d.setProperty('--accent-soft',hexRgbaV(c,0.16)); } else { d.removeProperty('--accent'); d.removeProperty('--accent-soft'); } marcarV('seg-acento',c||''); var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; } }
+function setAcento(val){ try{ if(val)localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} aplicarAcento(); }
+cargarVista(); aplicarAcento();
 
 // ───── Renderizado de cuerpo de sección (acordes + letras) ─────
 function renderLines(lines){
