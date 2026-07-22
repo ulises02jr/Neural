@@ -1222,12 +1222,12 @@ struct RepertoirePicker : public juce::Component
 
 struct StoragePanel : public juce::Component
 {
-    juce::TextButton freeBtn, clearBtn, autoBtn, capMinus, capPlus, closeBtn;
+    juce::TextButton freeBtn, autoBtn, capMinus, capPlus, closeBtn;
     juce::int64 total = 0, unused = 0;
     bool autoClean = false;
     int capGB = 0;                 // 0 = sin límite
     juce::Rectangle<int> capLblBounds, capValBounds, autoHdrBounds, autoDescBounds;
-    std::function<void()> onFreeUnused, onClearAll;
+    std::function<void()> onFreeUnused;
     std::function<void (bool)> onAutoClean;
     std::function<void (int)> onCap;
 
@@ -1239,10 +1239,6 @@ struct StoragePanel : public juce::Component
         st (freeBtn, 0xff2a2418, 0xffC9A96E);
         freeBtn.onClick = [this] { if (onFreeUnused) onFreeUnused(); };
         addAndMakeVisible (freeBtn);
-        st (clearBtn, 0xff2a1414, 0xffe05555);
-        clearBtn.setButtonText (juce::String::fromUTF8 ("Borrar todo el cach\xc3\xa9"));
-        clearBtn.onClick = [this] { if (onClearAll) onClearAll(); };
-        addAndMakeVisible (clearBtn);
         st (autoBtn, 0xff1f1f1f, 0xfff2f2f2);
         autoBtn.onClick = [this] { if (onAutoClean) onAutoClean (! autoClean); };
         addAndMakeVisible (autoBtn);
@@ -1272,7 +1268,7 @@ struct StoragePanel : public juce::Component
         repaint();
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (440, 500); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (440, 446); }
 
     void paint (juce::Graphics& g) override
     {
@@ -1310,9 +1306,8 @@ struct StoragePanel : public juce::Component
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
         auto b = p.reduced (24);
         b.removeFromTop (52 + 26 + 22 + 22 + 16);      // título + stats
-        const int bh = 44, gap = 10;
-        freeBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
-        clearBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (20);
+        const int bh = 44;
+        freeBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (20);
         autoHdrBounds  = b.removeFromTop (18); b.removeFromTop (2);
         autoDescBounds = b.removeFromTop (18); b.removeFromTop (6);
         // fila: [descripción del toggle | botón Activada/Desactivada]
@@ -2129,7 +2124,6 @@ public:
 
         loadStorageCfg();
         storagePanel.onFreeUnused = [this] { deleteUnusedCache(); };
-        storagePanel.onClearAll   = [this] { clearAllCache(); };
         storagePanel.onAutoClean  = [this] (bool on) { cacheAutoClean = on; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); if (on) { deleteUnusedCache(); enforceCap(); } };
         storagePanel.onCap        = [this] (int gb) { cacheCapGB = gb; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); enforceCap(); refreshStorageStats(); };
         addChildComponent (storagePanel);
@@ -3514,31 +3508,29 @@ private:
             sp->refreshStorageStats();
         });
     }
-    void clearAllCache()
-    {
-        const auto keep = activeCacheNames();   // nunca el repertorio activo
-        for (auto& f : cacheFolders())
-            if (! keep.contains (f.getFileName())) f.deleteRecursively();
-        refreshStorageStats();
-    }
-    void enforceCap()
+    void enforceCap()   // solo evita huérfanos: NUNCA borra audio que esté en algún repertorio (offline)
     {
         if (cacheCapGB <= 0) return;
-        const juce::int64 cap = (juce::int64) cacheCapGB * 1073741824LL;
-        const auto keep = activeCacheNames();
-        std::vector<juce::File> fs;
-        juce::int64 total = 0;
-        for (auto& f : cacheFolders()) { total += npFolderSize (f); fs.push_back (f); }
-        if (total <= cap) return;
-        std::sort (fs.begin(), fs.end(), [] (const juce::File& a, const juce::File& b)
-                   { return a.getLastModificationTime() < b.getLastModificationTime(); });
-        for (auto& f : fs)
+        juce::Component::SafePointer<MainComponent> sp (this);
+        withUsedFolders ([sp] (juce::StringArray used)
         {
-            if (total <= cap) break;
-            if (keep.contains (f.getFileName())) continue;
-            total -= npFolderSize (f);
-            f.deleteRecursively();
-        }
+            if (sp == nullptr || sp->cacheCapGB <= 0) return;
+            const juce::int64 cap = (juce::int64) sp->cacheCapGB * 1073741824LL;
+            std::vector<juce::File> fs;
+            juce::int64 total = 0;
+            for (auto& f : sp->cacheFolders()) { total += npFolderSize (f); fs.push_back (f); }
+            if (total <= cap) return;
+            std::sort (fs.begin(), fs.end(), [] (const juce::File& a, const juce::File& b)
+                       { return a.getLastModificationTime() < b.getLastModificationTime(); });
+            for (auto& f : fs)
+            {
+                if (total <= cap) break;
+                if (used.contains (f.getFileName())) continue;   // protegido: pertenece a un repertorio
+                total -= npFolderSize (f);
+                f.deleteRecursively();
+            }
+            sp->refreshStorageStats();
+        });
     }
 
     void setPickerDlPct (const juce::String& id, int pct)
@@ -3715,8 +3707,7 @@ private:
                 e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         for (auto* c : songCards) c->dlProgress = -1.0f;
         for (int i = 0; i < songReady.size(); ++i) songReady.set (i, true);
-        if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); }   // limpieza auto (1 vez)
-        enforceCap();                                                                                  // tope de tamaño
+        if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); enforceCap(); }   // limpieza auto (1 vez, al abrir)
         if (repertoire.isEmpty()) { clearSong(); return; }
         if (currentSong < 0) loadSong (0);
         else repaint (mapBounds);
