@@ -34,6 +34,20 @@ static juce::File npAppDir()
     return juce::File::getSpecialLocation (juce::File::userHomeDirectory)
              .getChildFile ("Library").getChildFile ("Application Support").getChildFile ("NeuralPlay");
 }
+static juce::File npCacheDir() { return npAppDir().getChildFile ("cache"); }
+static juce::int64 npFolderSize (const juce::File& f)
+{
+    juce::int64 s = 0;
+    for (auto& c : f.findChildFiles (juce::File::findFiles, true)) s += c.getSize();
+    return s;
+}
+static juce::String npFmtBytes (juce::int64 b)
+{
+    if (b >= 1073741824LL) return juce::String (b / 1073741824.0, 2) + " GB";
+    if (b >= 1048576LL)    return juce::String (b / 1048576.0, 1) + " MB";
+    if (b >= 1024LL)       return juce::String ((double) (b / 1024LL), 0) + " KB";
+    return juce::String (b) + " B";
+}
 static juce::String httpGet (const juce::String& url, const juce::String& token)
 {
     juce::URL u (url);
@@ -1030,6 +1044,7 @@ struct RepertoirePicker : public juce::Component
     std::function<void (juce::String)> onLoad;
     std::function<void (juce::String)> onSave;
     std::function<void (juce::String)> onDelete;
+    std::function<void (juce::String)> onDownload;
     std::function<void()> onNew;
     juce::TextButton newBtn, loadBtn, closeBtn;
 
@@ -1078,7 +1093,7 @@ struct RepertoirePicker : public juce::Component
         auto r = rowBounds (i);
         const int bw = 84, bh = 24, gap = 8;
         int x = r.getX() + 4, y = r.getBottom() + 4;
-        const int n = canSave (i) ? 2 : 1;
+        const int n = (canSave (i) ? 1 : 0) + 2;   // [Guardar?] Descargar, Borrar
         for (int k = 0; k < n; ++k) { out.add ({ x, y, bw, bh }); x += bw + gap; }
         return out;
     }
@@ -1139,6 +1154,7 @@ struct RepertoirePicker : public juce::Component
             auto br = belowRects (menuRow);
             int k = 0;
             if (save) drawBtn (br[k++], juce::Colour (0xff17361f), juce::Colour (0xff5CD98A), "Guardar");
+            drawBtn (br[k++], juce::Colour (0xff12203c), juce::Colour (0xff7Cc6ff), "Descargar");
             drawBtn (br[k], juce::Colour (0xff2a1414), juce::Colour (0xffe05555), "Borrar");
         }
     }
@@ -1167,7 +1183,8 @@ struct RepertoirePicker : public juce::Component
             const auto id = items[menuRow].id;
             auto br = belowRects (menuRow);
             int k = 0;
-            if (save && br[k++].contains (e.getPosition())) { savedAt = juce::Time::getMillisecondCounter(); if (onSave) onSave (id); menuRow = -1; scheduleFlash(); repaint(); return; }
+            if (save) { if (br[k].contains (e.getPosition())) { savedAt = juce::Time::getMillisecondCounter(); if (onSave) onSave (id); menuRow = -1; scheduleFlash(); repaint(); return; } ++k; }
+            if (k < br.size() && br[k].contains (e.getPosition())) { menuRow = -1; if (onDownload) onDownload (id); repaint(); return; } ++k;
             if (k < br.size() && br[k].contains (e.getPosition())) { menuRow = -1; if (onDelete) onDelete (id); return; }
         }
         for (int i = 0; i < items.size(); ++i)   // tocar una fila la selecciona y abre su menú
@@ -1187,14 +1204,108 @@ struct RepertoirePicker : public juce::Component
     }
 };
 
+struct StoragePanel : public juce::Component
+{
+    juce::TextButton freeBtn, clearBtn, autoBtn, capMinus, capPlus, closeBtn;
+    juce::int64 total = 0, unused = 0;
+    bool autoClean = false;
+    int capGB = 0;                 // 0 = sin límite
+    juce::Rectangle<int> capLblBounds;
+    std::function<void()> onFreeUnused, onClearAll;
+    std::function<void (bool)> onAutoClean;
+    std::function<void (int)> onCap;
+
+    StoragePanel()
+    {
+        auto st = [] (juce::TextButton& b, juce::uint32 bg, juce::uint32 tx)
+        { b.setColour (juce::TextButton::buttonColourId, juce::Colour (bg));
+          b.setColour (juce::TextButton::textColourOffId, juce::Colour (tx)); };
+        st (freeBtn, 0xff2a2418, 0xffC9A96E);
+        freeBtn.onClick = [this] { if (onFreeUnused) onFreeUnused(); };
+        addAndMakeVisible (freeBtn);
+        st (clearBtn, 0xff2a1414, 0xffe05555);
+        clearBtn.setButtonText (juce::String::fromUTF8 ("Borrar todo el cach\xc3\xa9"));
+        clearBtn.onClick = [this] { if (onClearAll) onClearAll(); };
+        addAndMakeVisible (clearBtn);
+        st (autoBtn, 0xff1f1f1f, 0xfff2f2f2);
+        autoBtn.onClick = [this] { if (onAutoClean) onAutoClean (! autoClean); };
+        addAndMakeVisible (autoBtn);
+        st (capMinus, 0xff1f1f1f, 0xfff2f2f2); capMinus.setButtonText ("-");
+        capMinus.onClick = [this] { if (onCap) onCap (juce::jmax (0, capGB - 5)); };
+        addAndMakeVisible (capMinus);
+        st (capPlus, 0xff1f1f1f, 0xfff2f2f2); capPlus.setButtonText ("+");
+        capPlus.onClick = [this] { if (onCap) onCap (juce::jmin (500, capGB + 5)); };
+        addAndMakeVisible (capPlus);
+        st (closeBtn, 0xff1f1f1f, 0xfff2f2f2); closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
+        closeBtn.onClick = [this] { setVisible (false); };
+        addAndMakeVisible (closeBtn);
+        setAlwaysOnTop (true);
+        refresh();
+    }
+
+    void setStats (juce::int64 t, juce::int64 u, bool aut, int cap)
+    { total = t; unused = u; autoClean = aut; capGB = cap; refresh(); }
+
+    void refresh()
+    {
+        freeBtn.setButtonText (juce::String::fromUTF8 ("Liberar sin usar  (") + npFmtBytes (unused) + ")");
+        autoBtn.setButtonText (juce::String::fromUTF8 ("Auto-limpiar lo que no uso:  ") + juce::String (autoClean ? "S\xc3\xad" : "No"));
+        autoBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (autoClean ? 0xff17361f : 0xff1f1f1f));
+        freeBtn.setEnabled (unused > 0);
+        repaint();
+    }
+
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (430, 384); }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xC0000000));
+        auto pf = panelBounds().toFloat();
+        g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (pf, 14.0f);
+        g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (pf, 14.0f, 1.2f);
+        auto in = panelBounds().reduced (24, 0);
+        g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
+        g.drawText (juce::String::fromUTF8 ("Almacenamiento"), in.removeFromTop (52), juce::Justification::centredLeft);
+        g.setFont (15.0f); g.setColour (juce::Colour (0xffe8e8e8));
+        g.drawText (juce::String::fromUTF8 ("Total en cach\xc3\xa9:   ") + npFmtBytes (total), in.removeFromTop (26), juce::Justification::centredLeft);
+        g.setFont (13.5f); g.setColour (juce::Colour (0xffa3a3a3));
+        g.drawText (juce::String::fromUTF8 ("En uso por tus repertorios:   ") + npFmtBytes (total - unused), in.removeFromTop (22), juce::Justification::centredLeft);
+        g.drawText (juce::String::fromUTF8 ("Sin usar (se puede liberar):   ") + npFmtBytes (unused), in.removeFromTop (22), juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xfff2f2f2)); g.setFont (13.5f);
+        g.drawText (juce::String::fromUTF8 ("L\xc3\xadmite:   ") + (capGB > 0 ? juce::String (capGB) + " GB" : juce::String::fromUTF8 ("sin l\xc3\xadmite")),
+                    capLblBounds, juce::Justification::centredLeft);
+    }
+
+    void resized() override
+    {
+        auto p = panelBounds();
+        closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
+        auto b = p.reduced (24); b.removeFromTop (52 + 26 + 22 + 22 + 12);
+        const int bh = 44, gap = 10;
+        freeBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
+        clearBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
+        autoBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
+        auto cr = b.removeFromTop (bh);
+        capPlus.setBounds  (cr.removeFromRight (44));
+        cr.removeFromRight (6);
+        capMinus.setBounds (cr.removeFromRight (44));
+        cr.removeFromRight (10);
+        capLblBounds = cr;
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    { if (! panelBounds().contains (e.getPosition())) setVisible (false); }
+};
+
 struct SettingsPanel : public juce::Component
 {
-    juce::TextButton syncBtn, cfgBtn, refreshBtn, closeBtn;
+    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, closeBtn;
     bool syncOn = false, linked = false;
     juce::Rectangle<int> statusBounds;
     std::function<void (bool)> onSync;
     std::function<void()> onConfig;
     std::function<void()> onRefresh;
+    std::function<void()> onStorage;
 
     SettingsPanel()
     {
@@ -1212,6 +1323,12 @@ struct SettingsPanel : public juce::Component
         refreshBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         refreshBtn.onClick = [this] { if (onRefresh) onRefresh(); };
         addAndMakeVisible (refreshBtn);
+
+        storeBtn.setButtonText (juce::String::fromUTF8 ("Almacenamiento"));
+        storeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        storeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        storeBtn.onClick = [this] { if (onStorage) onStorage(); };
+        addAndMakeVisible (storeBtn);
 
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
@@ -1234,7 +1351,7 @@ struct SettingsPanel : public juce::Component
         repaint();
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (360, 312); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (360, 372); }
 
     void paint (juce::Graphics& g) override
     {
@@ -1280,6 +1397,7 @@ struct SettingsPanel : public juce::Component
         const int bh = 46, gap = 12;
         syncBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
         cfgBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
+        storeBtn.setBounds   (b.removeFromTop (bh)); b.removeFromTop (gap);
         refreshBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
         statusBounds = b.removeFromTop (22);
     }
@@ -1957,6 +2075,7 @@ public:
         repPicker.onNew  = [this] { createSetlist(); };
         repPicker.onDelete = [this] (juce::String id) { confirmDeleteSetlist (id); };
         repPicker.onSave = [this] (juce::String id) { saveRepertoireMixes (id); };
+        repPicker.onDownload = [this] (juce::String id) { downloadRepertoireOffline (id); };
         addChildComponent (repPicker);
 
         settingsBtn.onClick = [this]
@@ -1969,7 +2088,15 @@ public:
         settingsPanel.onSync    = [this] (bool on) { setSync (on); };
         settingsPanel.onConfig  = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
         settingsPanel.onRefresh = [this] { settingsPanel.setVisible (false); reloadCurrent(); };
+        settingsPanel.onStorage = [this] { settingsPanel.setVisible (false); openStorage(); };
         addChildComponent (settingsPanel);
+
+        loadStorageCfg();
+        storagePanel.onFreeUnused = [this] { deleteUnusedCache(); };
+        storagePanel.onClearAll   = [this] { clearAllCache(); };
+        storagePanel.onAutoClean  = [this] (bool on) { cacheAutoClean = on; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); if (on) { deleteUnusedCache(); enforceCap(); } };
+        storagePanel.onCap        = [this] (int gb) { cacheCapGB = gb; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); enforceCap(); refreshStorageStats(); };
+        addChildComponent (storagePanel);
 
         audioCfg.onDevice = [this] (const juce::String& d) { applyAudioDevice (d); };
         audioCfg.onRoute  = [this] (int f, int m, int b)   { setFamRoute (f, m, b); };
@@ -2617,6 +2744,7 @@ public:
         splash.setBounds (getLocalBounds());
         repPicker.setBounds (getLocalBounds());
         settingsPanel.setBounds (getLocalBounds());
+        storagePanel.setBounds (getLocalBounds());
         audioCfg.setBounds (getLocalBounds());
         repEdit.setBounds (getLocalBounds());
     }
@@ -3268,6 +3396,130 @@ private:
         });
     }
 
+    // ───────── Almacenamiento / caché ─────────
+    void loadStorageCfg()
+    {
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("storage.json"));
+        cacheAutoClean = (bool) v.getProperty ("auto", false);
+        cacheCapGB = juce::jlimit (0, 500, (int) v.getProperty ("capGB", 0));
+    }
+    void saveStorageCfg()
+    {
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        o->setProperty ("auto", cacheAutoClean);
+        o->setProperty ("capGB", cacheCapGB);
+        npAppDir().getChildFile ("storage.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
+    }
+    juce::Array<juce::File> cacheFolders() const
+    {
+        juce::Array<juce::File> out;
+        for (auto& f : npCacheDir().findChildFiles (juce::File::findDirectories, false))
+            if (f.getFileName().startsWith ("song_")) out.add (f);
+        return out;
+    }
+    juce::StringArray activeCacheNames() const
+    {
+        juce::StringArray keep;
+        for (auto& e : repertoire) keep.addIfNotAlreadyThere (e.folder.getFileName());
+        return keep;
+    }
+    void withUsedFolders (std::function<void (juce::StringArray)> cb)
+    {
+        const auto url = serverUrl, tok = serverToken;
+        const juce::StringArray activos = activeCacheNames();
+        juce::Thread::launch ([url, tok, activos, cb]
+        {
+            juce::StringArray used = activos;
+            auto v = juce::JSON::parse (httpGet (url + "/api/live/setlists", tok));
+            if (auto* sls = v.getProperty ("setlists", juce::var()).getArray())
+                for (auto& s : *sls)
+                    if (auto* cs = s.getProperty ("canciones", juce::var()).getArray())
+                        for (auto& c : *cs)
+                        {
+                            const int id = (int) c.getProperty ("id", 0);
+                            const int tono = (int) c.getProperty ("tono_semitonos", 0);
+                            used.addIfNotAlreadyThere ("song_" + juce::String (id) + "_t" + juce::String (tono));
+                        }
+            juce::MessageManager::callAsync ([cb, used] { cb (used); });
+        });
+    }
+    void openStorage()
+    {
+        storagePanel.setBounds (getLocalBounds());
+        storagePanel.setStats (0, 0, cacheAutoClean, cacheCapGB);
+        storagePanel.setVisible (true);
+        storagePanel.toFront (true);
+        refreshStorageStats();
+    }
+    void refreshStorageStats()
+    {
+        juce::Component::SafePointer<MainComponent> sp (this);
+        withUsedFolders ([sp] (juce::StringArray used)
+        {
+            if (sp == nullptr) return;
+            juce::int64 total = 0, unused = 0;
+            for (auto& f : sp->cacheFolders())
+            {
+                const auto sz = npFolderSize (f);
+                total += sz;
+                if (! used.contains (f.getFileName())) unused += sz;
+            }
+            sp->storagePanel.setStats (total, unused, sp->cacheAutoClean, sp->cacheCapGB);
+        });
+    }
+    void deleteUnusedCache()
+    {
+        juce::Component::SafePointer<MainComponent> sp (this);
+        withUsedFolders ([sp] (juce::StringArray used)
+        {
+            if (sp == nullptr) return;
+            for (auto& f : sp->cacheFolders())
+                if (! used.contains (f.getFileName())) f.deleteRecursively();
+            sp->refreshStorageStats();
+        });
+    }
+    void clearAllCache()
+    {
+        const auto keep = activeCacheNames();   // nunca el repertorio activo
+        for (auto& f : cacheFolders())
+            if (! keep.contains (f.getFileName())) f.deleteRecursively();
+        refreshStorageStats();
+    }
+    void enforceCap()
+    {
+        if (cacheCapGB <= 0) return;
+        const juce::int64 cap = (juce::int64) cacheCapGB * 1073741824LL;
+        const auto keep = activeCacheNames();
+        std::vector<juce::File> fs;
+        juce::int64 total = 0;
+        for (auto& f : cacheFolders()) { total += npFolderSize (f); fs.push_back (f); }
+        if (total <= cap) return;
+        std::sort (fs.begin(), fs.end(), [] (const juce::File& a, const juce::File& b)
+                   { return a.getLastModificationTime() < b.getLastModificationTime(); });
+        for (auto& f : fs)
+        {
+            if (total <= cap) break;
+            if (keep.contains (f.getFileName())) continue;
+            total -= npFolderSize (f);
+            f.deleteRecursively();
+        }
+    }
+
+    void downloadRepertoireOffline (juce::String id)   // baja TODO un repertorio al caché, sin cambiar la vista
+    {
+        if (serverToken.isEmpty()) return;
+        if (offlineLoader && offlineLoader->isThreadRunning())
+        { connStatus.setText (juce::String::fromUTF8 ("Ya hay una descarga en curso\xe2\x80\xa6"), juce::dontSendNotification); return; }
+        offlineLoader = std::make_unique<RepertoireLoader> (serverUrl, serverToken, npCacheDir());
+        offlineLoader->wantedId = id;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        offlineLoader->onStatus   = [sp] (juce::String s) { if (sp) sp->connStatus.setText (s, juce::dontSendNotification); };
+        offlineLoader->onProgress = [sp] (int i, double) { if (sp) sp->connStatus.setText (juce::String::fromUTF8 ("Descargando para offline\xe2\x80\xa6 canci\xc3\xb3n ") + juce::String (i + 1), juce::dontSendNotification); };
+        offlineLoader->onDone     = [sp] (juce::Array<SongEntry>) { if (sp) { sp->connStatus.setText (juce::String::fromUTF8 ("Repertorio descargado \xe2\x9c\x93"), juce::dontSendNotification); sp->refreshStorageStats(); } };
+        offlineLoader->startThread();
+        connStatus.setText (juce::String::fromUTF8 ("Descargando repertorio para offline\xe2\x80\xa6"), juce::dontSendNotification);
+    }
+
     void startLoadId (juce::String setlistId)
     {
         if (serverToken.isEmpty()) { connStatus.setText ("Falta servidor/token", juce::dontSendNotification); return; }
@@ -3388,6 +3640,8 @@ private:
                 e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         for (auto* c : songCards) c->dlProgress = -1.0f;
         for (int i = 0; i < songReady.size(); ++i) songReady.set (i, true);
+        if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); }   // limpieza auto (1 vez)
+        enforceCap();                                                                                  // tope de tamaño
         if (repertoire.isEmpty()) { clearSong(); return; }
         if (currentSong < 0) loadSong (0);
         else repaint (mapBounds);
@@ -4104,6 +4358,7 @@ private:
     juce::Array<bool> songReady;      // audio de la canción ya descargado
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
+    std::unique_ptr<RepertoireLoader> offlineLoader;   // descarga de un repertorio para offline (no cambia la UI)
 
     juce::AudioFormatManager formatManager;
     juce::AudioThumbnailCache thumbCache { 1 };
@@ -4180,6 +4435,10 @@ private:
     MidiPanel midiPanel;
     RepertoirePicker repPicker;
     SettingsPanel settingsPanel;
+    StoragePanel storagePanel;
+    bool cacheAutoClean = false;
+    int  cacheCapGB = 0;
+    bool didStartupClean = false;
     juce::String lastSetlistId;   // setlist cargado (para "Actualizar")
     juce::String currentSetlistName;
     int loadGen = 0;                 // generación de carga: descarta callbacks de cargas canceladas
