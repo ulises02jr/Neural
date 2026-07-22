@@ -241,15 +241,17 @@
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0">
         <button type="button" id="sx-play" onclick="sxPlay()" style="background:#2E6BE6;color:#fff;border:none;border-radius:50%;width:42px;height:42px;font-size:15px;cursor:pointer">&#9654;</button>
         <div style="display:flex">
-          <button type="button" id="sx-guia" onclick="sxSetSrc('guia',1)" style="background:#12203c;color:#fff;border:1px solid #2E6BE6;border-radius:8px 0 0 8px;padding:9px 14px;font-size:13px;cursor:pointer">Guía</button>
-          <button type="button" id="sx-mezcla" onclick="sxSetSrc('mezcla',1)" style="background:#0f0f0f;color:var(--muted);border:1px solid var(--line);border-left:none;border-radius:0 8px 8px 0;padding:9px 14px;font-size:13px;cursor:pointer">Mezcla</button>
+          <button type="button" id="sx-ambas" onclick="sxSetSrc('ambas',1)" style="background:#12203c;color:#fff;border:1px solid #2E6BE6;border-radius:8px 0 0 8px;padding:9px 12px;font-size:13px;cursor:pointer">Ambas</button>
+          <button type="button" id="sx-guia" onclick="sxSetSrc('guia',1)" style="background:#0f0f0f;color:var(--muted);border:1px solid var(--line);border-left:none;padding:9px 12px;font-size:13px;cursor:pointer">Guía</button>
+          <button type="button" id="sx-mezcla" onclick="sxSetSrc('mezcla',1)" style="background:#0f0f0f;color:var(--muted);border:1px solid var(--line);border-left:none;border-radius:0 8px 8px 0;padding:9px 12px;font-size:13px;cursor:pointer">Mezcla</button>
         </div>
         <button type="button" id="sx-anbtn" onclick="sxAnalizar()" style="background:#0f0f0f;color:#cfe0ff;border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer">Analizar click</button>
         <span id="sx-time" style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--muted)">0:00 / 0:00</span>
         <span id="sx-info" style="font-size:12px;color:var(--muted)"></span>
       </div>
 
-      <div style="overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#070707"><canvas id="sx-wave" width="700" height="150" style="display:block;height:150px;cursor:pointer"></canvas></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:12px;color:var(--muted)">Zoom</span><button type="button" onclick="sxZoom(-1)" style="background:#0f0f0f;color:#fff;border:1px solid var(--line);border-radius:6px;width:30px;height:26px;cursor:pointer">&#8722;</button><button type="button" onclick="sxZoom(1)" style="background:#0f0f0f;color:#fff;border:1px solid var(--line);border-radius:6px;width:30px;height:26px;cursor:pointer">+</button></div>
+      <div id="sx-scroller" style="overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#070707"><canvas id="sx-wave" width="700" height="150" style="display:block;height:150px;cursor:pointer"></canvas></div>
 
       <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
         <button type="button" onclick="sxMarcar()" style="background:#14301a;color:#8fe0a0;border:1px solid #2a5a35;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer">+ Marcar sección aquí</button>
@@ -797,7 +799,7 @@ function autosaveTiempos(){
   var CSRF=form.querySelector('input[name=_csrf]').value;
   var au=document.getElementById('sx-audio');
   var cv=document.getElementById('sx-wave'), ctx=cv.getContext('2d');
-  var DET=null, curSrc='guia', SX=[], loaded=false, wantPlay=false;
+  var DET=null, curSrc='ambas', SX=[], loaded=false, wantPlay=false, ZOOM=16;
   function z(n,w){n=''+n;while(n.length<w)n='0'+n;return n;}
   function fmt(s){if(!s||s<0)s=0;var t=Math.floor(s),ms=Math.round((s-t)*1000);if(ms>=1000){t++;ms-=1000;}return z(Math.floor(t/3600),2)+':'+z(Math.floor((t%3600)/60),2)+':'+z(t%60,2)+':'+z(ms,3);}
   function mmss(s){if(!s||s<0)s=0;var t=Math.floor(s);return Math.floor(t/60)+':'+z(t%60,2);}
@@ -841,8 +843,7 @@ function autosaveTiempos(){
   function bcss(on,left){ return on?('background:#12203c;color:#fff;border:1px solid #2E6BE6;'+(left?'border-radius:8px 0 0 8px;':'border-left:none;border-radius:0 8px 8px 0;')+'padding:9px 14px;font-size:13px;cursor:pointer'):('background:#0f0f0f;color:var(--muted);border:1px solid var(--line);'+(left?'border-radius:8px 0 0 8px;':'border-left:none;border-radius:0 8px 8px 0;')+'padding:9px 14px;font-size:13px;cursor:pointer'); }
   window.sxSetSrc=function(tipo,forcePlay){
     curSrc=tipo;
-    document.getElementById('sx-guia').style.cssText=bcss(tipo==='guia',1);
-    document.getElementById('sx-mezcla').style.cssText=bcss(tipo==='mezcla',0);
+    ['ambas','guia','mezcla'].forEach(function(k){ var el=document.getElementById('sx-'+k); if(!el)return; var on=(tipo===k); el.style.background=on?'#12203c':'#0f0f0f'; el.style.color=on?'#fff':'var(--muted)'; el.style.borderColor=on?'#2E6BE6':'var(--line)'; });
     if(forcePlay) wantPlay=true;
     var wasT=au.currentTime||0;
     document.getElementById('sx-info').textContent= tipo==='mezcla'?'Preparando la mezcla (puede tardar unos segundos)...':'Preparando la guia...';
@@ -861,16 +862,17 @@ function autosaveTiempos(){
   au.addEventListener('timeupdate',function(){ document.getElementById('sx-time').textContent=mmss(au.currentTime)+' / '+mmss(dur()); draw(); });
   cv.addEventListener('click',function(e){ var D=dur(); if(D<=0)return; var rect=cv.getBoundingClientRect(); var t=(e.clientX-rect.left)/cv.width*D; if(loaded){ try{au.currentTime=t;}catch(err){} } draw(); });
   function draw(){
-    var D=dur(); var W=Math.max(700,Math.round((D||60)*8)),H=150,mid=75;
+    var D=dur(); var W=Math.max(700,Math.round((D||60)*ZOOM)),H=150,mid=75;
     if(cv.width!==W){ cv.width=W; cv.style.width=W+'px'; }
     ctx.clearRect(0,0,W,H);
     if(DET&&DET.beats){ ctx.strokeStyle='rgba(120,140,180,0.22)';ctx.lineWidth=1; DET.beats.forEach(function(t){var x=t/DET.dur*W;ctx.beginPath();ctx.moveTo(x,H-14);ctx.lineTo(x,H);ctx.stroke();}); }
     if(DET&&DET.wave){ ctx.strokeStyle='#5b6b86';ctx.lineWidth=1;ctx.beginPath();var N=DET.wave.length;for(var i=0;i<N;i++){var x=i/N*W,a=DET.wave[i]*(mid-8);ctx.moveTo(x,mid-a);ctx.lineTo(x,mid+a);}ctx.stroke(); }
     else { ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,mid);ctx.lineTo(W,mid);ctx.stroke(); }
     if(D>0) SX.forEach(function(s,idx){ if(s.t==null)return; var x=s.t/D*W; ctx.strokeStyle='#2E6BE6';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H-14);ctx.stroke(); ctx.fillStyle='#2E6BE6';ctx.fillRect(x,0,18,14);ctx.fillStyle='#fff';ctx.font='10px sans-serif';ctx.fillText(idx+1,x+4,10); });
-    if(D>0&&loaded){ var px=(au.currentTime/D)*W; ctx.strokeStyle='#e05555';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,H);ctx.stroke(); }
+    if(D>0&&loaded){ var px=(au.currentTime/D)*W; ctx.strokeStyle='#e05555';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,H);ctx.stroke(); var sc=document.getElementById('sx-scroller'); if(sc&&!au.paused){ var vw=sc.clientWidth; if(px<sc.scrollLeft+50||px>sc.scrollLeft+vw-50){ sc.scrollLeft=Math.max(0,px-vw*0.5); } } }
   }
   function serial(){ return JSON.stringify(SX.map(function(s){return {nombre:s.nombre||'Seccion', t:s.t};})); }
+  window.sxZoom=function(d){ ZOOM=Math.max(6,Math.min(48,ZOOM+d*6)); draw(); };
   window.sxGuardar=function(auto){
     document.getElementById('sx-json').value=serial();
     if(auto){ var fd=new FormData(form); fd.append('autosave','1'); fetch(form.action,{method:'POST',body:fd}).then(function(){ var e=document.getElementById('sx-save'); e.textContent='Guardado'; e.style.opacity='1'; setTimeout(function(){e.style.opacity='0';},1200); }); }

@@ -1916,6 +1916,19 @@ def _asegurar_audio_admin(numero, tipo):
                     "amix=inputs=%d:normalize=0,alimiter=limit=0.95" % len(ins),
                     "-b:a", "128k", str(out)]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
+        elif tipo == "ambas":
+            g = _hallar_stem_familia(numero, "Guía")
+            ins = ([g] if g else []) + _stems_para_mezcla(numero)
+            if not ins:
+                return
+            cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y"]
+            for fpath in ins:
+                cmd += ["-i", str(fpath)]
+            pesos = " ".join((["1.6"] if g else []) + ["1"] * (len(ins) - (1 if g else 0)))
+            cmd += ["-filter_complex",
+                    "amix=inputs=%d:normalize=0:weights=%s,alimiter=limit=0.95" % (len(ins), pesos),
+                    "-b:a", "128k", str(out)]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
     except Exception as e:
         logging.error("audio_admin %s/%s: %s", numero, tipo, e)
     finally:
@@ -1928,11 +1941,13 @@ def _asegurar_audio_admin(numero, tipo):
 @app.route("/admin/pistas/<int:numero>/audio_prep/<tipo>", methods=["POST"])
 @login_required("admin")
 def admin_audio_prep(numero, tipo):
-    if tipo not in ("guia", "mezcla"):
+    if tipo not in ("guia", "mezcla", "ambas"):
         return jsonify({"ok": False, "error": "tipo"})
     if tipo == "guia" and _hallar_stem_familia(numero, "Guía") is None:
         return jsonify({"ok": False, "error": "sin_guia"})
     if tipo == "mezcla" and not _stems_para_mezcla(numero):
+        return jsonify({"ok": False, "error": "sin_stems"})
+    if tipo == "ambas" and _hallar_stem_familia(numero, "Guía") is None and not _stems_para_mezcla(numero):
         return jsonify({"ok": False, "error": "sin_stems"})
     out = _admin_audio_dir(numero) / (tipo + ".mp3")
     if out.exists():
@@ -1946,7 +1961,7 @@ def admin_audio_prep(numero, tipo):
 @app.route("/admin/pistas/<int:numero>/audio/<tipo>")
 @login_required("admin")
 def admin_audio(numero, tipo):
-    if tipo not in ("guia", "mezcla"):
+    if tipo not in ("guia", "mezcla", "ambas"):
         return ("no", 404)
     out = _admin_audio_dir(numero) / (tipo + ".mp3")
     if not out.exists():
