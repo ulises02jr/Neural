@@ -117,8 +117,8 @@
   <div class="tabs">
     <button class="tab" data-tab="info" onclick="tab('info')">Información de Canción</button>
     <button class="tab" data-tab="multitracks" onclick="tab('multitracks')">Tracks</button>
-    <button class="tab" data-tab="cifrado" onclick="tab('cifrado')">Cifrado</button>
     <button class="tab" data-tab="tiempos" onclick="tab('tiempos')">Time de Secciones</button>
+    <button class="tab" data-tab="cifrado" onclick="tab('cifrado')">Cifrado</button>
     <button class="tab" data-tab="transposicion" onclick="tab('transposicion')">Transposición</button>
     <button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>
     <button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>
@@ -237,13 +237,25 @@
     <div class="card">
       <h2>Time de Secciones</h2>
       <div class="hint">El tiempo va como <b>código de tiempo (SMPTE)</b> en formato <b>HH:MM:SS:mmm</b> (ej. 00:00:41:500), o simple <b>M:SS</b>. Los <b>:</b> se ponen solos al escribir. Dejá en blanco las secciones que no quieras marcar.</div>
+      <div id="det-modo" style="display:flex;gap:10px;margin:6px 0 14px">
+        <button type="button" id="dm-man" onclick="detModo(0)" style="flex:1;background:#12203c;border:1px solid #2E6BE6;color:#fff;border-radius:10px;padding:12px 10px;font-size:13px;cursor:pointer;text-align:left">Ingresar manualmente<span style="display:block;font-size:11px;color:#9db8ee;margin-top:3px">Escribis el tiempo de cada seccion.</span></button>
+        <button type="button" id="dm-det" onclick="detModo(1)" style="flex:1;background:#0f0f0f;border:1px solid var(--line);color:var(--muted);border-radius:10px;padding:12px 10px;font-size:13px;cursor:pointer;text-align:left">Detector Neural<span style="display:block;font-size:11px;color:#6a6a6a;margin-top:3px">Escucha el click y marcas con un clic.</span></button>
+      </div>
+      <div id="det-box" style="display:none;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+          <button type="button" id="det-btn" onclick="detAnalizar()" style="background:#12203c;color:#cfe0ff;border:1px solid #2E6BE6;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer">Analizar el click</button>
+          <span id="det-info" style="font-size:12px;color:var(--muted)">Presiona Analizar el click para detectar los beats y el tempo.</span>
+        </div>
+        <div style="overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#070707"><canvas id="det-wave" width="700" height="160" style="display:block;height:160px"></canvas></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6"><b style="color:#9db8ee">1.</b> Elegi una seccion en la tabla. &nbsp;<b style="color:#9db8ee">2.</b> Clic en la onda donde empieza (se pega al beat). &nbsp;<b style="color:#9db8ee">3.</b> Pasa sola a la siguiente. Al final, Guardar tiempos.</div>
+      </div>
       <form method="POST" action="{{ url_for('admin_secciones', numero=numero) }}" style="margin-top:14px" onsubmit="return validarTiempos(this)">
 <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="volver" value="editar">
         <table>
           <tr><th>#</th><th>Sección del chart</th><th>Tiempo de inicio</th></tr>
           {% for f in filas %}
-          <tr>
+          <tr data-i="{{ f.i }}">
             <td>{{ f.i + 1 }}</td>
             <td><div style="font-weight:700;font-size:14px">{{ f.tipo }}</div>{% if f.nota %}<div style="color:var(--muted);font-size:12px;margin-top:2px">{{ f.nota }}</div>{% endif %}</td>
             <td><input class="t" type="text" name="t_{{ f.i }}" value="{{ f.t }}" placeholder="00:00:00:000" inputmode="numeric"></td>
@@ -375,7 +387,7 @@
 </div>
 
 <script>
-const TABS = ['info','multitracks','cifrado','tiempos','transposicion','midi','letras','eliminar'];
+const TABS = ['info','multitracks','tiempos','cifrado','transposicion','midi','letras','eliminar'];
 let tabActual = 'multitracks';
 function uiGenerando(form){ var b=form.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='Generando…'; } return true; }
 document.addEventListener('DOMContentLoaded', function(){
@@ -727,6 +739,53 @@ function autosaveTiempos(){
   if(tf){ tf.addEventListener('focusout', function(e){ var t=e.target; if(t&&t.classList&&t.classList.contains('t')){ clearTimeout(_tmpTimer); _tmpTimer=setTimeout(autosaveTiempos, 300); } }); }
 })();
 (function(){ if(CIFRADO && CIFRADO.length){ CIFRADO.forEach(seccionCif); } else { seccionCif({}); } })();
+</script>
+<script>
+(function(){
+  var NUMx = {{ numero }};
+  var cv=document.getElementById('det-wave'); if(!cv) return;
+  var csrfEl=document.querySelector('#p-tiempos input[name=_csrf]');
+  var CSRFx=csrfEl?csrfEl.value:'';
+  var ctx=cv.getContext('2d'); var D=null, sel=-1;
+  function z(n,w){n=''+n;while(n.length<w)n='0'+n;return n;}
+  function fmt(s){if(s<0)s=0;var t=Math.floor(s),ms=Math.round((s-t)*1000);if(ms>=1000){t++;ms-=1000;}return z(Math.floor(t/3600),2)+':'+z(Math.floor((t%3600)/60),2)+':'+z(t%60,2)+':'+z(ms,3);}
+  function pT(txt){if(!txt)return null;txt=txt.trim().replace(',','.');var p=txt.split(':').map(parseFloat);if(p.some(isNaN))return null;if(p.length==4)return p[0]*3600+p[1]*60+p[2]+p[3]/1000;if(p.length==3)return p[0]*3600+p[1]*60+p[2];if(p.length==2)return p[0]*60+p[1];return p[0];}
+  function rows(){return Array.prototype.slice.call(document.querySelectorAll('#p-tiempos tr[data-i]'));}
+  function inp(i){return document.querySelector('#p-tiempos input[name=t_'+i+']');}
+  function paint(){rows().forEach(function(tr){var i=+tr.getAttribute('data-i');tr.style.background=(i===sel)?'#12203c':'';});}
+  window.detModo=function(det){
+    document.getElementById('det-box').style.display=det?'block':'none';
+    var dd=document.getElementById('dm-det'), mm=document.getElementById('dm-man');
+    dd.style.borderColor=det?'#2E6BE6':'var(--line)'; dd.style.background=det?'#12203c':'#0f0f0f'; dd.style.color=det?'#fff':'var(--muted)';
+    mm.style.borderColor=det?'var(--line)':'#2E6BE6'; mm.style.background=det?'#0f0f0f':'#12203c'; mm.style.color=det?'var(--muted)':'#fff';
+    if(!det){sel=-1;paint();} else { draw(); }
+  };
+  window.detAnalizar=function(){
+    var b=document.getElementById('det-btn');b.disabled=true;
+    document.getElementById('det-info').textContent='Analizando el click...';
+    fetch('/admin/pistas/'+NUMx+'/detectar_click',{method:'POST',headers:{'X-CSRFToken':CSRFx}}).then(function(r){return r.json();}).then(function(d){
+      b.disabled=false;
+      if(!d.ok){var m={sin_click:'No encontre pista de Click en esta cancion. Usa el modo manual.',numpy:'Falta el modulo de analisis en el servidor.',ffmpeg:'No pude leer el audio del click.',audio_corto:'El click es muy corto.'}[d.error]||'No se pudo analizar.';document.getElementById('det-info').textContent=m;return;}
+      D=d;var seg=(d.tempo&&d.tempo.length>1)?(d.tempo.length+' cambios de tempo'):'tempo constante';
+      document.getElementById('det-info').innerHTML='Click: <b>'+d.stem+'</b> - '+d.beats.length+' beats - <b>'+d.bpm_prom+' BPM</b> ('+seg+')';
+      var r=rows();sel=-1;for(var k=0;k<r.length;k++){var ii=+r[k].getAttribute('data-i');if(!inp(ii).value.trim()){sel=ii;break;}}if(sel<0&&r.length)sel=+r[0].getAttribute('data-i');
+      paint();draw();
+    }).catch(function(){b.disabled=false;document.getElementById('det-info').textContent='Error de red al analizar.';});
+  };
+  function draw(){
+    if(!D)return;var W=Math.max(700,Math.round(D.dur*8)),H=160,mid=80;
+    cv.width=W;cv.style.width=W+'px';
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle='rgba(120,140,180,0.25)';ctx.lineWidth=1;
+    D.beats.forEach(function(t){var x=t/D.dur*W;ctx.beginPath();ctx.moveTo(x,H-16);ctx.lineTo(x,H);ctx.stroke();});
+    ctx.strokeStyle='#5b6b86';ctx.lineWidth=1;ctx.beginPath();var N=D.wave.length;
+    for(var i=0;i<N;i++){var x=i/N*W,a=D.wave[i]*(mid-8);ctx.moveTo(x,mid-a);ctx.lineTo(x,mid+a);}ctx.stroke();
+    rows().forEach(function(tr){var i=+tr.getAttribute('data-i'),v=pT(inp(i).value);if(v===null)return;var x=v/D.dur*W;ctx.strokeStyle=(i===sel)?'#C9A96E':'#2E6BE6';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H-16);ctx.stroke();ctx.fillStyle=(i===sel)?'#C9A96E':'#2E6BE6';ctx.fillRect(x,0,20,15);ctx.fillStyle='#0a0a0a';ctx.font='11px sans-serif';ctx.fillText(i+1,x+5,11);});
+  }
+  function near(t){if(!D||!D.beats.length)return t;var best=D.beats[0];D.beats.forEach(function(bb){if(Math.abs(bb-t)<Math.abs(best-t))best=bb;});return best;}
+  cv.addEventListener('click',function(e){if(!D)return;if(sel<0){document.getElementById('det-info').textContent='Elegi primero una seccion en la tabla';return;}var rect=cv.getBoundingClientRect();var t=(e.clientX-rect.left)/cv.width*D.dur;t=near(t);inp(sel).value=fmt(t);var r=rows(),pos=-1;for(var q=0;q<r.length;q++){if(+r[q].getAttribute('data-i')===sel){pos=q;break;}}var nx=-1;for(var k=pos+1;k<r.length;k++){var ii=+r[k].getAttribute('data-i');if(!inp(ii).value.trim()){nx=ii;break;}}sel=nx>=0?nx:sel;paint();draw();});
+  rows().forEach(function(tr){tr.addEventListener('click',function(e){if(document.getElementById('det-box').style.display!=='block')return;if(e.target.tagName==='INPUT')return;sel=+tr.getAttribute('data-i');paint();});});
+})();
 </script>
 </body>
 </html>
