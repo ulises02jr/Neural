@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Secciones — {{ titulo }}</title>
 <style>
-  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; }
+  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; --blue:#2E6BE6; }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;}
-  .wrap{max-width:720px;margin:0 auto;}
+  .wrap{max-width:860px;margin:0 auto;}
   a.back{color:var(--muted);text-decoration:none;font-size:14px;}
   h1{font-size:21px;margin:10px 0 16px;}
   .steps{display:flex;gap:8px;margin-bottom:20px;font-size:12px;}
@@ -20,7 +20,7 @@
   .hint{color:var(--muted);font-size:12px;margin:0 0 14px;line-height:1.6;}
   .hint b{color:var(--gold);}
   table{width:100%;border-collapse:collapse;}
-  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top;}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
   th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
   .tipo{font-weight:700;font-size:14px;}
   .nota{color:var(--muted);font-size:12px;margin-top:2px;}
@@ -31,6 +31,31 @@
   .flash{padding:11px 14px;border-radius:8px;margin-bottom:10px;font-size:14px;}
   .flash.success{background:#14301a;color:#8fe0a0;border:1px solid #2a5a35;}
   .flash.error{background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;}
+  /* selector de modo */
+  .modo{display:flex;gap:10px;margin-bottom:16px;}
+  .modo button{flex:1;background:#0f0f0f;border:1px solid var(--line);color:var(--muted);border-radius:10px;
+    padding:14px 10px;font-size:14px;cursor:pointer;text-align:left;line-height:1.4;}
+  .modo button .t2{display:block;font-size:12px;color:#6a6a6a;margin-top:3px;}
+  .modo button.on{border-color:var(--blue);color:#fff;background:#12203c;}
+  .modo button.on .t2{color:#9db8ee;}
+  /* detector */
+  #detector{display:none;margin-bottom:18px;}
+  #detector.show{display:block;}
+  .det-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+  .btn2{background:#12203c;color:#cfe0ff;border:1px solid var(--blue);border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer;}
+  .btn2:disabled{opacity:.5;cursor:default;}
+  .det-info{font-size:12px;color:var(--muted);}
+  .det-info b{color:var(--gold);}
+  .scroller{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#070707;}
+  #wave{display:block;height:160px;}
+  .det-help{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6;}
+  .det-help b{color:#9db8ee;}
+  tr.sel td{background:#12203c;}
+  tr.pick{cursor:pointer;}
+  .rownum{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+    background:#0f0f0f;border:1px solid var(--line);font-size:12px;color:var(--muted);}
+  tr.sel .rownum{background:var(--blue);color:#fff;border-color:var(--blue);}
+  tr.has .rownum{border-color:#2a5a35;color:#8fe0a0;}
 </style>
 </head>
 <body>
@@ -47,25 +72,51 @@
   <a class="back" href="{{ url_for('admin_pistas') }}">← Volver a canciones</a>
   <h1>🎼 Secciones — {{ titulo }}</h1>
   {% endif %}
-  <div class="sub">Canción #{{ numero }} · Poné el tiempo exacto donde <b>empieza</b> cada sección.</div>
+  <div class="sub">Canción #{{ numero }} · Poné el tiempo donde <b>empieza</b> cada sección.</div>
 
   {% with mensajes = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in mensajes %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
   {% endwith %}
 
   <div class="card">
-    <div class="hint">
-      El tiempo va en el formato de Logic <b>H:MIN:S:MS</b> (ej. <b>00:00:41:500</b>) o simple <b>M:SS</b>.<br>
-      Dejá en blanco las secciones que no quieras marcar. Copiá el tiempo directo de Logic.
+
+    <div class="modo">
+      <button type="button" id="mb-manual" class="on" onclick="setModo('manual')">
+        ✍️ Ingresar manualmente
+        <span class="t2">Escribís el tiempo de cada sección (formato de Logic).</span>
+      </button>
+      <button type="button" id="mb-detector" onclick="setModo('detector')">
+        🎯 Detector Neural
+        <span class="t2">Escucha el click y marcás las secciones con un clic.</span>
+      </button>
     </div>
+
+    <div id="detector">
+      <div class="det-bar">
+        <button type="button" id="btnAnalizar" class="btn2" onclick="analizar()">Analizar el click</button>
+        <span class="det-info" id="detInfo">Presioná «Analizar el click» para detectar los beats y el tempo.</span>
+      </div>
+      <div class="scroller"><canvas id="wave" width="700" height="160"></canvas></div>
+      <div class="det-help">
+        <b>1.</b> Elegí una sección en la tabla de abajo (se pinta de azul). &nbsp;
+        <b>2.</b> Hacé clic en la onda donde empieza — se pega al beat más cercano. &nbsp;
+        <b>3.</b> Pasa sola a la siguiente. Al final, «Guardar».
+      </div>
+    </div>
+
+    <div class="hint" id="hintManual">
+      El tiempo va en formato de Logic <b>H:MIN:S:MS</b> (ej. <b>00:00:41:500</b>) o simple <b>M:SS</b>.<br>
+      Dejá en blanco las secciones que no quieras marcar.
+    </div>
+
     <form method="POST" action="{{ url_for('admin_secciones', numero=numero) }}">
-<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       {% if wizard %}<input type="hidden" name="wizard" value="1">{% endif %}
-      <table>
+      <table id="tabla">
         <tr><th>#</th><th>Sección del chart</th><th>Tiempo de inicio</th></tr>
         {% for f in filas %}
-        <tr>
-          <td>{{ f.i + 1 }}</td>
+        <tr data-i="{{ f.i }}" class="pick">
+          <td><span class="rownum">{{ f.i + 1 }}</span></td>
           <td><div class="tipo">{{ f.tipo }}</div>{% if f.nota %}<div class="nota">{{ f.nota }}</div>{% endif %}</td>
           <td><input class="t" type="text" name="t_{{ f.i }}" value="{{ f.t }}" placeholder="00:00:00:000" inputmode="numeric"></td>
         </tr>
@@ -75,5 +126,141 @@
     </form>
   </div>
 </div>
+
+<script>
+var NUM = {{ numero }};
+var CSRF = document.querySelector('input[name=_csrf]').value;
+var DET = null;          // datos del detector {dur, beats, tempo, wave}
+var selI = -1;           // fila seleccionada (data-i)
+var cv = document.getElementById('wave');
+var ctx = cv.getContext('2d');
+
+function z(n,w){ n=''+n; while(n.length<w) n='0'+n; return n; }
+function fmt(s){ if(s<0)s=0; var t=Math.floor(s), ms=Math.round((s-t)*1000);
+  if(ms>=1000){t+=1;ms-=1000;} var h=Math.floor(t/3600), mi=Math.floor((t%3600)/60), se=t%60;
+  return z(h,2)+':'+z(mi,2)+':'+z(se,2)+':'+z(ms,3); }
+function parseT(txt){ if(!txt) return null; txt=txt.trim().replace(',', '.');
+  var p=txt.split(':').map(parseFloat); if(p.some(isNaN)) return null;
+  if(p.length==4) return p[0]*3600+p[1]*60+p[2]+p[3]/1000;
+  if(p.length==3) return p[0]*3600+p[1]*60+p[2];
+  if(p.length==2) return p[0]*60+p[1];
+  return p[0]; }
+
+function setModo(m){
+  var dm = m==='detector';
+  document.getElementById('mb-detector').classList.toggle('on', dm);
+  document.getElementById('mb-manual').classList.toggle('on', !dm);
+  document.getElementById('detector').classList.toggle('show', dm);
+  document.getElementById('hintManual').style.display = dm ? 'none' : 'block';
+  document.querySelectorAll('#tabla tr[data-i]').forEach(function(tr){ tr.classList.toggle('pick', dm); });
+  if(!dm){ selI=-1; paintRows(); }
+}
+
+function rows(){ return Array.prototype.slice.call(document.querySelectorAll('#tabla tr[data-i]')); }
+function inputFor(i){ return document.querySelector('input[name=t_'+i+']'); }
+
+function paintRows(){
+  rows().forEach(function(tr){
+    var i = +tr.getAttribute('data-i');
+    tr.classList.toggle('sel', i===selI);
+    var v = inputFor(i).value.trim();
+    tr.classList.toggle('has', v.length>0);
+  });
+}
+
+rows().forEach(function(tr){
+  tr.addEventListener('click', function(e){
+    if(!document.getElementById('detector').classList.contains('show')) return;
+    if(e.target.tagName==='INPUT') return;
+    selI = +tr.getAttribute('data-i'); paintRows();
+  });
+});
+document.querySelectorAll('input.t').forEach(function(inp){
+  inp.addEventListener('input', function(){ paintRows(); draw(); });
+});
+
+function analizar(){
+  var b=document.getElementById('btnAnalizar'); b.disabled=true;
+  document.getElementById('detInfo').textContent='Analizando el click…';
+  fetch('/admin/pistas/'+NUM+'/detectar_click', {method:'POST', headers:{'X-CSRFToken':CSRF}})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      b.disabled=false;
+      if(!d.ok){
+        var m = {sin_click:'No encontré una pista de Click en esta canción. Usá el modo manual.',
+                 numpy:'Falta el módulo de análisis en el servidor.',
+                 ffmpeg:'No pude leer el audio del click.',
+                 audio_corto:'El click es muy corto.'}[d.error] || 'No se pudo analizar.';
+        document.getElementById('detInfo').textContent = m; return;
+      }
+      DET = d;
+      var seg = (d.tempo && d.tempo.length>1) ? (d.tempo.length+' cambios de tempo') : 'tempo constante';
+      document.getElementById('detInfo').innerHTML =
+        'Click: <b>'+d.stem+'</b> · '+d.beats.length+' beats · <b>'+d.bpm_prom+' BPM</b> ('+seg+')';
+      // seleccionar la primera fila sin tiempo
+      var r = rows(); selI = -1;
+      for(var k=0;k<r.length;k++){ if(!inputFor(+r[k].getAttribute('data-i')).value.trim()){ selI=+r[k].getAttribute('data-i'); break; } }
+      if(selI<0 && r.length) selI=+r[0].getAttribute('data-i');
+      paintRows(); draw();
+    })
+    .catch(function(){ b.disabled=false; document.getElementById('detInfo').textContent='Error de red al analizar.'; });
+}
+
+function layout(){
+  if(!DET) return {W:cv.clientWidth||700};
+  var W = Math.max(700, Math.round(DET.dur*8));   // ~8px por segundo -> scroll horizontal
+  cv.width = W; cv.style.width = W+'px'; cv.height=160; cv.style.height='160px';
+  return {W:W};
+}
+
+function nearestBeat(t){
+  if(!DET || !DET.beats.length) return t;
+  var lo=0, hi=DET.beats.length-1, best=DET.beats[0];
+  for(var k=0;k<DET.beats.length;k++){ if(Math.abs(DET.beats[k]-t)<Math.abs(best-t)) best=DET.beats[k]; }
+  return best;
+}
+
+function draw(){
+  if(!DET){ return; }
+  var L = layout(), W=L.W, H=160, mid=H/2;
+  ctx.clearRect(0,0,W,H);
+  // beats: ticks tenues abajo
+  ctx.strokeStyle='rgba(120,140,180,0.25)'; ctx.lineWidth=1;
+  DET.beats.forEach(function(t){ var x=t/DET.dur*W; ctx.beginPath(); ctx.moveTo(x,H-16); ctx.lineTo(x,H); ctx.stroke(); });
+  // onda
+  ctx.strokeStyle='#5b6b86'; ctx.lineWidth=1; ctx.beginPath();
+  var N=DET.wave.length;
+  for(var i=0;i<N;i++){ var x=i/N*W, a=DET.wave[i]*(mid-8); ctx.moveTo(x,mid-a); ctx.lineTo(x,mid+a); }
+  ctx.stroke();
+  // marcadores de secciones ya con tiempo
+  rows().forEach(function(tr){
+    var i=+tr.getAttribute('data-i'); var v=parseT(inputFor(i).value); if(v===null) return;
+    var x=v/DET.dur*W;
+    ctx.strokeStyle = (i===selI)?'#C9A96E':'#2E6BE6'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H-16); ctx.stroke();
+    ctx.fillStyle = (i===selI)?'#C9A96E':'#2E6BE6';
+    ctx.fillRect(x, 0, 20, 15);
+    ctx.fillStyle='#0a0a0a'; ctx.font='11px sans-serif'; ctx.fillText(i+1, x+5, 11);
+  });
+}
+
+cv.addEventListener('click', function(e){
+  if(!DET) return;
+  if(selI<0){ document.getElementById('detInfo').textContent='Elegí primero una sección en la tabla ⬇'; return; }
+  var rect=cv.getBoundingClientRect();
+  var x = e.clientX-rect.left;
+  var t = x/cv.width*DET.dur;
+  t = nearestBeat(t);
+  inputFor(selI).value = fmt(t);
+  // avanzar a la siguiente fila sin tiempo
+  var r=rows(); var pos=r.findIndex(function(tr){return +tr.getAttribute('data-i')===selI;});
+  var nxt=-1;
+  for(var k=pos+1;k<r.length;k++){ if(!inputFor(+r[k].getAttribute('data-i')).value.trim()){ nxt=+r[k].getAttribute('data-i'); break; } }
+  selI = nxt>=0 ? nxt : selI;
+  paintRows(); draw();
+});
+
+paintRows();
+</script>
 </body>
 </html>

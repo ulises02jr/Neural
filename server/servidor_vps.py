@@ -1849,6 +1849,109 @@ def _fmt_tiempo(secs):
     return "%02d:%02d:%02d:%03d" % (h, mi, se, ms)
 
 
+def _hallar_stem_click(numero):
+    """Devuelve el archivo del stem de Click (familia 'Click'), o None."""
+    base = CARPETA_PISTAS / str(numero)
+    if not base.is_dir():
+        return None
+    fam = _leer_familias(numero)
+    cand = []
+    for f in sorted(base.iterdir()):
+        if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
+            fa = fam.get(f.name) or _familia_auto(f.stem)
+            if fa == "Click":
+                cand.append(f)
+    for f in cand:
+        if re.search(r"click|metr", f.stem, re.I):
+            return f
+    return cand[0] if cand else None
+
+
+def _detectar_beats_click(numero):
+    """Detecta beats y mapa de tempo escuchando el stem de Click.
+    Devuelve dict con beats[], tempo[], bpm_prom, wave[] (para dibujar)."""
+    try:
+        import numpy as np
+    except Exception:
+        return {"ok": False, "error": "numpy"}
+    stem = _hallar_stem_click(numero)
+    if stem is None:
+        return {"ok": False, "error": "sin_click"}
+    sr = 8000
+    try:
+        p = subprocess.run(
+            ["/usr/bin/ffmpeg", "-v", "quiet", "-i", str(stem),
+             "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=120)
+        x = np.frombuffer(p.stdout, dtype=np.float32).astype(np.float32)
+    except Exception as e:
+        logging.error("detectar_click ffmpeg %s: %s", numero, e)
+        return {"ok": False, "error": "ffmpeg"}
+    if x.size < sr:
+        return {"ok": False, "error": "audio_corto"}
+    dur = x.size / float(sr)
+    # envelope de energia (media movil sobre |x|) + onset = diferencia positiva
+    ax = np.abs(x)
+    win = max(1, int(sr * 0.005))
+    env = np.convolve(ax, np.ones(win, dtype=np.float32) / win, mode="same")
+    d = np.diff(env, prepend=env[:1])
+    d[d < 0] = 0.0
+    mxd = float(d.max()) if d.size else 0.0
+    if mxd > 0:
+        d = d / mxd
+    thr = max(0.14, float(d.mean() + 1.5 * d.std()))
+    min_gap = int(sr * 0.11)   # hasta ~545 BPM; evita doble-disparo por un mismo click
+    idx = np.where(d > thr)[0]
+    beats = []
+    if idx.size:
+        cortes = np.where(np.diff(idx) > min_gap)[0] + 1
+        for g in np.split(idx, cortes):
+            jstar = int(g[int(np.argmax(d[g]))])
+            beats.append(round(jstar / float(sr), 4))
+    # mapa de tempo por segmentos de BPM parecido (+-6%)
+    tempo = []
+    bpm_prom = 0
+    if len(beats) >= 2:
+        difs = np.diff(np.array(beats))
+        bpms = 60.0 / np.clip(difs, 1e-3, None)
+        seg_start = beats[0]
+        acc = [float(bpms[0])]
+        for i2 in range(1, len(bpms)):
+            med = float(np.median(acc))
+            if abs(float(bpms[i2]) - med) / max(1.0, med) > 0.06:
+                tempo.append({"t": round(float(seg_start), 3), "bpm": int(round(med))})
+                seg_start = beats[i2]
+                acc = [float(bpms[i2])]
+            else:
+                acc.append(float(bpms[i2]))
+        tempo.append({"t": round(float(seg_start), 3), "bpm": int(round(float(np.median(acc))))})
+        bpm_prom = int(round(float(np.median(bpms))))
+    # forma de onda comprimida (~700 picos) para dibujar
+    W = 700
+    step = max(1, x.size // W)
+    wave = []
+    for i3 in range(0, x.size, step):
+        wave.append(float(np.abs(x[i3:i3 + step]).max()))
+        if len(wave) >= W:
+            break
+    mxw = max(wave) if wave else 1.0
+    if mxw > 0:
+        wave = [round(v / mxw, 3) for v in wave]
+    return {"ok": True, "dur": round(dur, 3), "stem": stem.name,
+            "beats": beats, "tempo": tempo, "bpm_prom": bpm_prom, "wave": wave}
+
+
+@app.route("/admin/pistas/<int:numero>/detectar_click", methods=["POST"])
+@login_required("admin")
+def admin_detectar_click(numero):
+    try:
+        res = _detectar_beats_click(numero)
+    except Exception as e:
+        logging.error("detectar_click %s: %s", numero, e)
+        return jsonify({"ok": False, "error": "interno"})
+    return jsonify(res)
+
+
 @app.route("/admin/pistas/<int:numero>/secciones", methods=["GET", "POST"])
 @login_required("admin")
 def admin_secciones(numero):

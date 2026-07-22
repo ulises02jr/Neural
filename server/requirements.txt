@@ -3,3 +3,4 @@ flask-login>=0.6
 gunicorn>=21.0
 python-pptx
 reportlab
+numpy
