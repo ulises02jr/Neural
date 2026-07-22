@@ -1654,12 +1654,8 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .song-meta{font-size:12px;color:var(--txt2);margin-top:2px}
  .tono-chip{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#1a1407;font-weight:700;font-size:15px;padding:2px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;line-height:1.3;letter-spacing:.5px}
  .right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
- .live{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500}
- .live.ok{color:var(--live)}.live.off{color:var(--dead)}
- .dot{width:7px;height:7px;border-radius:50%}
- .live.ok .dot{background:var(--live);animation:pulse 1.6s ease-in-out infinite}
- .live.off .dot{background:var(--dead)}
- @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+ .live{width:9px;height:9px;border-radius:50%;background:#444;display:inline-block;margin-top:3px}
+ .live.on{background:var(--live);box-shadow:0 0 8px var(--live)}
  .size-ctrl{display:inline-flex;align-items:center;gap:4px}
  .size-btn{width:30px;height:26px;border-radius:6px;background:var(--surface);border:1px solid var(--line);color:var(--txt2);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600;padding:0;line-height:1}
  .size-btn:active{background:var(--raised);color:var(--accent)}
@@ -1684,14 +1680,6 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .inst{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 0}
  .chip{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--chord-size);font-weight:700;color:var(--accent);background:var(--accent-soft);padding:8px 16px;border-radius:8px}
  .inst-label{font-size:15px;color:var(--txt2);margin-bottom:14px}
- .nextpreview{flex-shrink:0;margin-top:8px;padding:8px 12px;background:var(--raised);border:1px solid var(--line);border-radius:8px;border-left:3px solid var(--accent);display:flex;flex-direction:column;gap:2px;overflow:hidden}
- .np-tag{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px;font-weight:600}
- .np-name{font-size:13px;color:var(--accent);font-weight:600}
- .np-line{display:flex;flex-wrap:wrap;align-items:flex-end;gap:2px;margin-top:2px;max-height:36px;overflow:hidden}
- .np-tok{display:inline-flex;flex-direction:column;margin-right:6px}
- .np-chord{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;color:var(--accent);line-height:14px;white-space:pre;opacity:.85}
- .np-lyric{font-size:13px;color:var(--txt2);line-height:1.2;white-space:pre}
- .np-end,.np-inst{font-size:13px;color:var(--txt2);font-style:italic}
  .off{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--txt2);font-size:15px;padding:20px;text-align:center;background:var(--bg);z-index:50}
 </style></head><body>
 <div class="wrap">
@@ -1701,13 +1689,12 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
    <div class="song-meta" id="m"></div>
   </div>
   <div class="right">
-   <div class="live off" id="lv"><span class="dot"></span><span id="lvt">Esperando</span></div>
+   <span class="live" id="lv"></span>
    <div class="size-ctrl"><button class="size-btn" id="size-minus" onclick="tamMenos()">A&#8722;</button><span class="size-label" id="size-label">M</span><button class="size-btn" id="size-plus" onclick="tamMas()">A+</button></div>
   </div>
  </div>
  <div class="timeline-wrap"><div class="timeline" id="tl"></div></div>
  <div class="stage" id="stage"></div>
- <div class="nextpreview" id="np" style="display:none"></div>
 </div>
 <div class="off" id="off">Esperando al reproductor&#8230;</div>
 <script>
@@ -1731,15 +1718,6 @@ function renderSong(){
  idx=-1;
 }
 function irSec(i){ var t=document.getElementById('sec-'+i), st=document.getElementById('stage'); if(t&&st){ st.scrollTop=t.offsetTop-(st.firstElementChild?st.firstElementChild.offsetTop:0); } }
-function renderNext(i){
- var secs=song.secciones||[], np=document.getElementById('np'), sig=secs[i+1];
- if(!sig){ np.style.display='flex'; np.innerHTML='<div class="np-tag">Sigue</div><div class="np-end">Fin de la canción</div>'; return; }
- var cont;
- if(sig.inst&&sig.prog){ cont='<div class="np-inst">'+sig.prog.slice(0,4).map(esc).join('  ')+(sig.prog.length>4?'  …':'')+'</div>'; }
- else if(sig.lines&&sig.lines.length){ cont='<div class="np-line">'+(sig.lines[0]||[]).map(function(t){return '<div class="np-tok"><span class="np-chord">'+esc(t[0])+'</span><span class="np-lyric">'+esc((t[1]==null||t[1]==="")?" ":t[1])+'</span></div>';}).join('')+'</div>'; }
- else cont='<div class="np-end">(sin contenido)</div>';
- np.style.display='flex'; np.innerHTML='<div class="np-tag">Sigue</div><div class="np-name">'+esc(sig.tipo)+'</div>'+cont;
-}
 function setActive(i){
  if(!song||!song.secciones||i<0||i>=song.secciones.length||i===idx) return;
  idx=i;
@@ -1747,7 +1725,6 @@ function setActive(i){
  for(var s=0;s<secs.length;s++){ var el=document.getElementById('sec-'+s); if(el)el.classList.toggle('active',s===i); var pl=document.getElementById('pill-'+s); if(pl){pl.classList.toggle('active',s===i);pl.classList.toggle('done',s<i);} }
  var st=document.getElementById('stage'), target=document.getElementById('sec-'+i);
  if(st&&target){ st.scrollTop=target.offsetTop-(st.firstElementChild?st.firstElementChild.offsetTop:0); }
- renderNext(i);
 }
 async function loadSong(){ try{ var r=await fetch('/song',{cache:'no-store'}); var j=await r.json(); if(j&&j.ok!==false&&j.secciones){ song=j; renderSong(); } }catch(e){} }
 async function tick(){
@@ -1755,9 +1732,7 @@ async function tick(){
   var r=await fetch('/state',{cache:'no-store'}); var s=await r.json();
   document.getElementById('off').style.display='none';
   if(s.ver!==ver){ ver=s.ver; await loadSong(); }
-  var lv=document.getElementById('lv'), on=!!s.playing;
-  lv.classList.toggle('ok',on); lv.classList.toggle('off',!on);
-  document.getElementById('lvt').textContent=on?'En vivo':'Pausa';
+  document.getElementById('lv').classList.toggle('on',!!s.playing);
   if(song){ setActive(s.idx); }
  }catch(e){
   var o=document.getElementById('off'); o.style.display='flex'; o.textContent='Esperando al reproductor…';
