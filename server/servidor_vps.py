@@ -1905,6 +1905,13 @@ def _asegurar_audio_admin(numero, tipo):
             subprocess.run(["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(g),
                             "-b:a", "128k", str(out)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+        elif tipo == "click":
+            g = _hallar_stem_familia(numero, "Click")
+            if g is None:
+                return
+            subprocess.run(["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(g),
+                            "-b:a", "128k", str(out)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
         elif tipo == "mezcla":
             ins = _stems_para_mezcla(numero)
             if not ins:
@@ -1941,10 +1948,12 @@ def _asegurar_audio_admin(numero, tipo):
 @app.route("/admin/pistas/<int:numero>/audio_prep/<tipo>", methods=["POST"])
 @login_required("admin")
 def admin_audio_prep(numero, tipo):
-    if tipo not in ("guia", "mezcla", "ambas"):
+    if tipo not in ("guia", "mezcla", "ambas", "click"):
         return jsonify({"ok": False, "error": "tipo"})
     if tipo == "guia" and _hallar_stem_familia(numero, "Guía") is None:
         return jsonify({"ok": False, "error": "sin_guia"})
+    if tipo == "click" and _hallar_stem_familia(numero, "Click") is None:
+        return jsonify({"ok": False, "error": "sin_click"})
     if tipo == "mezcla" and not _stems_para_mezcla(numero):
         return jsonify({"ok": False, "error": "sin_stems"})
     if tipo == "ambas" and _hallar_stem_familia(numero, "Guía") is None and not _stems_para_mezcla(numero):
@@ -1961,7 +1970,7 @@ def admin_audio_prep(numero, tipo):
 @app.route("/admin/pistas/<int:numero>/audio/<tipo>")
 @login_required("admin")
 def admin_audio(numero, tipo):
-    if tipo not in ("guia", "mezcla", "ambas"):
+    if tipo not in ("guia", "mezcla", "ambas", "click"):
         return ("no", 404)
     out = _admin_audio_dir(numero) / (tipo + ".mp3")
     if not out.exists():
