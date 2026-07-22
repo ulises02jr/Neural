@@ -2032,11 +2032,13 @@ def _detectar_beats_click(numero):
     min_gap = int(sr * 0.11)   # hasta ~545 BPM; evita doble-disparo por un mismo click
     idx = np.where(d > thr)[0]
     beats = []
+    fuerzas = []
     if idx.size:
         cortes = np.where(np.diff(idx) > min_gap)[0] + 1
         for g in np.split(idx, cortes):
             jstar = int(g[int(np.argmax(d[g]))])
             beats.append(round(jstar / float(sr), 4))
+            fuerzas.append(round(float(d[jstar]), 3))
     # mapa de tempo por segmentos de BPM parecido (+-6%)
     tempo = []
     bpm_prom = 0
@@ -2067,7 +2069,8 @@ def _detectar_beats_click(numero):
     if mxw > 0:
         wave = [round(v / mxw, 3) for v in wave]
     return {"ok": True, "dur": round(dur, 3), "stem": stem.name,
-            "beats": beats, "tempo": tempo, "bpm_prom": bpm_prom, "wave": wave}
+            "beats": beats, "strengths": fuerzas, "tempo": tempo,
+            "bpm_prom": bpm_prom, "wave": wave}
 
 
 @app.route("/admin/pistas/<int:numero>/detectar_click", methods=["POST"])

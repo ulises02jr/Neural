@@ -795,10 +795,12 @@ function autosaveTiempos(){
 (function(){
   var NUM={{ numero }};
   var FILAS={{ filas|tojson }};
+  var COMPAS='{{ info.compas or "4/4" }}';
+  var NBAR=parseInt((COMPAS.split('/')[0]))||4; if(NBAR<1)NBAR=4;
   var form=document.getElementById('sx-form'); if(!form) return;
   var CSRF=form.querySelector('input[name=_csrf]').value;
   var cv=document.getElementById('sx-wave'), g2=cv.getContext('2d');
-  var DET=null, SX=[], ZOOM=16;
+  var DET=null, SX=[], ZOOM=16, DBPHASE=0, rafId=0, pendingPlay=false;
   var AC=null;
   var L={click:{on:true},guia:{on:true},mezcla:{on:true}};
   var playing=false, startT=0, startOff=0, pausedOff=0, DUR=0;
@@ -814,31 +816,33 @@ function autosaveTiempos(){
   function curT(){ return playing ? (AC.currentTime - startT + startOff) : pausedOff; }
   function ensureAC(){ if(!AC){ AC=new (window.AudioContext||window.webkitAudioContext)(); ['click','guia','mezcla'].forEach(function(k){ L[k].gain=AC.createGain(); L[k].gain.gain.value=L[k].on?1:0; L[k].gain.connect(AC.destination); }); } }
   function loadLayer(k, cb){
-    var la=L[k]; if(la.ready){ cb&&cb(); return; } if(la.loading){ return; } la.loading=true; info('Preparando '+TIPOS[k]+'...');
+    var la=L[k]; if(la.ready){ cb&&cb(); return; } if(la.loading){ return; } la.loading=true;
     (function poll(){
       fetch('/admin/pistas/'+NUM+'/audio_prep/'+k,{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(r){return r.json();}).then(function(d){
-        if(!d.ok){ la.loading=false; info(d.error==='sin_click'?'No hay pista de Click.':(d.error==='sin_guia'?'No hay pista de Guia.':(d.error==='sin_stems'?'No hay instrumentos.':'No se pudo preparar el audio.'))); return; }
+        if(!d.ok){ la.loading=false; la.miss=true; return; }
         if(!d.ready){ setTimeout(poll,1500); return; }
         fetch('/admin/pistas/'+NUM+'/audio/'+k).then(function(r){return r.arrayBuffer();}).then(function(ab){
           ensureAC();
-          AC.decodeAudioData(ab, function(buf){ la.buf=buf; la.ready=true; la.loading=false; if(buf.duration>DUR)DUR=buf.duration; info(''); draw(); cb&&cb(); }, function(){ la.loading=false; info('No se pudo decodificar '+TIPOS[k]); });
-        }).catch(function(){ la.loading=false; info('Error cargando '+TIPOS[k]); });
-      }).catch(function(){ la.loading=false; info('Error preparando el audio.'); });
+          AC.decodeAudioData(ab, function(buf){ la.buf=buf; la.ready=true; la.loading=false; if(buf.duration>DUR)DUR=buf.duration; draw(); cb&&cb(); }, function(){ la.loading=false; });
+        }).catch(function(){ la.loading=false; });
+      }).catch(function(){ la.loading=false; });
     })();
   }
   function startOne(k, off){ var la=L[k]; if(!la.ready)return; try{ var s=AC.createBufferSource(); s.buffer=la.buf; s.connect(la.gain); s.start(0, Math.max(0,Math.min(off, la.buf.duration-0.02))); la.src=s; }catch(e){} }
-  function startAll(off){ ['click','guia','mezcla'].forEach(function(k){ if(L[k].ready) startOne(k, off); }); startT=AC.currentTime; startOff=off; playing=true; }
+  function startAll(off){ ['click','guia','mezcla'].forEach(function(k){ if(L[k].ready) startOne(k, off); }); startT=AC.currentTime; startOff=off; playing=true; cancelAnimationFrame(rafId); rafId=requestAnimationFrame(loop); }
   function stopAll(){ ['click','guia','mezcla'].forEach(function(k){ if(L[k].src){ try{L[k].src.stop();}catch(e){} L[k].src=null; } }); }
   function playBtn(p){ $('sx-play').innerHTML = p ? '&#10073;&#10073;' : '&#9654;'; }
   window.sxPlay=function(){
     ensureAC(); if(AC.state==='suspended'){ AC.resume(); }
-    if(playing){ pausedOff=curT(); stopAll(); playing=false; playBtn(false); return; }
+    if(playing){ pausedOff=curT(); stopAll(); playing=false; playBtn(false); draw(); return; }
     var act=['click','guia','mezcla'].filter(function(k){return L[k].on;});
     if(!act.length){ info('Activa al menos una pista (Click, Guia o Mezcla).'); return; }
-    var ready=act.filter(function(k){return L[k].ready;});
-    if(ready.length){ startAll(pausedOff); playBtn(true); }
-    act.forEach(function(k){ if(!L[k].ready) loadLayer(k, function(){ if(!playing){ startAll(pausedOff); playBtn(true); } else { startOne(k, curT()); } }); });
+    var notReady=act.filter(function(k){return !L[k].ready;});
+    if(!notReady.length){ info(''); startAll(pausedOff); playBtn(true); return; }
+    info('Cargando pistas...'); pendingPlay=true;
+    notReady.forEach(function(k){ loadLayer(k, tryStart); });
   };
+  function tryStart(){ if(!pendingPlay)return; var act=['click','guia','mezcla'].filter(function(k){return L[k].on;}); if(act.every(function(k){return L[k].ready;})){ pendingPlay=false; info(''); startAll(pausedOff); playBtn(true); } }
   function togBtn(k){ var el=$('sx-t-'+k); if(!el)return; var on=L[k].on; el.style.background=on?'#2E6BE6':'#0f0f0f'; el.style.color=on?'#fff':'var(--muted)'; el.style.borderColor=on?'#2E6BE6':'var(--line)'; }
   window.sxToggle=function(k){
     L[k].on=!L[k].on; togBtn(k);
@@ -847,25 +851,39 @@ function autosaveTiempos(){
   };
   function seek(t){ t=Math.max(0,t); var D=durTot(); if(D>0)t=Math.min(t,D-0.05); if(playing){ stopAll(); startAll(t); } else { pausedOff=t; } upd(); draw(); }
   window.sxMarcar=function(){ var t=curT(); if(DET&&DET.beats&&DET.beats.length){ var bb=DET.beats[0]; DET.beats.forEach(function(x){ if(Math.abs(x-t)<Math.abs(bb-t))bb=x; }); t=bb; } SX.push({nombre:'Seccion', t:Math.round(t*1000)/1000}); sxRender(); draw(); };
-  window.sxAnalizar=function(){ var b=$('sx-anbtn'); b.disabled=true; info('Analizando click...'); fetch('/admin/pistas/'+NUM+'/detectar_click',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(r){return r.json();}).then(function(d){ b.disabled=false; if(!d.ok){ info(d.error==='sin_click'?'Sin pista de Click (podes marcar igual, sin snap).':'No se pudo analizar el click.'); return; } DET=d; if(!DUR)DUR=d.dur; var seg=(d.tempo&&d.tempo.length>1)?(d.tempo.length+' cambios de tempo'):'tempo constante'; info(d.beats.length+' beats - <b>'+d.bpm_prom+' BPM</b> ('+seg+')'); draw(); }).catch(function(){ b.disabled=false; info('Error de red.'); }); };
+  function computePhase(){ if(!DET||!DET.strengths||!DET.beats||NBAR<2) return 0; var best=0,bv=-1; for(var p=0;p<NBAR;p++){ var sum=0; for(var i=0;i<DET.beats.length;i++){ if((((i-p)%NBAR)+NBAR)%NBAR===0) sum+=DET.strengths[i]||0; } if(sum>bv){bv=sum;best=p;} } return best; }
+  window.sxAnalizar=function(){ var b=$('sx-anbtn'); b.disabled=true; info('Analizando click...'); fetch('/admin/pistas/'+NUM+'/detectar_click',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(r){return r.json();}).then(function(d){ b.disabled=false; if(!d.ok){ info(d.error==='sin_click'?'Sin pista de Click (podes marcar igual, sin snap).':'No se pudo analizar el click.'); return; } DET=d; if(!DUR)DUR=d.dur; DBPHASE=computePhase(); var seg=(d.tempo&&d.tempo.length>1)?(d.tempo.length+' cambios de tempo'):'tempo constante'; info(d.beats.length+' beats - <b>'+d.bpm_prom+' BPM</b> ('+seg+')'); draw(); }).catch(function(){ b.disabled=false; info('Error de red.'); }); };
   window.sxZoom=function(d){ ZOOM=Math.max(6,Math.min(48,ZOOM+d*6)); draw(); };
   function sortSX(){ SX.sort(function(a,b){ var A=a.t==null?1e9:a.t, B=b.t==null?1e9:b.t; return A-B; }); }
   window.sxRender=function(){ sortSX(); var tb=$('sx-tabla'); tb.innerHTML='<tr><th>#</th><th>Seccion</th><th>Tiempo</th><th></th></tr>'; SX.forEach(function(s,idx){ var tr=document.createElement('tr'); tr.innerHTML='<td>'+(idx+1)+'</td>'+'<td><input list="sx-tipos" value="'+(s.nombre||'').replace(/"/g,'&quot;')+'" style="width:150px;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px"></td>'+'<td><input value="'+(s.t!=null?fmt(s.t):'')+'" placeholder="00:00:00:000" style="width:130px;background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;font-family:ui-monospace,monospace"></td>'+'<td><button type="button" title="Quitar" style="background:transparent;border:none;color:#e08f8f;font-size:16px;cursor:pointer">&#128465;</button></td>'; var ins=tr.getElementsByTagName('input'); ins[0].addEventListener('input',function(){ SX[idx].nombre=this.value; draw(); }); ins[1].addEventListener('change',function(){ SX[idx].t=pT(this.value); sxRender(); draw(); }); tr.getElementsByTagName('button')[0].addEventListener('click',function(){ SX.splice(idx,1); sxRender(); draw(); }); tb.appendChild(tr); }); };
   cv.addEventListener('click',function(e){ var D=durTot(); if(D<=0)return; var W=cv.width; var rect=cv.getBoundingClientRect(); seek((e.clientX-rect.left)/W*D); });
-  function draw(){ var D=durTot(); var W=Math.max(700,Math.round((D||60)*ZOOM)),H=150,mid=75; if(cv.width!==W){ cv.width=W; cv.style.width=W+'px'; } g2.clearRect(0,0,W,H);
-    if(DET&&DET.beats){ g2.strokeStyle='rgba(120,140,180,0.22)';g2.lineWidth=1; DET.beats.forEach(function(t){var x=t/DET.dur*W;g2.beginPath();g2.moveTo(x,H-14);g2.lineTo(x,H);g2.stroke();}); }
-    if(DET&&DET.wave){ g2.strokeStyle='#5b6b86';g2.lineWidth=1;g2.beginPath();var N=DET.wave.length;for(var i=0;i<N;i++){var x=i/N*W,a=DET.wave[i]*(mid-8);g2.moveTo(x,mid-a);g2.lineTo(x,mid+a);}g2.stroke(); }
-    else { g2.strokeStyle='#333';g2.lineWidth=1;g2.beginPath();g2.moveTo(0,mid);g2.lineTo(W,mid);g2.stroke(); }
-    if(D>0) SX.forEach(function(s,idx){ if(s.t==null)return; var x=s.t/D*W; g2.strokeStyle='#2E6BE6';g2.lineWidth=2;g2.beginPath();g2.moveTo(x,0);g2.lineTo(x,H-14);g2.stroke(); g2.fillStyle='#2E6BE6';g2.fillRect(x,0,18,14);g2.fillStyle='#fff';g2.font='10px sans-serif';g2.fillText(idx+1,x+4,10); });
-    if(D>0){ var px=(curT()/D)*W; g2.strokeStyle='#e05555';g2.lineWidth=2;g2.beginPath();g2.moveTo(px,0);g2.lineTo(px,H);g2.stroke(); var sc=$('sx-scroller'); if(sc&&playing){ var vw=sc.clientWidth; if(px<sc.scrollLeft+50||px>sc.scrollLeft+vw-50){ sc.scrollLeft=Math.max(0,px-vw*0.5); } } }
+  function beatAt(t){ if(!DET||!DET.beats)return -1; var lo=-1; for(var i=0;i<DET.beats.length;i++){ if(DET.beats[i]<=t+0.002)lo=i; else break; } return lo; }
+  function draw(){
+    var D=durTot(); var W=Math.max(700,Math.round((D||60)*ZOOM)),H=150; if(cv.width!==W){ cv.width=W; cv.style.width=W+'px'; } g2.clearRect(0,0,W,H);
+    var cb = playing? beatAt(curT()) : -1;
+    if(DET&&DET.beats){
+      for(var i=0;i<DET.beats.length;i++){
+        var x=DET.beats[i]/DET.dur*W;
+        var down=((((i-DBPHASE)%NBAR)+NBAR)%NBAR)===0;
+        var top= down? 10 : 52;
+        var cur=(i===cb);
+        if(cur){ g2.strokeStyle= down?'#ffffff':'#e2e8f5'; g2.lineWidth= down?3:2; }
+        else { g2.strokeStyle= down?'rgba(150,172,220,0.65)':'rgba(120,140,180,0.25)'; g2.lineWidth= down?2:1; }
+        g2.beginPath(); g2.moveTo(x,top); g2.lineTo(x,H-14); g2.stroke();
+      }
+    } else { g2.strokeStyle='#333'; g2.lineWidth=1; g2.beginPath(); g2.moveTo(0,H/2); g2.lineTo(W,H/2); g2.stroke(); }
+    if(D>0) SX.forEach(function(s,idx){ if(s.t==null)return; var x=s.t/D*W; g2.strokeStyle='#2E6BE6'; g2.lineWidth=2; g2.beginPath(); g2.moveTo(x,18); g2.lineTo(x,H-14); g2.stroke(); g2.fillStyle='#2E6BE6'; g2.fillRect(x,H-14,18,14); g2.fillStyle='#fff'; g2.font='10px sans-serif'; g2.fillText(idx+1,x+4,H-4); });
+    if(DET&&DET.tempo&&D>0){ for(var j=0;j<DET.tempo.length;j++){ var sg=DET.tempo[j]; var xt=sg.t/D*W; g2.strokeStyle='#e05555'; g2.lineWidth= j===0?1:2; g2.beginPath(); g2.moveTo(xt,0); g2.lineTo(xt, j===0?12:H-14); g2.stroke(); g2.fillStyle='#e05555'; g2.font='bold 11px sans-serif'; g2.fillText(sg.bpm+' BPM', xt+3, 11); } }
+    if(D>0){ var px=(curT()/D)*W; g2.strokeStyle='#ffd23f'; g2.lineWidth=2; g2.beginPath(); g2.moveTo(px,0); g2.lineTo(px,H); g2.stroke(); var sc=$('sx-scroller'); if(sc&&playing){ var vw=sc.clientWidth; if(px<sc.scrollLeft+60||px>sc.scrollLeft+vw-60){ sc.scrollLeft=Math.max(0,px-vw*0.5); } } }
   }
   function upd(){ $('sx-time').textContent=mmss(curT())+' / '+mmss(durTot()); }
-  setInterval(function(){ if(playing){ if(durTot()>0 && curT()>=durTot()){ stopAll(); playing=false; pausedOff=0; playBtn(false); } upd(); draw(); } }, 100);
+  function loop(){ if(!playing)return; if(durTot()>0 && curT()>=durTot()){ stopAll(); playing=false; pausedOff=0; playBtn(false); upd(); draw(); return; } upd(); draw(); rafId=requestAnimationFrame(loop); }
   function serial(){ return JSON.stringify(SX.map(function(s){return {nombre:s.nombre||'Seccion', t:s.t};})); }
   window.sxGuardar=function(auto){ $('sx-json').value=serial(); if(auto){ var fd=new FormData(form); fd.append('autosave','1'); fetch(form.action,{method:'POST',body:fd}).then(function(){ var e=$('sx-save'); e.textContent='Guardado'; e.style.opacity='1'; setTimeout(function(){e.style.opacity='0';},1200); }); } else { form.submit(); } };
   window.sxExportMidi=function(){ $('sx-json').value=serial(); var i=document.createElement('input'); i.type='hidden'; i.name='accion'; i.value='exportar_midi'; form.appendChild(i); form.submit(); form.removeChild(i); };
   ['click','guia','mezcla'].forEach(togBtn);
   sxRender(); draw(); sxAnalizar();
+  ['click','guia','mezcla'].forEach(function(k){ loadLayer(k); });  // precargar para que entren perfectas al dar play
 })();
 </script>
 </body>
