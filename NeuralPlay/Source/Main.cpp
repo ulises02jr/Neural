@@ -1034,7 +1034,7 @@ struct MidiPanel : public juce::Component
 
 struct RepertoirePicker : public juce::Component
 {
-    struct Item { juce::String id, nombre, fecha; int nCanciones = 0; };
+    struct Item { juce::String id, nombre, fecha; int nCanciones = 0; bool cached = false; int dlPct = -1; };
     juce::Array<Item> items;
     int selected = -1;
     int menuRow = -1;                 // fila con el menú (Cargar/Guardar/Borrar) desplegado
@@ -1083,6 +1083,11 @@ struct RepertoirePicker : public juce::Component
         auto p = panelBounds();
         return { p.getX() + 20, p.getY() + 64 + i * 54, p.getWidth() - 40, 48 };
     }
+    juce::Rectangle<int> chipRect (int i) const
+    {
+        auto r = rowBounds (i);
+        return { r.getRight() - 108, r.getCentreY() - 13, 96, 26 };
+    }
     bool canSave (int i) const
     {
         return i >= 0 && i < items.size() && currentLoadedId.isNotEmpty() && items[i].id == currentLoadedId;
@@ -1093,7 +1098,7 @@ struct RepertoirePicker : public juce::Component
         auto r = rowBounds (i);
         const int bw = 84, bh = 24, gap = 8;
         int x = r.getX() + 4, y = r.getBottom() + 4;
-        const int n = (canSave (i) ? 1 : 0) + 2;   // [Guardar?] Descargar, Borrar
+        const int n = canSave (i) ? 2 : 1;   // [Guardar?] Borrar  (Descargar va en el chip de la derecha)
         for (int k = 0; k < n; ++k) { out.add ({ x, y, bw, bh }); x += bw + gap; }
         return out;
     }
@@ -1135,11 +1140,21 @@ struct RepertoirePicker : public juce::Component
             g.fillRoundedRectangle (r, 9.0f);
             g.setColour (sel ? juce::Colours::white : juce::Colour (0x22ffffff));
             g.drawRoundedRectangle (r, 9.0f, sel ? 1.6f : 1.0f);
+            auto txt = r.reduced (14, 6).withTrimmedRight (116.0f);
             g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
-            g.drawText (items[i].nombre, r.reduced (14, 6).removeFromTop (18.0f), juce::Justification::centredLeft);
+            g.drawText (items[i].nombre, txt.removeFromTop (18.0f), juce::Justification::centredLeft);
             g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (11.5f));
             g.drawText (items[i].fecha + "   \xc2\xb7   " + juce::String (items[i].nCanciones) + " canciones",
-                        r.reduced (14, 6).removeFromBottom (16.0f), juce::Justification::centredLeft);
+                        txt.removeFromBottom (16.0f), juce::Justification::centredLeft);
+            // chip de estado de descarga (derecha)
+            auto ch = chipRect (i).toFloat();
+            juce::Colour cbg, cfg; juce::String ctxt;
+            if (items[i].dlPct >= 0)        { cbg = juce::Colour (0xff3a2f10); cfg = juce::Colour (0xffE6C15A); ctxt = juce::String (items[i].dlPct) + "%"; }
+            else if (items[i].cached)       { cbg = juce::Colour (0xff14301a); cfg = juce::Colour (0xff8fe0a0); ctxt = juce::String::fromUTF8 ("\xe2\x9c\x93 Offline"); }
+            else                            { cbg = juce::Colour (0xff12203c); cfg = juce::Colour (0xff7Cc6ff); ctxt = juce::String::fromUTF8 ("\xe2\xa4\x93 Descargar"); }
+            g.setColour (cbg); g.fillRoundedRectangle (ch, 7.0f);
+            g.setColour (cfg); g.setFont (juce::Font (11.5f, juce::Font::bold));
+            g.drawText (ctxt, ch, juce::Justification::centred);
         }
         // Menú de acciones sobre la fila tocada
         if (menuRow >= 0 && menuRow < items.size())
@@ -1154,7 +1169,6 @@ struct RepertoirePicker : public juce::Component
             auto br = belowRects (menuRow);
             int k = 0;
             if (save) drawBtn (br[k++], juce::Colour (0xff17361f), juce::Colour (0xff5CD98A), "Guardar");
-            drawBtn (br[k++], juce::Colour (0xff12203c), juce::Colour (0xff7Cc6ff), "Descargar");
             drawBtn (br[k], juce::Colour (0xff2a1414), juce::Colour (0xffe05555), "Borrar");
         }
     }
@@ -1183,10 +1197,12 @@ struct RepertoirePicker : public juce::Component
             const auto id = items[menuRow].id;
             auto br = belowRects (menuRow);
             int k = 0;
-            if (save) { if (br[k].contains (e.getPosition())) { savedAt = juce::Time::getMillisecondCounter(); if (onSave) onSave (id); menuRow = -1; scheduleFlash(); repaint(); return; } ++k; }
-            if (k < br.size() && br[k].contains (e.getPosition())) { menuRow = -1; if (onDownload) onDownload (id); repaint(); return; } ++k;
+            if (save && br[k++].contains (e.getPosition())) { savedAt = juce::Time::getMillisecondCounter(); if (onSave) onSave (id); menuRow = -1; scheduleFlash(); repaint(); return; }
             if (k < br.size() && br[k].contains (e.getPosition())) { menuRow = -1; if (onDelete) onDelete (id); return; }
         }
+        for (int i = 0; i < items.size(); ++i)   // chip de descarga a la derecha de la fila
+            if (chipRect (i).contains (e.getPosition()))
+            { if (items[i].dlPct < 0 && ! items[i].cached && onDownload) onDownload (items[i].id); return; }
         for (int i = 0; i < items.size(); ++i)   // tocar una fila la selecciona y abre su menú
             if (rowBounds (i).contains (e.getPosition())) { selected = i; menuRow = i; repaint(); return; }
         if (menuRow >= 0) { menuRow = -1; repaint(); }          // clic fuera de filas: cerrar menú
@@ -1210,7 +1226,7 @@ struct StoragePanel : public juce::Component
     juce::int64 total = 0, unused = 0;
     bool autoClean = false;
     int capGB = 0;                 // 0 = sin límite
-    juce::Rectangle<int> capLblBounds;
+    juce::Rectangle<int> capLblBounds, capValBounds, autoHdrBounds, autoDescBounds;
     std::function<void()> onFreeUnused, onClearAll;
     std::function<void (bool)> onAutoClean;
     std::function<void (int)> onCap;
@@ -1249,13 +1265,14 @@ struct StoragePanel : public juce::Component
     void refresh()
     {
         freeBtn.setButtonText (juce::String::fromUTF8 ("Liberar sin usar  (") + npFmtBytes (unused) + ")");
-        autoBtn.setButtonText (juce::String::fromUTF8 ("Auto-limpiar lo que no uso:  ") + juce::String (autoClean ? "S\xc3\xad" : "No"));
+        autoBtn.setButtonText (autoClean ? juce::String::fromUTF8 ("Activada") : juce::String::fromUTF8 ("Desactivada"));
         autoBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (autoClean ? 0xff17361f : 0xff1f1f1f));
+        autoBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (autoClean ? 0xff8fe0a0 : 0xfff2f2f2));
         freeBtn.setEnabled (unused > 0);
         repaint();
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (430, 384); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (440, 500); }
 
     void paint (juce::Graphics& g) override
     {
@@ -1271,25 +1288,44 @@ struct StoragePanel : public juce::Component
         g.setFont (13.5f); g.setColour (juce::Colour (0xffa3a3a3));
         g.drawText (juce::String::fromUTF8 ("En uso por tus repertorios:   ") + npFmtBytes (total - unused), in.removeFromTop (22), juce::Justification::centredLeft);
         g.drawText (juce::String::fromUTF8 ("Sin usar (se puede liberar):   ") + npFmtBytes (unused), in.removeFromTop (22), juce::Justification::centredLeft);
+
+        // ── sección: Limpieza automática (agrupa el interruptor + el límite) ──
+        g.setColour (juce::Colour (0x18ffffff));
+        g.fillRect (juce::Rectangle<int> (in.getX(), autoHdrBounds.getY() - 8, in.getWidth(), 1));
+        g.setColour (juce::Colour (0xffC9A96E)); g.setFont (juce::Font (12.0f, juce::Font::bold));
+        g.drawText (juce::String::fromUTF8 ("LIMPIEZA AUTOM\xc3\x81TICA"), autoHdrBounds, juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xff8a8a8a)); g.setFont (12.0f);
+        g.drawText (juce::String::fromUTF8 ("Borra solo el audio que no est\xc3\xa1 en ninguno de tus repertorios."),
+                    autoDescBounds, juce::Justification::centredLeft);
         g.setColour (juce::Colour (0xfff2f2f2)); g.setFont (13.5f);
-        g.drawText (juce::String::fromUTF8 ("L\xc3\xadmite:   ") + (capGB > 0 ? juce::String (capGB) + " GB" : juce::String::fromUTF8 ("sin l\xc3\xadmite")),
-                    capLblBounds, juce::Justification::centredLeft);
+        g.drawText (juce::String::fromUTF8 ("L\xc3\xadmite de cach\xc3\xa9"), capLblBounds, juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xffe8e8e8)); g.setFont (juce::Font (14.0f, juce::Font::bold));
+        g.drawText (capGB > 0 ? juce::String (capGB) + " GB" : juce::String::fromUTF8 ("sin l\xc3\xadmite"),
+                    capValBounds, juce::Justification::centred);
     }
 
     void resized() override
     {
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
-        auto b = p.reduced (24); b.removeFromTop (52 + 26 + 22 + 22 + 12);
+        auto b = p.reduced (24);
+        b.removeFromTop (52 + 26 + 22 + 22 + 16);      // título + stats
         const int bh = 44, gap = 10;
         freeBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
-        clearBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
-        autoBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
+        clearBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (20);
+        autoHdrBounds  = b.removeFromTop (18); b.removeFromTop (2);
+        autoDescBounds = b.removeFromTop (18); b.removeFromTop (6);
+        // fila: [descripción del toggle | botón Activada/Desactivada]
+        {
+            auto row = b.removeFromTop (bh);
+            autoBtn.setBounds (row.removeFromRight (150));
+        }
+        b.removeFromTop (12);
+        // fila del límite: etiqueta ... [-] valor [+]
         auto cr = b.removeFromTop (bh);
-        capPlus.setBounds  (cr.removeFromRight (44));
-        cr.removeFromRight (6);
-        capMinus.setBounds (cr.removeFromRight (44));
-        cr.removeFromRight (10);
+        capPlus.setBounds  (cr.removeFromRight (44)); cr.removeFromRight (8);
+        capValBounds = cr.removeFromRight (78);       cr.removeFromRight (8);
+        capMinus.setBounds (cr.removeFromRight (44)); cr.removeFromRight (12);
         capLblBounds = cr;
     }
 
@@ -3505,17 +3541,38 @@ private:
         }
     }
 
+    void setPickerDlPct (const juce::String& id, int pct)
+    {
+        for (auto& it : repPicker.items) if (it.id == id) { it.dlPct = pct; break; }
+        if (repPicker.isVisible()) repPicker.repaint();
+    }
     void downloadRepertoireOffline (juce::String id)   // baja TODO un repertorio al caché, sin cambiar la vista
     {
         if (serverToken.isEmpty()) return;
         if (offlineLoader && offlineLoader->isThreadRunning())
         { connStatus.setText (juce::String::fromUTF8 ("Ya hay una descarga en curso\xe2\x80\xa6"), juce::dontSendNotification); return; }
+        offlineId = id; offlineTotal = 1; offlinePct = 0;
+        for (auto& it : repPicker.items) if (it.id == id) { offlineTotal = juce::jmax (1, it.nCanciones); break; }
+        setPickerDlPct (id, 0);
         offlineLoader = std::make_unique<RepertoireLoader> (serverUrl, serverToken, npCacheDir());
         offlineLoader->wantedId = id;
         juce::Component::SafePointer<MainComponent> sp (this);
         offlineLoader->onStatus   = [sp] (juce::String s) { if (sp) sp->connStatus.setText (s, juce::dontSendNotification); };
-        offlineLoader->onProgress = [sp] (int i, double) { if (sp) sp->connStatus.setText (juce::String::fromUTF8 ("Descargando para offline\xe2\x80\xa6 canci\xc3\xb3n ") + juce::String (i + 1), juce::dontSendNotification); };
-        offlineLoader->onDone     = [sp] (juce::Array<SongEntry>) { if (sp) { sp->connStatus.setText (juce::String::fromUTF8 ("Repertorio descargado \xe2\x9c\x93"), juce::dontSendNotification); sp->refreshStorageStats(); } };
+        offlineLoader->onProgress = [sp] (int i, double f)
+        {
+            if (! sp) return;
+            const int pct = (int) juce::jlimit (0.0, 100.0, ((i + f) / (double) juce::jmax (1, sp->offlineTotal)) * 100.0);
+            sp->offlinePct = pct; sp->setPickerDlPct (sp->offlineId, pct);
+        };
+        offlineLoader->onDone     = [sp] (juce::Array<SongEntry>)
+        {
+            if (! sp) return;
+            for (auto& it : sp->repPicker.items) if (it.id == sp->offlineId) { it.dlPct = -1; it.cached = true; break; }
+            if (sp->repPicker.isVisible()) sp->repPicker.repaint();
+            sp->connStatus.setText (juce::String::fromUTF8 ("Repertorio descargado \xe2\x9c\x93"), juce::dontSendNotification);
+            sp->offlineId.clear(); sp->offlinePct = -1;
+            sp->refreshStorageStats();
+        };
         offlineLoader->startThread();
         connStatus.setText (juce::String::fromUTF8 ("Descargando repertorio para offline\xe2\x80\xa6"), juce::dontSendNotification);
     }
@@ -3567,12 +3624,30 @@ private:
                     it.id     = s.getProperty ("id", "").toString();
                     it.nombre = s.getProperty ("nombre", "Repertorio").toString();
                     it.fecha  = s.getProperty ("fecha", "").toString();
-                    if (auto* cs = s.getProperty ("canciones", juce::var()).getArray()) it.nCanciones = cs->size();
+                    bool cached = false;
+                    if (auto* cs = s.getProperty ("canciones", juce::var()).getArray())
+                    {
+                        it.nCanciones = cs->size();
+                        cached = ! cs->isEmpty();
+                        for (auto& c : *cs)
+                        {
+                            const int cid = (int) c.getProperty ("id", 0);
+                            const int tono = (int) c.getProperty ("tono_semitonos", 0);
+                            auto folder = npCacheDir().getChildFile ("song_" + juce::String (cid) + "_t" + juce::String (tono));
+                            if (! (folder.isDirectory() && folder.getNumberOfChildFiles (juce::File::findFiles) > 0)) { cached = false; break; }
+                        }
+                    }
+                    it.cached = cached;
                     its.add (it);
                 }
             juce::MessageManager::callAsync ([sp, its]
             {
-                if (sp != nullptr && sp->repPicker.isVisible()) sp->repPicker.setItems (its);
+                if (sp != nullptr && sp->repPicker.isVisible())
+                {
+                    sp->repPicker.setItems (its);
+                    if (sp->offlineId.isNotEmpty() && sp->offlineLoader && sp->offlineLoader->isThreadRunning())
+                        sp->setPickerDlPct (sp->offlineId, sp->offlinePct);   // re-aplica el % si sigue bajando
+                }
             });
         });
     }
@@ -4359,6 +4434,8 @@ private:
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
     std::unique_ptr<RepertoireLoader> offlineLoader;   // descarga de un repertorio para offline (no cambia la UI)
+    juce::String offlineId;                            // repertorio que se está bajando para offline
+    int offlineTotal = 0, offlinePct = -1;
 
     juce::AudioFormatManager formatManager;
     juce::AudioThumbnailCache thumbCache { 1 };
