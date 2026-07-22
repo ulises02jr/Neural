@@ -1565,6 +1565,12 @@ def _invalidar_tonos(numero):
                 shutil.rmtree(str(d))
             except Exception:
                 pass
+    adm = base / "_admin"
+    if adm.is_dir():
+        try:
+            shutil.rmtree(str(adm))
+        except Exception:
+            pass
 
 
 def _asegurar_web(numero, n):
@@ -1849,6 +1855,105 @@ def _fmt_tiempo(secs):
     return "%02d:%02d:%02d:%03d" % (h, mi, se, ms)
 
 
+def _hallar_stem_familia(numero, familia):
+    base = CARPETA_PISTAS / str(numero)
+    if not base.is_dir():
+        return None
+    fam = _leer_familias(numero)
+    for f in sorted(base.iterdir()):
+        if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
+            fa = fam.get(f.name) or _familia_auto(f.stem)
+            if fa == familia:
+                return f
+    return None
+
+
+def _admin_audio_dir(numero):
+    d = CARPETA_PISTAS / str(numero) / "_admin"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _stems_para_mezcla(numero):
+    """Todos los stems menos Click y Guia (los instrumentos, para la mezcla de preview)."""
+    base = CARPETA_PISTAS / str(numero)
+    if not base.is_dir():
+        return []
+    fam = _leer_familias(numero)
+    outs = []
+    for f in sorted(base.iterdir()):
+        if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
+            fa = fam.get(f.name) or _familia_auto(f.stem)
+            if fa not in ("Click", "Guía"):
+                outs.append(f)
+    return outs
+
+
+def _asegurar_audio_admin(numero, tipo):
+    """Genera (si falta) el mp3 de 'guia' o 'mezcla' para el editor de secciones."""
+    d = _admin_audio_dir(numero)
+    out = d / (tipo + ".mp3")
+    lock = d / (tipo + ".lock")
+    if out.exists() or lock.exists():
+        return
+    try:
+        lock.write_text("1")
+        if tipo == "guia":
+            g = _hallar_stem_familia(numero, "Guía")
+            if g is None:
+                return
+            subprocess.run(["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(g),
+                            "-b:a", "128k", str(out)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+        elif tipo == "mezcla":
+            ins = _stems_para_mezcla(numero)
+            if not ins:
+                return
+            cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y"]
+            for f in ins:
+                cmd += ["-i", str(f)]
+            cmd += ["-filter_complex",
+                    "amix=inputs=%d:normalize=0,alimiter=limit=0.95" % len(ins),
+                    "-b:a", "128k", str(out)]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
+    except Exception as e:
+        logging.error("audio_admin %s/%s: %s", numero, tipo, e)
+    finally:
+        try:
+            lock.unlink()
+        except Exception:
+            pass
+
+
+@app.route("/admin/pistas/<int:numero>/audio_prep/<tipo>", methods=["POST"])
+@login_required("admin")
+def admin_audio_prep(numero, tipo):
+    if tipo not in ("guia", "mezcla"):
+        return jsonify({"ok": False, "error": "tipo"})
+    if tipo == "guia" and _hallar_stem_familia(numero, "Guía") is None:
+        return jsonify({"ok": False, "error": "sin_guia"})
+    if tipo == "mezcla" and not _stems_para_mezcla(numero):
+        return jsonify({"ok": False, "error": "sin_stems"})
+    out = _admin_audio_dir(numero) / (tipo + ".mp3")
+    if out.exists():
+        return jsonify({"ok": True, "ready": True})
+    lock = _admin_audio_dir(numero) / (tipo + ".lock")
+    if not lock.exists():
+        threading.Thread(target=_asegurar_audio_admin, args=(numero, tipo), daemon=True).start()
+    return jsonify({"ok": True, "ready": False, "generando": True})
+
+
+@app.route("/admin/pistas/<int:numero>/audio/<tipo>")
+@login_required("admin")
+def admin_audio(numero, tipo):
+    if tipo not in ("guia", "mezcla"):
+        return ("no", 404)
+    out = _admin_audio_dir(numero) / (tipo + ".mp3")
+    if not out.exists():
+        return ("no listo", 404)
+    return send_file(str(out), mimetype="audio/mpeg", conditional=True)
+
+
 def _hallar_stem_click(numero):
     """Devuelve el archivo del stem de Click (familia 'Click'), o None."""
     base = CARPETA_PISTAS / str(numero)
@@ -1962,20 +2067,70 @@ def admin_secciones(numero):
         return redirect(url_for("admin_pistas"))
     secs_chart = cancion.get("secciones", [])
     if request.method == "POST":
-        guardadas = []
-        for i, sec in enumerate(secs_chart):
-            tiempo = request.form.get("t_" + str(i), "").strip()
-            if not tiempo:
-                continue
-            val = _parse_tiempo(tiempo)
-            if val is None:
-                continue
-            guardadas.append({"i": i, "nombre": sec.get("tipo", "Seccion"), "t": round(val, 3)})
-        guardadas.sort(key=lambda x: x["t"])
         carpeta = CARPETA_PISTAS / str(numero)
         carpeta.mkdir(exist_ok=True)
-        _archivo_secciones(numero).write_text(
-            json.dumps(guardadas, ensure_ascii=False, indent=2), encoding="utf-8")
+        sj = request.form.get("secciones_json")
+        if sj is not None:
+            # modelo nuevo: el editor manda toda la lista (nombre + t)
+            try:
+                arr = json.loads(sj)
+                if not isinstance(arr, list):
+                    arr = []
+            except Exception:
+                arr = []
+            secs = []
+            for it in arr:
+                if not isinstance(it, dict):
+                    continue
+                nombre = str(it.get("nombre", "")).strip() or "Seccion"
+                t = it.get("t", None)
+                try:
+                    t = round(float(t), 3)
+                except Exception:
+                    t = None
+                secs.append({"nombre": nombre, "t": t})
+            secs.sort(key=lambda s: (s["t"] is None, s["t"] if s["t"] is not None else 0.0))
+            guardadas = [{"i": i, "nombre": s["nombre"], "t": s["t"]}
+                         for i, s in enumerate(secs) if s["t"] is not None]
+            _archivo_secciones(numero).write_text(
+                json.dumps(guardadas, ensure_ascii=False, indent=2), encoding="utf-8")
+            # sembrar cancion["secciones"] (nombres/orden) preservando acordes por indice
+            fdoc = _archivo_cancion(numero)
+            if fdoc:
+                try:
+                    doc = json.loads(fdoc.read_text(encoding="utf-8"))
+                except Exception:
+                    doc = {}
+                viejas = doc.get("secciones", [])
+                if not isinstance(viejas, list):
+                    viejas = []
+                nuevas = []
+                for i, s in enumerate(secs):
+                    base = {"tipo": s["nombre"]}
+                    if i < len(viejas) and isinstance(viejas[i], dict):
+                        v = viejas[i]
+                        for k in ("nota", "lines", "inst", "prog"):
+                            if k in v:
+                                base[k] = v[k]
+                    nuevas.append(base)
+                doc["secciones"] = nuevas
+                if not request.form.get("autosave"):
+                    _backup_cancion(fdoc)
+                fdoc.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+        else:
+            # modelo viejo: tiempos t_<i> contra el chart existente
+            guardadas = []
+            for i, sec in enumerate(secs_chart):
+                tiempo = request.form.get("t_" + str(i), "").strip()
+                if not tiempo:
+                    continue
+                val = _parse_tiempo(tiempo)
+                if val is None:
+                    continue
+                guardadas.append({"i": i, "nombre": sec.get("tipo", "Seccion"), "t": round(val, 3)})
+            guardadas.sort(key=lambda x: x["t"])
+            _archivo_secciones(numero).write_text(
+                json.dumps(guardadas, ensure_ascii=False, indent=2), encoding="utf-8")
         if request.form.get("autosave"):
             return jsonify({"ok": True})
         if request.form.get("accion") == "exportar_midi":
