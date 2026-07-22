@@ -1638,7 +1638,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>MI Worship · En vivo</title>
 <style>
- :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;--txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--accent:#C9A96E;--accent-soft:#2a2418;--live:#86B36A;--dead:#dc6262;--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
+ :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;--txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--accent:#C9A96E;--accent-soft:#2a2418;--live:#86B36A;--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
  body[data-size="xs"]{--lyric-size:14px;--chord-size:13px;--chord-min:17px;}
  body[data-size="s"]{--lyric-size:16px;--chord-size:15px;--chord-min:19px;}
  body[data-size="m"]{--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
@@ -1647,26 +1647,30 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
  html,body{height:100%;overflow:hidden}
  body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.5;-webkit-text-size-adjust:100%}
+ body.claro{--bg:#f4f4f6;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95}
+ body.solo-acordes .lyric{display:none}
+ body.solo-letra .chord{display:none}
+ body[data-grosor="fino"] .chord{font-weight:400;-webkit-text-stroke:0}
+ body[data-grosor="normal"] .chord{font-weight:700;-webkit-text-stroke:0}
+ body[data-grosor="grueso"] .chord{font-weight:800;-webkit-text-stroke:.45px currentColor}
  .wrap{height:100dvh;display:flex;flex-direction:column;padding:14px;padding-bottom:max(14px,env(safe-area-inset-bottom))}
  .topbar{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:10px}
  .song-title-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}
  .song-title{font-size:17px;font-weight:600;line-height:1.2}
  .song-meta{font-size:12px;color:var(--txt2);margin-top:2px}
  .tono-chip{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#1a1407;font-weight:700;font-size:15px;padding:2px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;line-height:1.3;letter-spacing:.5px}
- .right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
- .live{width:9px;height:9px;border-radius:50%;background:#444;display:inline-block;margin-top:3px}
+ .right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+ .live{width:9px;height:9px;border-radius:50%;background:#444;display:inline-block}
  .live.on{background:var(--live);box-shadow:0 0 8px var(--live)}
- .size-ctrl{display:inline-flex;align-items:center;gap:4px}
- .size-btn{width:30px;height:26px;border-radius:6px;background:var(--surface);border:1px solid var(--line);color:var(--txt2);font-size:13px;cursor:pointer;font-family:inherit;font-weight:600;padding:0;line-height:1}
- .size-btn:active{background:var(--raised);color:var(--accent)}
- .size-btn:disabled{opacity:.35;cursor:default}
- .size-label{font-size:11px;color:var(--txt3);min-width:16px;text-align:center}
+ .dots-btn{width:36px;height:32px;border-radius:7px;background:var(--surface);border:1px solid var(--line);color:var(--txt2);font-size:18px;line-height:1;cursor:pointer;font-family:inherit}
+ .dots-btn:active{background:var(--raised);color:var(--txt)}
  .timeline-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -14px;padding:0 14px 6px;flex-shrink:0;scrollbar-width:none}
  .timeline-wrap::-webkit-scrollbar{display:none}
  .timeline{display:inline-flex;gap:6px;padding-bottom:4px;white-space:nowrap}
  .pill{display:inline-block;padding:6px 12px;border-radius:7px;font-size:13px;color:var(--txt2);background:var(--surface);border:1px solid var(--line);cursor:pointer;flex-shrink:0}
  .pill.done{color:var(--txt3)}
  .pill.active{color:var(--accent);background:var(--accent-soft);border-color:var(--accent);font-weight:600}
+ body.claro .pill.active{background:var(--accent);border-color:var(--accent);color:#1a1407}
  .stage{flex:1;overflow-y:auto;padding:2px 0 40vh;-webkit-overflow-scrolling:touch;scroll-behavior:smooth}
  .sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 16px;margin-bottom:12px;opacity:.5;transition:opacity .2s,border-color .2s}
  .sec.active{border-color:var(--accent);opacity:1}
@@ -1675,13 +1679,36 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .secnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:12px}
  .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
  .lyrics .tok{display:inline-flex;flex-direction:column}
- .chord{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:var(--chord-size);font-weight:700;color:var(--accent);min-height:var(--chord-min);line-height:var(--chord-min);white-space:pre}
+ .chord{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:var(--chord-size);font-weight:700;color:var(--chord-color,var(--accent));min-height:var(--chord-min);line-height:var(--chord-min);white-space:pre}
  .lyric{font-size:var(--lyric-size);color:var(--txt);line-height:1.35;white-space:pre}
  .inst{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 0}
  .chip{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--chord-size);font-weight:700;color:var(--accent);background:var(--accent-soft);padding:8px 16px;border-radius:8px}
  .inst-label{font-size:15px;color:var(--txt2);margin-bottom:14px}
  .off{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--txt2);font-size:15px;padding:20px;text-align:center;background:var(--bg);z-index:50}
+ .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;opacity:0;pointer-events:none;transition:opacity .2s}
+ .sheet-bg.open{opacity:1;pointer-events:auto}
+ .sheet{position:fixed;left:0;right:0;bottom:0;z-index:101;background:var(--surface);border-top:1px solid var(--line);border-radius:20px 20px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .25s ease;max-height:82vh;overflow-y:auto}
+ .sheet.open{transform:translateY(0)}
+ .sheet-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+ .sheet-t{font-size:16px;font-weight:700}
+ .sheet-x{background:none;border:none;color:var(--accent);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+ .aj-lbl{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1.2px;font-weight:600;margin:16px 0 8px}
+ .seg{display:flex;gap:6px;flex-wrap:wrap}
+ .seg button{flex:1;min-width:72px;background:var(--raised);border:1px solid var(--line);color:var(--txt);padding:10px 8px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit}
+ .seg button.active{background:var(--accent);color:#1a1407;border-color:var(--accent);font-weight:600}
+ .seg.colores{gap:9px}
+ .seg.colores button{flex:0 0 auto;min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
+ .seg.colores button.active{border-color:var(--txt)}
+ .seg.colores input[type=color]{width:34px;height:34px;border:2px solid var(--line);border-radius:50%;padding:0;background:none;cursor:pointer}
+ .seg.colores input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+ .seg.colores input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
+ .size-row{display:flex;align-items:center;gap:16px;justify-content:center;margin-top:8px}
+ .size-big{width:64px;height:52px;border-radius:12px;background:var(--raised);border:1px solid var(--line);color:var(--txt);font-size:20px;font-weight:700;cursor:pointer;font-family:inherit}
+ .size-big:active{background:var(--accent-soft)}
+ .size-big:disabled{opacity:.35}
+ .size-lbl{font-size:16px;color:var(--accent);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
 </style></head><body>
+<script>/*acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--accent',c);d.setProperty('--accent-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');}}catch(e){}})();</script>
 <div class="wrap">
  <div class="topbar">
   <div style="min-width:0">
@@ -1690,13 +1717,46 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
   </div>
   <div class="right">
    <span class="live" id="lv"></span>
-   <div class="size-ctrl"><button class="size-btn" id="size-minus" onclick="tamMenos()">A&#8722;</button><span class="size-label" id="size-label">M</span><button class="size-btn" id="size-plus" onclick="tamMas()">A+</button></div>
+   <button class="dots-btn" onclick="abrirAjustes()" title="Ajustes">&#8943;</button>
   </div>
  </div>
  <div class="timeline-wrap"><div class="timeline" id="tl"></div></div>
  <div class="stage" id="stage"></div>
 </div>
 <div class="off" id="off">Esperando al reproductor&#8230;</div>
+
+<div class="sheet-bg" id="bg-ajustes" onclick="cerrarAjustes()"></div>
+<div class="sheet" id="sheet-ajustes">
+ <div class="sheet-h"><div class="sheet-t">Ajustes de vista</div><button class="sheet-x" onclick="cerrarAjustes()">Listo</button></div>
+ <div class="aj-lbl">Tamaño de letra</div>
+ <div class="size-row"><button class="size-big" id="size-minus" onclick="tamMenos()">A&#8722;</button><span class="size-lbl" id="size-label">M</span><button class="size-big" id="size-plus" onclick="tamMas()">A+</button></div>
+ <div class="aj-lbl">Tema</div>
+ <div class="seg" id="seg-tema"><button data-val="oscuro" onclick="setVista('tema','oscuro')">Oscuro</button><button data-val="claro" onclick="setVista('tema','claro')">Día</button></div>
+ <div class="aj-lbl">Mostrar</div>
+ <div class="seg" id="seg-modo"><button data-val="ambos" onclick="setVista('modo','ambos')">Ambos</button><button data-val="acordes" onclick="setVista('modo','acordes')">Solo acordes</button><button data-val="letra" onclick="setVista('modo','letra')">Solo letra</button></div>
+ <div class="aj-lbl">Color de acordes</div>
+ <div class="seg colores" id="seg-color">
+  <button data-val="" onclick="setVista('color','')" title="Por defecto" style="background:var(--accent)"></button>
+  <button data-val="#ffffff" onclick="setVista('color','#ffffff')" title="Blanco" style="background:#ffffff"></button>
+  <button data-val="#ffd23f" onclick="setVista('color','#ffd23f')" title="Amarillo" style="background:#ffd23f"></button>
+  <button data-val="#8fd3ff" onclick="setVista('color','#8fd3ff')" title="Celeste" style="background:#8fd3ff"></button>
+  <button data-val="#8fe0a0" onclick="setVista('color','#8fe0a0')" title="Verde" style="background:#8fe0a0"></button>
+  <button data-val="#ff9d5c" onclick="setVista('color','#ff9d5c')" title="Naranja" style="background:#ff9d5c"></button>
+ </div>
+ <div class="aj-lbl">Grosor de acordes</div>
+ <div class="seg" id="seg-grosor"><button data-val="fino" onclick="setVista('grosor','fino')">Fino</button><button data-val="normal" onclick="setVista('grosor','normal')">Normal</button><button data-val="grueso" onclick="setVista('grosor','grueso')">Grueso</button></div>
+ <div class="aj-lbl">Color de acento (interfaz)</div>
+ <div class="seg colores" id="seg-acento">
+  <button data-val="" onclick="setAcento('')" title="Por defecto" style="background:#C9A96E"></button>
+  <button data-val="#5B8DEF" onclick="setAcento('#5B8DEF')" title="Azul" style="background:#5B8DEF"></button>
+  <button data-val="#3FB950" onclick="setAcento('#3FB950')" title="Verde" style="background:#3FB950"></button>
+  <button data-val="#A371F7" onclick="setAcento('#A371F7')" title="Morado" style="background:#A371F7"></button>
+  <button data-val="#E5534B" onclick="setAcento('#E5534B')" title="Rojo" style="background:#E5534B"></button>
+  <button data-val="#2DB7A3" onclick="setAcento('#2DB7A3')" title="Turquesa" style="background:#2DB7A3"></button>
+  <button data-val="#FFFFFF" onclick="setAcento('#FFFFFF')" title="Blanco" style="background:#FFFFFF"></button>
+  <input type="color" id="acento-custom-v" title="Color personalizado" onchange="setAcento(this.value)">
+ </div>
+</div>
 <script>
 var song=null, ver=-1, idx=-1;
 var NIVELES=['xs','s','m','l','xl'], nivel=2;
@@ -1704,7 +1764,25 @@ function aplicarTam(){ document.body.dataset.size=NIVELES[nivel]; try{localStora
 function tamMenos(){ if(nivel>0){nivel--;aplicarTam();} }
 function tamMas(){ if(nivel<NIVELES.length-1){nivel++;aplicarTam();} }
 try{ var sv=localStorage.getItem('np_tam'); if(sv&&NIVELES.indexOf(sv)>=0) nivel=NIVELES.indexOf(sv); }catch(e){}
-aplicarTam();
+// ── Ajustes de vista (tema / mostrar / color / grosor) ──
+var VISTA={tema:'oscuro',modo:'ambos',color:'',grosor:'normal'};
+function marcarV(id,val){ var s=document.getElementById(id); if(!s)return; s.querySelectorAll('button').forEach(function(b){ b.classList.toggle('active', b.dataset.val===val); }); }
+function aplicarVista(){
+ document.body.classList.toggle('claro', VISTA.tema==='claro');
+ document.body.classList.toggle('solo-acordes', VISTA.modo==='acordes');
+ document.body.classList.toggle('solo-letra', VISTA.modo==='letra');
+ if(VISTA.color){ document.body.style.setProperty('--chord-color', VISTA.color); } else { document.body.style.removeProperty('--chord-color'); }
+ document.body.dataset.grosor=VISTA.grosor;
+ marcarV('seg-tema',VISTA.tema); marcarV('seg-modo',VISTA.modo); marcarV('seg-color',VISTA.color); marcarV('seg-grosor',VISTA.grosor);
+}
+function cargarVista(){ try{ VISTA.tema=localStorage.getItem('charts_tema')||'oscuro'; VISTA.modo=localStorage.getItem('charts_modo')||'ambos'; VISTA.color=localStorage.getItem('charts_color')||''; VISTA.grosor=localStorage.getItem('charts_grosor')||'normal'; if(['fino','normal','grueso'].indexOf(VISTA.grosor)<0)VISTA.grosor='normal'; }catch(e){} aplicarVista(); }
+function setVista(clave,val){ VISTA[clave]=val; try{localStorage.setItem('charts_'+clave,val);}catch(e){} aplicarVista(); }
+function hexRgbaV(hex,a){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return 'rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+','+a+')'; }
+function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}catch(e){} var d=document.documentElement.style; if(c){ d.setProperty('--accent',c); d.setProperty('--accent-soft',hexRgbaV(c,0.16)); } else { d.removeProperty('--accent'); d.removeProperty('--accent-soft'); } marcarV('seg-acento',c||''); var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; } }
+function setAcento(val){ try{ if(val)localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} aplicarAcento(); }
+function abrirAjustes(){ document.getElementById('bg-ajustes').classList.add('open'); document.getElementById('sheet-ajustes').classList.add('open'); }
+function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
+// ── Chart ──
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function renderLines(lines){return '<div class="lyrics">'+(lines||[]).map(function(line){return '<div class="line">'+(line||[]).map(function(t){return '<div class="tok"><span class="chord">'+esc(t[0])+'</span><span class="lyric">'+esc((t[1]==null||t[1]==="")?" ":t[1])+'</span></div>';}).join('')+'</div>';}).join('')+'</div>';}
 function renderBody(s){ if(s.inst&&s.prog){return '<div class="inst-label">Instrumental</div><div class="inst">'+s.prog.map(function(a){return '<span class="chip">'+esc(a)+'</span>';}).join('')+'</div>';} return renderLines(s.lines); }
@@ -1738,6 +1816,7 @@ async function tick(){
   var o=document.getElementById('off'); o.style.display='flex'; o.textContent='Esperando al reproductor…';
  }
 }
+aplicarTam(); cargarVista(); aplicarAcento();
 setInterval(tick,400); tick();
 </script></body></html>)HTMLPAGE";
 
