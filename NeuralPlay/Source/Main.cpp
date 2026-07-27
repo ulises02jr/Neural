@@ -1620,7 +1620,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     Mode mode = Biblioteca;
     juce::String serverUrl, token;
 
-    struct BibItem { int id = 0; juce::String titulo, tono, artista; };
+    struct BibItem { int id = 0; juce::String titulo, tono, artista, portada; juce::Image cover; };
     juce::Array<BibItem> bib, bibAll;
     int bibScroll = 0;                 // desplazamiento vertical de la biblioteca
     juce::TextEditor searchBox;
@@ -1661,9 +1661,20 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         repaint();
     }
 
+    std::function<void (juce::Array<BibItem>)> onNeedCovers;   // pedir portadas al MainComponent
+
     void openBiblioteca (juce::Array<BibItem> items)
     { mode = Biblioteca; bibAll = std::move (items); searchBox.setText ("", false); searchBox.setVisible (true);
-      applyFilter(); renderingSem = 99; stopTimer(); resized(); repaint(); }
+      applyFilter(); renderingSem = 99; stopTimer(); resized(); repaint();
+      if (onNeedCovers) onNeedCovers (bibAll); }
+
+    void setBibCover (int id, juce::Image img)
+    {
+        if (! img.isValid()) return;
+        for (auto& b : bibAll) if (b.id == id) b.cover = img;
+        for (auto& b : bib)    if (b.id == id) b.cover = img;
+        repaint();
+    }
     void openTono (int id, juce::String title, bool add, juce::Array<Key> ks)
     { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
       renderingSem = 99; stopTimer(); resized(); repaint(); }
@@ -1718,13 +1729,24 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 auto r = ri.toFloat();
                 g.setColour (juce::Colour (0xff1c1c1c)); g.fillRoundedRectangle (r, 9.0f);
                 g.setColour (juce::Colour (0x22ffffff)); g.drawRoundedRectangle (r, 9.0f, 1.0f);
+                // miniatura de portada a la izquierda
+                auto thumb = r.reduced (5.0f); thumb = thumb.removeFromLeft (thumb.getHeight());
+                if (bib[i].cover.isValid())
+                {
+                    juce::Graphics::ScopedSaveState ssi (g);
+                    juce::Path cl; cl.addRoundedRectangle (thumb, 6.0f); g.reduceClipRegion (cl);
+                    g.drawImage (bib[i].cover, thumb,
+                                 juce::RectanglePlacement::centred | juce::RectanglePlacement::fillDestination);
+                }
+                else { g.setColour (juce::Colour (0xff2a2a2a)); g.fillRoundedRectangle (thumb, 6.0f); }
+                auto txt = r.withTrimmedLeft (thumb.getWidth() + 15.0f).withTrimmedRight (10.0f);
                 g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
-                g.drawText (bib[i].titulo, r.reduced (14, 0).removeFromTop (r.getHeight() * 0.6f), juce::Justification::centredLeft);
+                g.drawText (bib[i].titulo, txt.removeFromTop (r.getHeight() * 0.55f), juce::Justification::bottomLeft);
                 g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (11.5f));
                 juce::String sub = bib[i].artista.isNotEmpty()
                     ? (bib[i].artista + juce::String::fromUTF8 ("   \xc2\xb7   Tono ") + bib[i].tono)
                     : (juce::String::fromUTF8 ("Tono ") + bib[i].tono);
-                g.drawText (sub, r.reduced (14, 5).removeFromBottom (15.0f), juce::Justification::centredLeft);
+                g.drawText (sub, txt, juce::Justification::topLeft);
             }
         }
         else
@@ -2205,6 +2227,7 @@ public:
             if (add) addSong (sid, nombre);
             else     setSongTono (sid, nombre);
         };
+        repEdit.onNeedCovers = [this] (juce::Array<RepEditPanel::BibItem> items) { loadBibCovers (items); };
         addChildComponent (repEdit);
         padBtn.setButtonText ("PAD");
         padBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
@@ -3225,6 +3248,18 @@ private:
     void removeSong (int songId)
     {
         if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        for (int i = 0; i < repertoire.size(); ++i)   // UI optimista: la tarjeta desaparece al instante
+            if (repertoire.getReference (i).id == songId)
+            {
+                repertoire.remove (i);
+                if (i < songMaster.size())   songMaster.remove (i);
+                if (i < songMixCache.size()) songMixCache.remove (i);
+                if (i < songReady.size())    songReady.remove (i);
+                if (currentSong == i) { currentSong = -1; clearSong(); }
+                else if (currentSong > i) --currentSong;
+                break;
+            }
+        rebuildRepertoireStrip();
         postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/quitar/" + juce::String (songId), {});
     }
     void setSongTono (int songId, juce::String tonoName)
@@ -3236,8 +3271,52 @@ private:
     void addSong (int songId, juce::String tonoName)
     {
         if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        SongEntry ph;                                   // tarjeta placeholder inmediata
+        ph.id = -songId;
+        ph.titulo = juce::String::fromUTF8 ("Agregando\xe2\x80\xa6");
+        ph.tonoNombre = tonoName;
+        repertoire.add (ph);
+        songMaster.add (0.0);
+        songMixCache.add (juce::var());
+        songReady.add (false);
+        rebuildRepertoireStrip();
+        stripScroll = 1000000; resized();               // desliza para mostrar la nueva
         juce::StringPairArray p; p.set ("numero", juce::String (songId)); p.set ("tono", tonoName);
         postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/agregar", p);
+    }
+
+    // ───────── Miniaturas de portada en la biblioteca (#7) ─────────
+    std::map<int, juce::Image> bibCoverCache;
+    void loadBibCovers (juce::Array<RepEditPanel::BibItem> items)
+    {
+        for (auto& it : items)                          // aplica al instante las que ya estén en caché
+        {
+            auto f = bibCoverCache.find (it.id);
+            if (f != bibCoverCache.end()) repEdit.setBibCover (it.id, f->second);
+        }
+        const auto url = serverUrl, tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, items, url, tok]
+        {
+            for (auto& it : items)
+            {
+                if (it.portada.isEmpty()) continue;
+                auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                             .getChildFile ("np_bibcov_" + juce::String (it.id) + ".img");
+                if (! tmp.existsAsFile() || tmp.getSize() < 300)
+                    httpDownload (url + "/static/" + it.portada, tok, tmp);
+                auto img = juce::ImageFileFormat::loadFrom (tmp);
+                if (! img.isValid()) continue;
+                auto small = img.rescaled (72, 72, juce::Graphics::mediumResamplingQuality);
+                const int id = it.id;
+                juce::MessageManager::callAsync ([sp, id, small]
+                {
+                    if (sp == nullptr) return;
+                    sp->bibCoverCache[id] = small;
+                    sp->repEdit.setBibCover (id, small);
+                });
+            }
+        });
     }
 
     // ───────── Guardar/aplicar mezcla por canción ─────────
@@ -3426,6 +3505,7 @@ private:
                     it.titulo = pr.value.getProperty ("titulo", "").toString();
                     it.tono   = pr.value.getProperty ("tono", "").toString();
                     it.artista = pr.value.getProperty ("artista", "").toString();
+                    it.portada = pr.value.getProperty ("portada", "").toString();
                     if (it.id > 0) items.add (it);
                 }
             juce::MessageManager::callAsync ([sp, items]
