@@ -8,7 +8,7 @@
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
     --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
-    --gold:#C9A96E; --gold-soft:#2a2418;
+    --gold:#C9A96E; --gold-soft:#2a2418; --gold-ink:#000;
     --lyric-size:18px; --chord-size:17px; --chord-min:21px;
     --ensayo-h:0px;
   }
@@ -28,9 +28,9 @@
   .song-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .song-title{font-size:17px;font-weight:600;line-height:1.2}
   .tono-chip{display:inline-flex;align-items:center;justify-content:center;
-    background:var(--gold);color:#000;font-weight:700;font-size:14px;
+    background:var(--gold);color:var(--gold-ink);font-weight:700;font-size:14px;
     padding:3px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace}
-  .tono-btn{display:inline-flex;align-items:center;gap:4px;background:var(--gold);color:#000;
+  .tono-btn{display:inline-flex;align-items:center;gap:4px;background:var(--gold);color:var(--gold-ink);
     font-weight:700;font-size:14px;padding:4px 11px;border-radius:6px;border:none;cursor:pointer;
     font-family:ui-monospace,Menlo,monospace;line-height:1}
   .tono-btn .cx{font-size:10px;opacity:.7}
@@ -121,7 +121,7 @@
   .tono-op{padding:14px 0;text-align:center;background:var(--raised);border:1px solid var(--line);
     border-radius:10px;color:var(--txt);font-weight:700;font-size:16px;cursor:pointer;
     font-family:ui-monospace,Menlo,monospace}
-  .tono-op.cur{background:var(--gold);color:#000;border-color:var(--gold)}
+  .tono-op.cur{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
   .tono-orig{margin-top:12px;width:100%;padding:12px;background:transparent;border:1px solid var(--line);
     border-radius:10px;color:var(--txt2);font-size:13px;cursor:pointer;font-family:inherit}
   .size-row{display:flex;align-items:center;gap:16px;justify-content:center;margin-top:8px}
@@ -132,7 +132,7 @@
   .size-lbl{font-size:16px;color:var(--gold);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
   /* Tema claro (modo día) del visor */
   body.claro{--bg:#f4f4f6;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95}
-  body.claro .pill.active{background:var(--gold);border-color:var(--gold);color:#000}
+  body.claro .pill.active{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
   /* Mostrar solo acordes / solo letra */
   body.solo-acordes .lyric{display:none}
   body.solo-letra .chord{display:none}
@@ -145,7 +145,7 @@
   .seg{display:flex;gap:6px;flex-wrap:wrap}
   .seg button{flex:1;min-width:72px;background:var(--raised);border:1px solid var(--line);color:var(--txt);
     padding:11px 10px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600}
-  .seg button.active{background:var(--gold);color:#000;border-color:var(--gold)}
+  .seg button.active{background:var(--gold);color:var(--gold-ink);border-color:var(--gold)}
   .seg.colores{gap:9px}
   .seg.colores button{flex:0 0 auto;min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
   .seg.colores button.active{border-color:var(--txt)}
@@ -155,7 +155,7 @@
   .seg.colores input[type=color]::-moz-color-swatch{border:none;border-radius:50%}
 </style>
   <link rel="stylesheet" href="/static/ensayo.css">
-<script>/*mw-acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');}}catch(e){}})();</script>
+<script>/*mw-acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');d.setProperty('--gold-ink',(0.299*parseInt(h.substr(0,2),16)+0.587*parseInt(h.substr(2,2),16)+0.114*parseInt(h.substr(4,2),16))>145?'#000':'#fff');}}catch(e){}})();</script>
 </head>
 <body>
 <div class="wrap" id="app"></div>
@@ -321,11 +321,12 @@ function marcarV(id,val){ const s=document.getElementById(id); if(!s) return; s.
 function setVista(clave,val){ VISTA[clave]=val; try{ localStorage.setItem('charts_'+clave, val); }catch(e){} aplicarVista(); }
 cargarVista();
 function hexRgbaV(hex,a){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return 'rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+','+a+')'; }
+function inkFor(hex){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16); return (0.299*r+0.587*g+0.114*b)>145?'#000':'#fff'; }
 function aplicarAcento(){
   var c=null; try{ c=localStorage.getItem('mw_acento'); }catch(e){}
   var d=document.documentElement.style;
-  if(c){ d.setProperty('--gold',c); d.setProperty('--gold-soft', hexRgbaV(c,0.16)); }
-  else { d.removeProperty('--gold'); d.removeProperty('--gold-soft'); }
+  if(c){ d.setProperty('--gold',c); d.setProperty('--gold-soft', hexRgbaV(c,0.16)); d.setProperty('--gold-ink', inkFor(c)); }
+  else { d.removeProperty('--gold'); d.removeProperty('--gold-soft'); d.removeProperty('--gold-ink'); }
   marcarV('seg-acento', c||'');
   var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; }
 }
