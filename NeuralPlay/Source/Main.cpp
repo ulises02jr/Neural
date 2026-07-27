@@ -566,6 +566,19 @@ struct FaderStripComp : public juce::Component
     void paint (juce::Graphics& g) override { if (onPaint) onPaint (g); }
 };
 
+// Viewport con la rueda invertida (para que el desplazamiento de los tracks
+// vaya en el sentido natural del trackpad, igual que el strip de canciones)
+struct HScrollViewport : public juce::Viewport
+{
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        juce::MouseWheelDetails w2 = w;
+        w2.deltaX = -w.deltaX;
+        w2.deltaY = -w.deltaY;
+        juce::Viewport::mouseWheelMove (e, w2);
+    }
+};
+
 struct IconButton : public juce::Button
 {
     int kind = 0;          // 0 faders, 1 repeat, 2 infinito
@@ -2731,7 +2744,7 @@ public:
         {
             double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
             if (w.isReversed) d = -d;
-            stripScroll = juce::jmax (0, stripScroll - (int) (d * 600.0));
+            stripScroll = juce::jmax (0, stripScroll + (int) (d * 600.0));
             resized();
             return;
         }
@@ -3828,7 +3841,8 @@ private:
             if (! e.cover.isValid() && e.coverFile.existsAsFile())
                 e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         for (auto* c : songCards) c->dlProgress = -1.0f;
-        for (int i = 0; i < songReady.size(); ++i) songReady.set (i, true);
+        songReady.clearQuick();                                  // FASE B lista = TODO el audio bajó
+        for (int i = 0; i < repertoire.size(); ++i) songReady.add (true);
         if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); enforceCap(); }   // limpieza auto (1 vez, al abrir)
         if (repertoire.isEmpty()) { clearSong(); return; }
         if (currentSong < 0) loadSong (0);
@@ -3915,9 +3929,13 @@ private:
             c->tono = s.tonoNombre;
             c->editMode = editMode;
             c->index = i;
-            {   // barra de descarga según el caché real (evita el falso positivo al reordenar)
-                bool ready = ! s.famFiles.isEmpty();
-                for (auto& fn : s.famFiles) { auto f = s.folder.getChildFile (fn); if (! f.existsAsFile() || f.getSize() < 2000) { ready = false; break; } }
+            {   // barra de descarga: songReady manda (se mueve al reordenar); disco solo de respaldo
+                bool ready = (i < songReady.size()) && songReady.getReference (i);
+                if (! ready && ! s.famFiles.isEmpty())
+                {
+                    ready = true;
+                    for (auto& fn : s.famFiles) { auto f = s.folder.getChildFile (fn); if (! f.existsAsFile() || f.getSize() < 2000) { ready = false; break; } }
+                }
                 c->dlProgress = ready ? -1.0f : 0.0f;
             }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
@@ -4629,7 +4647,7 @@ private:
     juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn;
     IconButton faderViewBtn, repeatBtn, infiniteBtn, settingsBtn, repertoireBtn;
     FaderStripComp faderStrip;
-    juce::Viewport faderViewport;
+    HScrollViewport faderViewport;
     MidiPanel midiPanel;
     RepertoirePicker repPicker;
     SettingsPanel settingsPanel;
