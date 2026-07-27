@@ -1620,8 +1620,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     Mode mode = Biblioteca;
     juce::String serverUrl, token;
 
-    struct BibItem { int id = 0; juce::String titulo, tono; };
+    struct BibItem { int id = 0; juce::String titulo, tono, artista; };
     juce::Array<BibItem> bib, bibAll;
+    int bibScroll = 0;                 // desplazamiento vertical de la biblioteca
     juce::TextEditor searchBox;
 
     int songId = 0; juce::String songTitle; bool addFlow = false;
@@ -1655,7 +1656,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     {
         const auto q = searchBox.getText().trim();
         bib.clearQuick();
-        for (auto& b : bibAll) if (q.isEmpty() || b.titulo.containsIgnoreCase (q)) bib.add (b);
+        for (auto& b : bibAll) if (q.isEmpty() || b.titulo.containsIgnoreCase (q) || b.artista.containsIgnoreCase (q)) bib.add (b);
+        bibScroll = 0;
         repaint();
     }
 
@@ -1674,10 +1676,17 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         const int cols = 3, gap = 10, cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = 60;
         return { p.getX() + (i % cols) * (cw + gap), p.getY() + (i / cols) * (ch + gap), cw, ch };
     }
-    juce::Rectangle<int> bibRect (int i) const
+    juce::Rectangle<int> bibListArea() const
     {
         auto p = panelBounds().reduced (18); p.removeFromTop (52 + 44);   // título + buscador
-        return { p.getX(), p.getY() + i * 46, p.getWidth(), 40 };
+        p.removeFromBottom (4);
+        return p;
+    }
+    int bibMaxScroll() const { return juce::jmax (0, bib.size() * 46 - bibListArea().getHeight()); }
+    juce::Rectangle<int> bibRect (int i) const
+    {
+        auto p = bibListArea();
+        return { p.getX(), p.getY() + i * 46 - bibScroll, p.getWidth(), 40 };
     }
     juce::Rectangle<int> searchRect() const
     {
@@ -1699,15 +1708,23 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
         if (mode == Biblioteca)
         {
-            for (int i = 0; i < bib.size() && i < 8; ++i)
+            const auto la = bibListArea();
+            juce::Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (la);
+            for (int i = 0; i < bib.size(); ++i)
             {
-                auto r = bibRect (i).toFloat();
+                auto ri = bibRect (i);
+                if (ri.getBottom() < la.getY() || ri.getY() > la.getBottom()) continue;
+                auto r = ri.toFloat();
                 g.setColour (juce::Colour (0xff1c1c1c)); g.fillRoundedRectangle (r, 9.0f);
                 g.setColour (juce::Colour (0x22ffffff)); g.drawRoundedRectangle (r, 9.0f, 1.0f);
                 g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
-                g.drawText (bib[i].titulo, r.reduced (14, 0).removeFromTop (r.getHeight() * 0.62f), juce::Justification::centredLeft);
+                g.drawText (bib[i].titulo, r.reduced (14, 0).removeFromTop (r.getHeight() * 0.6f), juce::Justification::centredLeft);
                 g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (11.5f));
-                g.drawText (juce::String::fromUTF8 ("Tono ") + bib[i].tono, r.reduced (14, 5).removeFromBottom (15.0f), juce::Justification::centredLeft);
+                juce::String sub = bib[i].artista.isNotEmpty()
+                    ? (bib[i].artista + juce::String::fromUTF8 ("   \xc2\xb7   Tono ") + bib[i].tono)
+                    : (juce::String::fromUTF8 ("Tono ") + bib[i].tono);
+                g.drawText (sub, r.reduced (14, 5).removeFromBottom (15.0f), juce::Justification::centredLeft);
             }
         }
         else
@@ -1754,7 +1771,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         if (renderingSem != 99) return;   // ocupado renderizando
         if (mode == Biblioteca)
         {
-            for (int i = 0; i < bib.size() && i < 8; ++i)
+            if (! bibListArea().contains (e.getPosition())) return;
+            for (int i = 0; i < bib.size(); ++i)
                 if (bibRect (i).contains (e.getPosition())) { if (onPickSong) onPickSong (bib[i].id); return; }
         }
         else
@@ -1768,6 +1786,15 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                     return;
                 }
         }
+    }
+
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        if (mode != Biblioteca || ! bibListArea().contains (e.getPosition())) return;
+        double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
+        if (w.isReversed) d = -d;
+        bibScroll = juce::jlimit (0, bibMaxScroll(), bibScroll - (int) (d * 300.0));
+        repaint();
     }
 
     void startRender (int i)
@@ -1849,8 +1876,8 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .pill.active{color:var(--accent);background:var(--accent-soft);border-color:var(--accent);font-weight:600}
  body.claro .pill.active{background:var(--accent);border-color:var(--accent);color:#1a1407}
  .stage{flex:1;overflow-y:auto;padding:2px 0 40vh;-webkit-overflow-scrolling:touch;scroll-behavior:smooth}
- .sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 16px;margin-bottom:12px;opacity:.5;transition:opacity .2s,border-color .2s}
- .sec.active{border-color:var(--accent);opacity:1}
+ .sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 16px;margin-bottom:12px;transition:border-color .2s}
+ .sec.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
  .sechead{display:inline-flex;align-items:center;background:var(--raised);border-left:3px solid var(--line);border-radius:7px;padding:7px 13px;margin-bottom:10px;font-size:11px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--txt3)}
  .sec.active .sechead{color:var(--accent);border-left-color:var(--accent)}
  .secnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:12px}
@@ -2676,6 +2703,14 @@ public:
     }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
+        if (stripBounds.contains (e.getPosition()))   // scroll horizontal de las tarjetas de canciones
+        {
+            double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
+            if (w.isReversed) d = -d;
+            stripScroll = juce::jmax (0, stripScroll - (int) (d * 600.0));
+            resized();
+            return;
+        }
         if (! mapBounds.contains (e.getPosition())) return;
         double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
         if (w.isReversed) d = -d;
@@ -2730,11 +2765,16 @@ public:
         if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (22); area.removeFromTop (3); }
         else                                   setlistBandBounds = {};
 
-        // Tarjetas verticales grandes: portada arriba + nombre abajo
+        // Tarjetas verticales grandes: portada arriba + nombre abajo (scroll horizontal)
         auto strip = area.removeFromTop (180);
+        stripBounds = strip;
         {
-            int x = strip.getX();
-            for (auto* c : songCards) { c->setBounds (x, strip.getY(), 240, 178); x += 250; }
+            const int step = 250;
+            const int n = songCards.size() + (editMode ? 1 : 0);
+            const int contentW = juce::jmax (0, n * step - 10);
+            stripScroll = juce::jlimit (0, juce::jmax (0, contentW - strip.getWidth()), stripScroll);
+            int x = strip.getX() - stripScroll;
+            for (auto* c : songCards) { c->setBounds (x, strip.getY(), 240, 178); x += step; }
             if (editMode) addCard.setBounds (x, strip.getY(), 240, 178);
         }
         area.removeFromTop (4);
@@ -3385,6 +3425,7 @@ private:
                     it.id     = (int) pr.value.getProperty ("id", 0);
                     it.titulo = pr.value.getProperty ("titulo", "").toString();
                     it.tono   = pr.value.getProperty ("tono", "").toString();
+                    it.artista = pr.value.getProperty ("artista", "").toString();
                     if (it.id > 0) items.add (it);
                 }
             juce::MessageManager::callAsync ([sp, items]
@@ -3762,6 +3803,7 @@ private:
             repertoire.move (fromIdx, toIdx);
             if (fromIdx < songMaster.size() && toIdx < songMaster.size()) songMaster.move (fromIdx, toIdx);
             if (fromIdx < songMixCache.size() && toIdx < songMixCache.size()) songMixCache.move (fromIdx, toIdx);
+            if (fromIdx < songReady.size() && toIdx < songReady.size()) songReady.move (fromIdx, toIdx);
 
             if (curId >= 0)
                 for (int i = 0; i < repertoire.size(); ++i)
@@ -3792,6 +3834,11 @@ private:
             c->tono = s.tonoNombre;
             c->editMode = editMode;
             c->index = i;
+            {   // barra de descarga según el caché real (evita el falso positivo al reordenar)
+                bool ready = ! s.famFiles.isEmpty();
+                for (auto& fn : s.famFiles) { auto f = s.folder.getChildFile (fn); if (! f.existsAsFile() || f.getSize() < 2000) { ready = false; break; } }
+                c->dlProgress = ready ? -1.0f : 0.0f;
+            }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
             c->onClick   = [this, idx] { loadSong (idx); };
             c->onRemove  = [this, sid] { removeSong (sid); };
@@ -4447,6 +4494,8 @@ private:
     juce::String songCompas = "4/4";
     juce::AudioBuffer<float> temp;
     juce::Rectangle<int> mapBounds;
+    juce::Rectangle<int> stripBounds;   // franja de tarjetas de canciones
+    int stripScroll = 0;                // desplazamiento horizontal del strip
     juce::Rectangle<int> faderPanelBounds;
     bool splashOn = true;
     juce::uint32 splashStart = 0;
