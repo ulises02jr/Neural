@@ -200,6 +200,33 @@ def inject_org():
     return {"org_nombre": nombre, "logo_ver": logo_ver}
 
 
+@app.context_processor
+def inject_acento():
+    """#2 Color de acento por usuario (global por cuenta)."""
+    try:
+        uid = session.get("user_id")
+        ac = usuarios.obtener_acento(uid) if uid else None
+    except Exception:
+        ac = None
+    return {"mi_acento": ac or ""}
+
+
+@app.route("/api/perfil/acento", methods=["GET", "POST"])
+def api_perfil_acento():
+    """#2 Lee o guarda el color de acento del usuario logueado."""
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"ok": False, "error": "no_session"}), 401
+    if request.method == "POST":
+        if request.is_json:
+            color = (request.get_json(silent=True) or {}).get("acento")
+        else:
+            color = request.form.get("acento")
+        ok = usuarios.guardar_acento(uid, color)
+        return jsonify({"ok": bool(ok), "acento": usuarios.obtener_acento(uid) or ""})
+    return jsonify({"ok": True, "acento": usuarios.obtener_acento(uid) or ""})
+
+
 def get_config():
     """Lee config.json del disco en cada llamada.
     Esto garantiza que múltiples workers vean los cambios."""

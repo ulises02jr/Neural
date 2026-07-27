@@ -74,6 +74,10 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_login_intentos ON login_intentos(ip, ts);
         """)
+        try:
+            conn.execute("ALTER TABLE usuarios ADD COLUMN acento TEXT")
+        except Exception:
+            pass  # ya existe
 
 
 def hash_password(password):
@@ -171,6 +175,38 @@ def buscar_por_email(email):
     with _conexion() as conn:
         row = conn.execute("SELECT * FROM usuarios WHERE email = ?", (email,)).fetchone()
         return dict(row) if row else None
+
+
+def obtener_acento(user_id):
+    """Color de acento guardado del usuario (o None)."""
+    if not user_id:
+        return None
+    try:
+        with _conexion() as conn:
+            row = conn.execute("SELECT acento FROM usuarios WHERE id = ?", (user_id,)).fetchone()
+            return (row["acento"] if row else None) or None
+    except Exception:
+        return None
+
+
+def guardar_acento(user_id, color):
+    """Guarda (o limpia) el color de acento del usuario. Solo acepta #rrggbb."""
+    if not user_id:
+        return False
+    import re as _re
+    val = None
+    if color:
+        color = str(color).strip()
+        if _re.match(r"^#[0-9a-fA-F]{6}$", color):
+            val = color.upper()
+        else:
+            return False
+    try:
+        with _conexion() as conn:
+            conn.execute("UPDATE usuarios SET acento = ? WHERE id = ?", (val, user_id))
+        return True
+    except Exception:
+        return False
 
 
 def buscar_por_id(user_id):

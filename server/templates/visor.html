@@ -155,7 +155,7 @@
   .seg.colores input[type=color]::-moz-color-swatch{border:none;border-radius:50%}
 </style>
   <link rel="stylesheet" href="/static/ensayo.css">
-<script>/*mw-acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');d.setProperty('--gold-ink',(0.299*parseInt(h.substr(0,2),16)+0.587*parseInt(h.substr(2,2),16)+0.114*parseInt(h.substr(4,2),16))>145?'#000':'#fff');}}catch(e){}})();</script>
+<script>/*mw-acento*/(function(){try{var s="{{ mi_acento }}";var c=s||localStorage.getItem('mw_acento');if(s){try{localStorage.setItem('mw_acento',s);}catch(_){}}if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');d.setProperty('--gold-ink',(0.299*parseInt(h.substr(0,2),16)+0.587*parseInt(h.substr(2,2),16)+0.114*parseInt(h.substr(4,2),16))>145?'#000':'#fff');}}catch(e){}})();</script>
 </head>
 <body>
 <div class="wrap" id="app"></div>
@@ -330,7 +330,7 @@ function aplicarAcento(){
   marcarV('seg-acento', c||'');
   var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; }
 }
-function setAcento(val){ try{ if(val) localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} aplicarAcento(); }
+function setAcento(val){ try{ if(val) localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} try{ fetch('/api/perfil/acento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acento:val||''})}); }catch(e){} aplicarAcento(); }
 aplicarAcento();
 
 function renderLines(lines){
