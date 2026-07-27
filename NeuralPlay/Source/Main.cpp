@@ -1864,7 +1864,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>MI Worship · En vivo</title>
 <style>
- :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;--txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--accent:#C9A96E;--accent-soft:#2a2418;--live:#86B36A;--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
+ :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;--txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--accent:#C9A96E;--accent-soft:#2a2418;--accent-ink:#1a1407;--live:#86B36A;--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
  body[data-size="xs"]{--lyric-size:14px;--chord-size:13px;--chord-min:17px;}
  body[data-size="s"]{--lyric-size:16px;--chord-size:15px;--chord-min:19px;}
  body[data-size="m"]{--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
@@ -1884,7 +1884,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .song-title-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}
  .song-title{font-size:17px;font-weight:600;line-height:1.2}
  .song-meta{font-size:12px;color:var(--txt2);margin-top:2px}
- .tono-chip{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#1a1407;font-weight:700;font-size:15px;padding:2px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;line-height:1.3;letter-spacing:.5px}
+ .tono-chip{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:15px;padding:2px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;line-height:1.3;letter-spacing:.5px}
  .right{display:flex;align-items:center;gap:10px;flex-shrink:0}
  .live{width:9px;height:9px;border-radius:50%;background:#444;display:inline-block}
  .live.on{background:var(--live);box-shadow:0 0 8px var(--live)}
@@ -1896,7 +1896,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .pill{display:inline-block;padding:6px 12px;border-radius:7px;font-size:13px;color:var(--txt2);background:var(--surface);border:1px solid var(--line);cursor:pointer;flex-shrink:0}
  .pill.done{color:var(--txt3)}
  .pill.active{color:var(--accent);background:var(--accent-soft);border-color:var(--accent);font-weight:600}
- body.claro .pill.active{background:var(--accent);border-color:var(--accent);color:#1a1407}
+ body.claro .pill.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
  .stage{flex:1;overflow-y:auto;padding:2px 0 40vh;-webkit-overflow-scrolling:touch;scroll-behavior:smooth}
  .sec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 16px;margin-bottom:12px;transition:border-color .2s}
  .sec.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
@@ -1921,7 +1921,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .aj-lbl{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1.2px;font-weight:600;margin:16px 0 8px}
  .seg{display:flex;gap:6px;flex-wrap:wrap}
  .seg button{flex:1;min-width:72px;background:var(--raised);border:1px solid var(--line);color:var(--txt);padding:10px 8px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit}
- .seg button.active{background:var(--accent);color:#1a1407;border-color:var(--accent);font-weight:600}
+ .seg button.active{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
  .seg.colores{gap:9px}
  .seg.colores button{flex:0 0 auto;min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
  .seg.colores button.active{border-color:var(--txt)}
@@ -1934,7 +1934,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .size-big:disabled{opacity:.35}
  .size-lbl{font-size:16px;color:var(--accent);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
 </style></head><body>
-<script>/*acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--accent',c);d.setProperty('--accent-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');}}catch(e){}})();</script>
+<script>/*acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];var R=parseInt(h.substr(0,2),16),G=parseInt(h.substr(2,2),16),B=parseInt(h.substr(4,2),16);d.setProperty('--accent',c);d.setProperty('--accent-soft','rgba('+R+','+G+','+B+',0.16)');d.setProperty('--accent-ink',(0.299*R+0.587*G+0.114*B)>145?'#000':'#fff');}}catch(e){}})();</script>
 <div class="wrap">
  <div class="topbar">
   <div style="min-width:0">
@@ -2004,7 +2004,8 @@ function aplicarVista(){
 function cargarVista(){ try{ VISTA.tema=localStorage.getItem('charts_tema')||'oscuro'; VISTA.modo=localStorage.getItem('charts_modo')||'ambos'; VISTA.color=localStorage.getItem('charts_color')||''; VISTA.grosor=localStorage.getItem('charts_grosor')||'normal'; if(['fino','normal','grueso'].indexOf(VISTA.grosor)<0)VISTA.grosor='normal'; }catch(e){} aplicarVista(); }
 function setVista(clave,val){ VISTA[clave]=val; try{localStorage.setItem('charts_'+clave,val);}catch(e){} aplicarVista(); }
 function hexRgbaV(hex,a){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return 'rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+','+a+')'; }
-function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}catch(e){} var d=document.documentElement.style; if(c){ d.setProperty('--accent',c); d.setProperty('--accent-soft',hexRgbaV(c,0.16)); } else { d.removeProperty('--accent'); d.removeProperty('--accent-soft'); } marcarV('seg-acento',c||''); var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; } }
+function inkFor(hex){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16); return (0.299*r+0.587*g+0.114*b)>145?'#000':'#fff'; }
+function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}catch(e){} var d=document.documentElement.style; if(c){ d.setProperty('--accent',c); d.setProperty('--accent-soft',hexRgbaV(c,0.16)); d.setProperty('--accent-ink',inkFor(c)); } else { d.removeProperty('--accent'); d.removeProperty('--accent-soft'); d.removeProperty('--accent-ink'); } marcarV('seg-acento',c||''); var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; } }
 function setAcento(val){ try{ if(val)localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} aplicarAcento(); }
 function abrirAjustes(){ document.getElementById('bg-ajustes').classList.add('open'); document.getElementById('sheet-ajustes').classList.add('open'); }
 function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
