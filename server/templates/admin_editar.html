@@ -828,6 +828,17 @@ function autosaveTiempos(){
   function pT(txt){if(txt===''||txt==null)return null;txt=(''+txt).trim().replace(',','.');var p=txt.split(':').map(parseFloat);if(p.some(isNaN))return null;if(p.length==4)return p[0]*3600+p[1]*60+p[2]+p[3]/1000;if(p.length==3)return p[0]*3600+p[1]*60+p[2];if(p.length==2)return p[0]*60+p[1];return p[0];}
   FILAS.forEach(function(f){ SX.push({nombre:f.tipo||'Seccion', t:pT(f.t)}); });
   function durTot(){ return DUR || (DET?DET.dur:0); }
+  function rellenarBeats(){
+    if(!DET||!DET.beats||DET.beats.length<3)return;
+    if(DET._realN==null)DET._realN=DET.beats.length;
+    DET.beats.length=DET._realN;                         // partir de las negras reales del click
+    var D=durTot(); if(!(D>0))return;
+    var n=DET.beats.length, k=Math.min(8,n-1);
+    var dt=(DET.beats[n-1]-DET.beats[n-1-k])/k;           // tempo del final (promedio de las últimas)
+    if(!(dt>0.02&&dt<4))return;
+    var t=DET.beats[n-1]+dt;
+    while(t<=D+0.001){ DET.beats.push(t); t+=dt; }        // extiende al último tempo hasta el final del audio
+  }
   function curT(){ return playing ? (AC.currentTime - startT + startOff) : pausedOff; }
   function ensureAC(){ if(!AC){ AC=new (window.AudioContext||window.webkitAudioContext)(); ['click','guia','mezcla'].forEach(function(k){ L[k].gain=AC.createGain(); L[k].gain.gain.value=L[k].on?1:0; L[k].gain.connect(AC.destination); }); } }
   function loadLayer(k, cb){
@@ -838,7 +849,7 @@ function autosaveTiempos(){
         if(!d.ready){ setTimeout(poll,1500); return; }
         fetch('/admin/pistas/'+NUM+'/audio/'+k).then(function(r){return r.arrayBuffer();}).then(function(ab){
           ensureAC();
-          AC.decodeAudioData(ab, function(buf){ la.buf=buf; la.ready=true; la.loading=false; if(buf.duration>DUR)DUR=buf.duration; draw(); updReady(); cb&&cb(); }, function(){ la.loading=false; });
+          AC.decodeAudioData(ab, function(buf){ la.buf=buf; la.ready=true; la.loading=false; if(buf.duration>DUR)DUR=buf.duration; rellenarBeats(); draw(); updReady(); cb&&cb(); }, function(){ la.loading=false; });
         }).catch(function(){ la.loading=false; });
       }).catch(function(){ la.loading=false; });
     })();
@@ -874,7 +885,7 @@ function autosaveTiempos(){
   function computeFactor(){ if(FMODE!=='auto'){ return Math.max(1,parseInt(FMODE)||1); } if(!DET||!SONGBPM||SONGBPM<=0) return 1; var r=DET.bpm_prom/SONGBPM; var f=Math.round(r); if(f<1)f=1; if(f>4)f=4; if(Math.abs(r-f)>0.2) f=1; return f; }
   function refreshInfo(){ if(!DET)return; var bpm=Math.round(DET.bpm_prom/FACTOR); var extra=FACTOR>1?(' (click x'+FACTOR+')'):''; var seg=(DET.tempo&&DET.tempo.length>1)?(DET.tempo.length+' cambios de tempo'):'tempo constante'; info(DET.beats.length+' beats - <b>'+bpm+' BPM</b>'+extra+' ('+seg+')'); }
   window.sxFactor=function(v){ FMODE=v; FACTOR=computeFactor(); refreshInfo(); draw(); };
-  window.sxAnalizar=function(){ var b=$('sx-anbtn'); b.disabled=true; info('Analizando click...'); fetch('/admin/pistas/'+NUM+'/detectar_click',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(r){return r.json();}).then(function(d){ b.disabled=false; if(!d.ok){ info(d.error==='sin_click'?'Sin pista de Click (podes marcar igual, sin snap).':'No se pudo analizar el click.'); return; } DET=d; if(!DUR)DUR=d.dur; DBPHASE=0; FACTOR=computeFactor(); cursorBeat=0; refreshInfo(); updCursor(); draw(); }).catch(function(){ b.disabled=false; info('Error de red.'); }); };
+  window.sxAnalizar=function(){ var b=$('sx-anbtn'); b.disabled=true; info('Analizando click...'); fetch('/admin/pistas/'+NUM+'/detectar_click',{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(r){return r.json();}).then(function(d){ b.disabled=false; if(!d.ok){ info(d.error==='sin_click'?'Sin pista de Click (podes marcar igual, sin snap).':'No se pudo analizar el click.'); return; } DET=d; if(!DUR)DUR=d.dur; DBPHASE=0; FACTOR=computeFactor(); cursorBeat=0; refreshInfo(); rellenarBeats(); updCursor(); draw(); }).catch(function(){ b.disabled=false; info('Error de red.'); }); };
   window.sxZoom=function(d){ ZOOM=Math.max(6,Math.min(48,ZOOM+d*6)); draw(); };
   function sortSX(){ SX.sort(function(a,b){ var A=a.t==null?1e9:a.t, B=b.t==null?1e9:b.t; return A-B; }); }
   var SXTIPOS=['Intro','Verso','Verso 1','Verso 2','Verso 3','Verso 4','Verso 5','Pre-coro','Coro','Post-coro','Puente','Puente 2','Puente 3','Instrumental','Interludio','Vamp','Solo','Subir Intensidad','Bajar Intensidad','Coda','Tag','Final'];
