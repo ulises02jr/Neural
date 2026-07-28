@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Empaquetado de NeuralWorship para Windows (PyInstaller, modo carpeta/onedir).
-# Se ejecuta con:  pyinstaller --noconfirm NeuralWorship.spec
+# Empaquetado de NeuralSync para Windows (PyInstaller, modo carpeta/onedir).
+# Se ejecuta con:  pyinstaller --noconfirm NeuralSync.spec
 # (build_windows.bat copia antes transposicion.py y config.json)
 
 block_cipher = None
@@ -48,7 +48,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='NeuralWorship',
+    name='NeuralSync',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -66,5 +66,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='NeuralWorship',
+    name='NeuralSync',
 )

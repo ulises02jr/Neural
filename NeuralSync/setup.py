@@ -40,8 +40,8 @@ OPTIONS = {
         "qrcode", "mido", "rtmidi", "certifi",
     ],
     "plist": {
-        "CFBundleName": "NeuralWorship",
-        "CFBundleDisplayName": "NeuralWorship",
+        "CFBundleName": "NeuralSync",
+        "CFBundleDisplayName": "NeuralSync",
         "CFBundleIdentifier": "org.miiglesiainternacional.neuralworship",
         "CFBundleVersion": "1.0.0",
         "CFBundleShortVersionString": "1.0",
@@ -54,7 +54,7 @@ OPTIONS = {
 }
 
 setup(
-    name="NeuralWorship",
+    name="NeuralSync",
     app=["app.py"],
     data_files=DATA_FILES,
     options={"py2app": OPTIONS},

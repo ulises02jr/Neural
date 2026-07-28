@@ -8,7 +8,7 @@
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
     --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
-    --accent:#C9A96E; --accent-soft:#2a2418; --live:#86B36A; --dead:#dc6262;
+    --accent:#C9A96E; --accent-soft:#2a2418; --accent-ink:#1a1407; --live:#86B36A; --dead:#dc6262;
     /* Tamaños de letra/acorde, controlados por data-size en <body>. Default = M */
     --lyric-size:18px; --chord-size:17px; --chord-min:21px;
   }
@@ -54,6 +54,7 @@
     background:var(--raised);border-radius:7px;border-left:3px solid var(--accent)}
   .lyrics{}
   .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
+  .lyrics .line.inst-line{gap:9px;align-items:center;margin:2px 0 12px}
   .lyrics .tok{display:inline-flex;flex-direction:column}
   .chord{font-family:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
     font-size:var(--chord-size);font-weight:700;color:var(--chord-color,var(--accent));
@@ -121,7 +122,7 @@
   /* Tono destacado en barra superior durante canción */
   .song-title-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
   .tono-chip{display:inline-flex;align-items:center;justify-content:center;
-    background:var(--accent);color:#1a1407;font-weight:700;font-size:15px;
+    background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:15px;
     padding:2px 10px;border-radius:6px;font-family:ui-monospace,Menlo,monospace;
     line-height:1.3;letter-spacing:0.5px}
 
@@ -160,7 +161,7 @@
   .size-big:disabled{opacity:.35}
   .size-lbl{font-size:16px;color:var(--accent);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
   body.claro{--bg:#f4f4f6;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95}
-  body.claro .pill.active{background:var(--accent);border-color:var(--accent);color:#1a1407}
+  body.claro .pill.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
   body.solo-acordes .lyric{display:none}
   body.solo-letra .chord{display:none}
   body[data-grosor="fino"] .chord{font-weight:400;-webkit-text-stroke:0}
@@ -169,7 +170,7 @@
   .aj-lbl{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1.2px;font-weight:600;margin:16px 0 8px}
   .seg{display:flex;gap:6px;flex-wrap:wrap}
   .seg button{flex:1;min-width:72px;background:var(--raised);border:1px solid var(--line);color:var(--txt);padding:10px 8px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit}
-  .seg button.active{background:var(--accent);color:#1a1407;border-color:var(--accent);font-weight:600}
+  .seg button.active{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
   .seg.colores{gap:9px}
   .seg.colores button{flex:0 0 auto;min-width:0;width:34px;height:34px;border-radius:50%;padding:0;border:2px solid var(--line)}
   .seg.colores button.active{border-color:var(--txt)}
@@ -282,19 +283,18 @@ function aplicarVista(){
 function cargarVista(){ try{ VISTA.tema=localStorage.getItem('charts_tema')||'oscuro'; VISTA.modo=localStorage.getItem('charts_modo')||'ambos'; VISTA.color=localStorage.getItem('charts_color')||''; VISTA.grosor=localStorage.getItem('charts_grosor')||'normal'; if(['fino','normal','grueso'].indexOf(VISTA.grosor)<0)VISTA.grosor='normal'; }catch(e){} aplicarVista(); }
 function setVista(clave,val){ VISTA[clave]=val; try{localStorage.setItem('charts_'+clave,val);}catch(e){} aplicarVista(); }
 function hexRgbaV(hex,a){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return 'rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+','+a+')'; }
-function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}catch(e){} var d=document.documentElement.style; if(c){ d.setProperty('--accent',c); d.setProperty('--accent-soft',hexRgbaV(c,0.16)); } else { d.removeProperty('--accent'); d.removeProperty('--accent-soft'); } marcarV('seg-acento',c||''); var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; } }
+function inkFor(hex){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16); return (0.299*r+0.587*g+0.114*b)>145?'#000':'#fff'; }
+function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}catch(e){} var d=document.documentElement.style; if(c){ d.setProperty('--accent',c); d.setProperty('--accent-soft',hexRgbaV(c,0.16)); d.setProperty('--accent-ink',inkFor(c)); } else { d.removeProperty('--accent'); d.removeProperty('--accent-soft'); d.removeProperty('--accent-ink'); } marcarV('seg-acento',c||''); var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; } }
 function setAcento(val){ try{ if(val)localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} aplicarAcento(); }
 cargarVista(); aplicarAcento();
 
 // ───── Renderizado de cuerpo de sección (acordes + letras) ─────
 function renderLines(lines){
-  return `<div class="lyrics">${(lines||[]).map(line => `
-    <div class="line">
-      ${line.map(tok => `<div class="tok">
-        <span class="chord">${esc(tok[0])}</span>
-        <span class="lyric">${esc(tok[1])}</span>
-      </div>`).join("")}
-    </div>`).join("")}</div>`;
+  return `<div class="lyrics">${(lines||[]).map(line => {
+    var soloAcordes = line.length>0 && line.every(t => !((t[1]||"").trim()));
+    if(soloAcordes) return `<div class="line inst-line">${line.filter(t=>(t[0]||"").trim()).map(t=>`<span class="chip">${esc(t[0])}</span>`).join("")}</div>`;
+    return `<div class="line">${line.map(tok => `<div class="tok"><span class="chord">${esc(tok[0])}</span><span class="lyric">${tok[1] ? esc(tok[1]) : "\u00A0"}</span></div>`).join("")}</div>`;
+  }).join("")}</div>`;
 }
 
 function renderBody(sec){

@@ -42,7 +42,7 @@ def crear_ventana(url):
               NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
     win = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
         rect, estilo, NSBackingStoreBuffered, False)
-    win.setTitle_("NeuralWorship")
+    win.setTitle_("NeuralSync")
     win.setReleasedWhenClosed_(False)
     win.setMinSize_((780.0, 580.0))
 
@@ -60,9 +60,9 @@ def crear_ventana(url):
 class PuenteApp(rumps.App):
     def __init__(self):
         try:
-            super().__init__("NeuralWorship", icon=ICONO_BAR, template=True, quit_button=None)
+            super().__init__("NeuralSync", icon=ICONO_BAR, template=True, quit_button=None)
         except Exception:
-            super().__init__("NeuralWorship", quit_button=None)
+            super().__init__("NeuralSync", quit_button=None)
         self.puerto = int(core.CONFIG.get("puerto", 5050))
         self.ip = "127.0.0.1"
         self.win = None
