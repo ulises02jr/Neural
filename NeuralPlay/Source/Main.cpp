@@ -1653,7 +1653,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
-        closeBtn.onClick = [this] { stopTimer(); renderingSem = 99; setVisible (false); };
+        closeBtn.onClick = [this] { stopTimer(); renderingSem = 99; if (mode == Tono) showBiblioteca(); else setVisible (false); };
         addAndMakeVisible (closeBtn);
 
         searchBox.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Buscar canci\xc3\xb3n\xe2\x80\xa6"), juce::Colour (0xff777777));
@@ -1692,12 +1692,15 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
       renderingSem = 99; stopTimer(); resized(); repaint(); }
 
+    void showBiblioteca()   // volver del grid de tonos a la lista de canciones
+    { mode = Biblioteca; searchBox.setVisible (true); renderingSem = 99; stopTimer(); resized(); repaint(); }
+
     juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 520); }
 
     juce::Rectangle<int> keyRect (int i) const
     {
         auto p = panelBounds().reduced (22); p.removeFromTop (58);
-        const int cols = 3, gap = 10, cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = 60;
+        const int cols = 4, gap = 9, cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = 46;
         return { p.getX() + (i % cols) * (cw + gap), p.getY() + (i / cols) * (ch + gap), cw, ch };
     }
     juce::Rectangle<int> bibListArea() const
@@ -1728,7 +1731,10 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
         auto title = (mode == Biblioteca) ? juce::String::fromUTF8 ("Agregar canci\xc3\xb3n")
                                           : (juce::String::fromUTF8 ("Tono \xc2\xb7 ") + songTitle);
-        g.drawText (title, panelBounds().removeFromTop (52).reduced (22, 0), juce::Justification::centredLeft);
+        auto tarea = panelBounds().removeFromTop (52).reduced (22, 0);
+        if (mode == Tono) tarea = tarea.withTrimmedLeft (92).withTrimmedRight (12);   // lugar para el botón Atrás
+        else              tarea = tarea.withTrimmedRight (48);                        // lugar para la ×
+        g.drawText (title, tarea, juce::Justification::centredLeft);
 
         if (mode == Biblioteca)
         {
@@ -1756,10 +1762,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
                 g.drawText (bib[i].titulo, txt.removeFromTop (r.getHeight() * 0.55f), juce::Justification::bottomLeft);
                 g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (11.5f));
-                juce::String sub = bib[i].artista.isNotEmpty()
-                    ? (bib[i].artista + juce::String::fromUTF8 ("   \xc2\xb7   Tono ") + bib[i].tono)
-                    : (juce::String::fromUTF8 ("Tono ") + bib[i].tono);
-                g.drawText (sub, txt, juce::Justification::topLeft);
+                g.drawText (bib[i].artista, txt, juce::Justification::topLeft);   // solo artista (el tono se elige al entrar)
             }
         }
         else
@@ -1770,8 +1773,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 g.setColour (k.rendered ? juce::Colour (0xff20301f) : juce::Colour (0xff181818)); g.fillRoundedRectangle (r, 9.0f);
                 g.setColour (k.rendered ? juce::Colour (0x553ED66E) : juce::Colour (0x22ffffff)); g.drawRoundedRectangle (r, 9.0f, 1.0f);
                 g.setColour (k.rendered ? juce::Colours::white : juce::Colour (0xff6a6a6a));
-                g.setFont (juce::Font (19.0f, juce::Font::bold));
-                g.drawText (k.nombre, r.withTrimmedBottom (k.rendered ? 0.0f : 14.0f), juce::Justification::centred);
+                g.setFont (juce::Font (16.0f, juce::Font::bold));
+                g.drawText (k.nombre, r.withTrimmedBottom (k.rendered ? 0.0f : 13.0f), juce::Justification::centred);
                 if (! k.rendered)
                 { g.setColour (juce::Colour (0xff7a7a7a)); g.setFont (juce::Font (9.5f, juce::Font::bold));
                   g.drawText (juce::String::fromUTF8 ("generar"), r.removeFromBottom (16.0f), juce::Justification::centred); }
@@ -1796,7 +1799,16 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
     void resized() override
     {
-        closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30);
+        if (mode == Tono)
+        {
+            closeBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xb9 Atr\xc3\xa1s"));   // ‹ Atrás
+            closeBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);
+        }
+        else
+        {
+            closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));                    // ×
+            closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30);
+        }
         searchBox.setBounds (searchRect());
     }
 
@@ -1828,7 +1840,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         if (mode != Biblioteca || ! bibListArea().contains (e.getPosition())) return;
         double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
         if (w.isReversed) d = -d;
-        bibScroll = juce::jlimit (0, bibMaxScroll(), bibScroll - (int) (d * 300.0));
+        bibScroll = juce::jlimit (0, bibMaxScroll(), bibScroll + (int) (d * 300.0));
         repaint();
     }
 
@@ -3779,6 +3791,24 @@ private:
         });
     }
 
+    // ¿el audio de esta canción ya está en caché? (tolera .wav/.mp3 y renombres por tono)
+    bool cacheReady (const SongEntry& e) const
+    {
+        if (e.famFiles.isEmpty()) return false;
+        for (auto& fn : e.famFiles)
+        {
+            auto f = e.folder.getChildFile (fn);
+            if (f.existsAsFile() && f.getSize() >= 2000) continue;
+            // mismo nombre base con otra extensión (p.ej. el tono se rindió en .mp3)
+            auto stem = juce::File (fn).getFileNameWithoutExtension();
+            bool found = false;
+            for (auto& c : e.folder.findChildFiles (juce::File::findFiles, false, stem + ".*"))
+                if (c.getSize() >= 2000) { found = true; break; }
+            if (! found) return false;
+        }
+        return true;
+    }
+
     // FASE A: metadata + portadas -> muestra las tarjetas con barra de descarga (aún sin audio)
     void onRepertoireMeta (juce::Array<SongEntry> songs)
     {
@@ -3799,25 +3829,26 @@ private:
             if (e.coverFile.existsAsFile()) e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         currentSong = -1;
         clearSong();
-        rebuildRepertoireStrip();
-        for (int i = 0; i < repertoire.size(); ++i)   // ya en caché: sin barra (no re-descarga); falta bajar: barra en 0
+        dlById.clear();
+        for (int i = 0; i < repertoire.size(); ++i)   // ya en caché: sin barra; falta bajar: barra en 0 (ligada al id)
         {
             const auto& e = repertoire.getReference (i);
-            bool ready = ! e.famFiles.isEmpty();
-            for (auto& fn : e.famFiles)
-            {
-                auto f = e.folder.getChildFile (fn);
-                if (! f.existsAsFile() || f.getSize() < 2000) { ready = false; break; }
-            }
-            if (i < songReady.size())  songReady.set (i, ready);
-            if (i < songCards.size())  songCards[i]->dlProgress = ready ? -1.0f : 0.0f;
+            const bool ready = cacheReady (e);
+            if (i < songReady.size()) songReady.set (i, ready);
+            if (! ready) dlById[e.id] = 0.0f;
         }
+        rebuildRepertoireStrip();
         repaint();
     }
 
     // FASE B: avance de descarga de la canción i (0..1)
     void onSongProgress (int i, double f)
     {
+        if (i >= 0 && i < repertoire.size())            // la barra sigue al id, no al índice
+        {
+            const int id = repertoire.getReference (i).id;
+            if (f >= 1.0) dlById.erase (id); else dlById[id] = (float) f;
+        }
         if (i >= 0 && i < songCards.size())
         {
             songCards[i]->dlProgress = (f >= 1.0) ? -1.0f : (float) f;
@@ -3841,7 +3872,8 @@ private:
             if (! e.cover.isValid() && e.coverFile.existsAsFile())
                 e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         for (auto* c : songCards) c->dlProgress = -1.0f;
-        songReady.clearQuick();                                  // FASE B lista = TODO el audio bajó
+        dlById.clear();                                          // FASE B lista = TODO el audio bajó
+        songReady.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i) songReady.add (true);
         if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); enforceCap(); }   // limpieza auto (1 vez, al abrir)
         if (repertoire.isEmpty()) { clearSong(); return; }
@@ -3929,14 +3961,9 @@ private:
             c->tono = s.tonoNombre;
             c->editMode = editMode;
             c->index = i;
-            {   // barra de descarga: songReady manda (se mueve al reordenar); disco solo de respaldo
-                bool ready = (i < songReady.size()) && songReady.getReference (i);
-                if (! ready && ! s.famFiles.isEmpty())
-                {
-                    ready = true;
-                    for (auto& fn : s.famFiles) { auto f = s.folder.getChildFile (fn); if (! f.existsAsFile() || f.getSize() < 2000) { ready = false; break; } }
-                }
-                c->dlProgress = ready ? -1.0f : 0.0f;
+            {   // barra ligada al id: si no hay descarga en curso para este id, no hay barra
+                auto it = dlById.find (s.id);
+                c->dlProgress = (it != dlById.end()) ? it->second : -1.0f;
             }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
             c->onClick   = [this, idx] { loadSong (idx); };
@@ -4568,6 +4595,7 @@ private:
     juce::Array<double> songMaster;   // master (dB) independiente por cancion
     juce::Array<juce::var> songMixCache;   // mezcla por cancion (del repertorio cargado)
     juce::Array<bool> songReady;      // audio de la canción ya descargado
+    std::map<int, float> dlById;      // id de canción -> progreso 0..1 (ausente = sin barra). Sigue a la canción al reordenar
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
     std::unique_ptr<RepertoireLoader> offlineLoader;   // descarga de un repertorio para offline (no cambia la UI)
