@@ -1061,11 +1061,16 @@ ARCHIVOS_DESCARGA = {
     "mac": "NeuralSync-Mac.zip",
     "windows": "NeuralSync-Windows-Setup.exe",
 }
+ARCHIVOS_DESCARGA_NP = {
+    "mac": "NeuralPlay-Mac.zip",
+    "windows": "NeuralPlay-Windows-Setup.exe",
+}
 
 @app.route("/admin/descargar/<plataforma>")
 @login_required("admin")
 def admin_descargar(plataforma):
-    nombre = ARCHIVOS_DESCARGA.get(plataforma)
+    tabla = ARCHIVOS_DESCARGA_NP if request.args.get("app") == "neuralplay" else ARCHIVOS_DESCARGA
+    nombre = tabla.get(plataforma)
     if not nombre:
         abort(404)
     ruta = os.path.join(DESCARGAS_DIR, nombre)
@@ -1131,6 +1136,8 @@ def admin():
         email_configurado=emails_module.email_configurado(),
         desc_mac=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA["mac"])),
         desc_win=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA["windows"])),
+        desc_np_mac=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA_NP["mac"])),
+        desc_np_win=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA_NP["windows"])),
     )
 
 
