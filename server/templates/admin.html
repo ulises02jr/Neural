@@ -195,7 +195,7 @@
 
   <div id="launcher" class="launcher">
   <nav class="iconnav">
-    <a class="navicon" href="javascript:void(0)" onclick="showSection('live')"><span class="ni-ico" style="padding:0;overflow:hidden"><img src="/static/neuralworship.png" alt="NeuralWorship" style="width:100%;height:100%;object-fit:cover;border-radius:21px"></span><span class="ni-lbl">NeuralWorship</span></a>
+    <a class="navicon" href="javascript:void(0)" onclick="showSection('live')"><span class="ni-ico" style="padding:0;overflow:hidden"><img src="/static/neuralworship.png" alt="NeuralSync" style="width:100%;height:100%;object-fit:cover;border-radius:21px"></span><span class="ni-lbl">NeuralSync</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('neuralplay')"><span class="ni-ico" style="padding:0;overflow:hidden"><img src="/static/neuralplay.png" alt="NeuralPlay" style="width:100%;height:100%;object-fit:cover;border-radius:21px"></span><span class="ni-lbl">NeuralPlay</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('usuarios')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="ni-lbl">Usuarios</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('repertorios')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span class="ni-lbl">Repertorios</span></a>
@@ -208,13 +208,13 @@
 
   <!-- Live (Mac local) -->
   <div class="card sec-card" id="live">
-    <h2>NeuralWorship</h2>
-    <div style="font-size:13px;color:var(--txt2);margin:2px 0 16px">La app puente que conecta el sistema en vivo con los músicos: al abrirla en la computadora, la sesión se activa sola y los músicos ven el aviso “EN VIVO” en su pantalla para entrar a los charts. Descargá la app para tu sistema.</div>
+    <h2>NeuralSync</h2>
+    <div style="font-size:13px;color:var(--txt2);margin:2px 0 16px"><b>NeuralSync</b> es el puente para quienes tocan desde su <b>propio DAW</b> (Logic, Ableton, etc.): al abrirlo en la computadora sincroniza tu sesión en vivo con los músicos, que ven el aviso “EN VIVO” en su pantalla para entrar a los charts. Si usás <b>NeuralPlay</b> como reproductor, esta función ya viene integrada. Descargá la app para tu sistema.</div>
 
-    <!-- Descargas de la app NeuralWorship -->
+    <!-- Descargas de la app NeuralSync -->
     <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:16px">
-      <div style="font-weight:700;color:var(--txt2)">Descargar NeuralWorship</div>
-      <div style="font-size:12px;color:var(--txt3);margin:4px 0 14px">El puente que conecta el sistema live con los músicos. Elegí tu sistema operativo.</div>
+      <div style="font-weight:700;color:var(--txt2)">Descargar NeuralSync</div>
+      <div style="font-size:12px;color:var(--txt3);margin:4px 0 14px">El puente para tocar desde tu propio DAW y sincronizar con los músicos. Elegí tu sistema operativo.</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         {% if desc_mac %}
         <a href="{{ url_for('admin_descargar', plataforma='mac') }}" style="display:inline-flex;align-items:center;gap:9px;padding:12px 20px;background:var(--gold);color:#1a1a1a;border-radius:8px;font-weight:700;text-decoration:none;font-size:14px">

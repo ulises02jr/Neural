@@ -1405,7 +1405,7 @@ struct SettingsPanel : public juce::Component
 
     void refresh()
     {
-        syncBtn.setButtonText (syncOn ? "Sincronizado" : "Sincronizar");
+        syncBtn.setButtonText (syncOn ? juce::String::fromUTF8 ("NeuralSync \xe2\x9c\x93") : "NeuralSync");
         syncBtn.setColour (juce::TextButton::buttonColourId,
                            syncOn ? juce::Colour (0xff17361f) : juce::Colour (0xff1f1f1f));
         syncBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));

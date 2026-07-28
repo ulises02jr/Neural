@@ -1052,14 +1052,14 @@ def api_cancion(numero):
 # ───────────────────────── Rutas admin ─────────────────────────
 @app.route("/api/version")
 def api_version():
-    """Ultima version publicada de NeuralWorship (para el aviso de actualizacion)."""
+    """Ultima version publicada de NeuralSync (para el aviso de actualizacion)."""
     return jsonify({"ok": True, "version": get_config().get("neuralworship_version", "1.0")})
 
 
 DESCARGAS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "descargas")
 ARCHIVOS_DESCARGA = {
-    "mac": "NeuralWorship-Mac.zip",
-    "windows": "NeuralWorship-Windows-Setup.exe",
+    "mac": "NeuralSync-Mac.zip",
+    "windows": "NeuralSync-Windows-Setup.exe",
 }
 
 @app.route("/admin/descargar/<plataforma>")
