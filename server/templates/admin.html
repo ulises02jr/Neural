@@ -231,20 +231,13 @@
         <div style="width:12px;height:12px;border-radius:50%;background:#444"></div>
         <div style="flex:1">
           <div style="font-weight:600;color:var(--txt2)">Sin actividad</div>
-          <div style="font-size:12px;color:var(--txt3);margin-top:2px">El Mac local no está enviando heartbeat. Asegurate de tener <code>puente.py</code> corriendo.</div>
+          <div style="font-size:12px;color:var(--txt3);margin-top:2px">Todavía no hay una sesión en vivo. Abrí NeuralWorship en la computadora para iniciarla.</div>
         </div>
       </div>
     {% endif %}
     <p class="help" style="margin-top:14px">
-      Cuando <code>puente.py</code> está corriendo en el Mac, manda un ping al VPS cada 30s.
-      Los músicos van a ver el banner "EN VIVO" en la página principal.
+      Al abrir <b>NeuralWorship</b> en la computadora, la sesión en vivo se activa sola y los músicos ven el aviso <b>“EN VIVO”</b> en su pantalla para entrar a los charts.
     </p>
-    {% if live_token %}
-    <details style="margin-top:10px;color:var(--txt3);font-size:11px">
-      <summary style="cursor:pointer">Ver token de live (para configurar puente.py)</summary>
-      <code style="display:block;background:#1f1f1f;padding:10px;border-radius:6px;margin-top:8px;word-break:break-all;color:var(--gold)">{{ live_token }}</code>
-    </details>
-    {% endif %}
 
     <!-- Descargas de la app NeuralWorship -->
     <div style="margin-top:18px;border-top:1px solid var(--line);padding-top:16px">

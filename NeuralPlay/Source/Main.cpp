@@ -4440,8 +4440,10 @@ private:
             if (b - a >= 2 && g[b] > g[a])
             {
                 const double localBpm = 60.0 * (b - a) / (g[b] - g[a]);
-                // se muestra RELATIVO al tempo declarado (así sale 125 y no 280 si la grilla va a doble resolución)
-                return bpm * (localBpm / gridBaseBpm);
+                // la grilla puede venir a x2/x4 (corcheas/semicorcheas); dividimos por el factor real
+                // deducido del tempo declarado, así 250->125 al arrancar y 280->140 al subir
+                const int div = juce::jlimit (1, 4, (int) std::llround (gridBaseBpm / bpm));
+                return localBpm / (double) div;
             }
         }
         return bpm;
@@ -4449,18 +4451,20 @@ private:
     void seekBar (int dir)   // saltar al compás anterior/siguiente
     {
         const auto& g = currentBeatGrid;
-        const int nb = juce::jmax (1, beatsPerBar);
+        const int nb0 = juce::jmax (1, beatsPerBar);
+        const int div = (gridBaseBpm > 0.0 && bpm > 0.0) ? juce::jlimit (1, 4, (int) std::llround (gridBaseBpm / bpm)) : 1;
+        const int nb  = nb0 * div;   // puntos de grilla por compás real (la grilla puede venir a x2/x4)
         if (g.size() >= 2)
         {
             const double t = positionSeconds();
-            int i = 0; while (i + 1 < g.size() && g[i + 1] <= t + 0.03) ++i;   // negra actual
+            int i = 0; while (i + 1 < g.size() && g[i + 1] <= t + 0.03) ++i;
             int target = ((i / nb) + dir) * nb;
             target = juce::jlimit (0, g.size() - 1, target);
             seekSeconds (g[target]);
         }
         else if (bpm > 0.0)
         {
-            const double secPerBar = 60.0 / bpm * nb;
+            const double secPerBar = 60.0 / bpm * nb0;
             seekSeconds (juce::jmax (0.0, positionSeconds() + dir * secPerBar));
         }
     }
