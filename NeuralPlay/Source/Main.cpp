@@ -35,11 +35,6 @@ static juce::File npAppDir()
              .getChildFile ("Library").getChildFile ("Application Support").getChildFile ("NeuralPlay");
 }
 static juce::File npCacheDir() { return npAppDir().getChildFile ("cache"); }
-static void npDbg (const juce::String& s)   // log temporal para diagnosticar bug#1
-{
-    auto f = npAppDir().getChildFile ("debug.log");
-    f.appendText (juce::Time::getCurrentTime().toString (false, true, true, true) + "  " + s + "\n");
-}
 static juce::int64 npFolderSize (const juce::File& f)
 {
     juce::int64 s = 0;
@@ -3835,32 +3830,35 @@ private:
         currentSong = -1;
         clearSong();
         dlById.clear();   // la barra la maneja SOLO el progreso real de descarga (onSongProgress), nunca un escaneo de disco
+        loadOrderIds.clearQuick();
+        for (auto& e : repertoire) loadOrderIds.add (e.id);   // orden fijo del loader
         for (int i = 0; i < repertoire.size(); ++i)
             if (i < songReady.size()) songReady.set (i, cacheReady (repertoire.getReference (i)));   // solo para el guard de reproducir
-        { juce::String d = "META n=" + juce::String (repertoire.size()) + " | ";
-          for (auto& e : repertoire) d << e.id << ":ready=" << (int) cacheReady (e) << ":fam=" << e.famFiles.size() << ":folder=" << e.folder.getFileName() << "  ";
-          npDbg (d); }
         rebuildRepertoireStrip();
         repaint();
     }
 
-    // FASE B: avance de descarga de la canción i (0..1)
+    // FASE B: avance de descarga. 'i' es el índice del LOADER (orden fijo); lo traducimos a id
+    // y ubicamos la posición ACTUAL de esa canción (puede haberse reordenado) -> nada de barras falsas.
     void onSongProgress (int i, double f)
     {
-        if (i >= 0 && i < repertoire.size())            // la barra sigue al id, no al índice
+        const int id = (i >= 0 && i < loadOrderIds.size()) ? loadOrderIds[i] : -1;
+        if (id < 0) return;
+        if (f >= 1.0) dlById.erase (id); else dlById[id] = (float) f;
+
+        int idx = -1;                                   // posición actual de la canción (por id)
+        for (int j = 0; j < repertoire.size(); ++j)
+            if (repertoire.getReference (j).id == id) { idx = j; break; }
+
+        if (idx >= 0 && idx < songCards.size())
         {
-            const int id = repertoire.getReference (i).id;
-            if (f >= 1.0) dlById.erase (id); else dlById[id] = (float) f;
+            songCards[idx]->dlProgress = (f >= 1.0) ? -1.0f : (float) f;
+            songCards[idx]->repaint();
         }
-        if (i >= 0 && i < songCards.size())
+        if (f >= 1.0 && idx >= 0 && idx < songReady.size())
         {
-            songCards[i]->dlProgress = (f >= 1.0) ? -1.0f : (float) f;
-            songCards[i]->repaint();
-        }
-        if (f >= 1.0 && i >= 0 && i < songReady.size())
-        {
-            songReady.set (i, true);
-            if (i == 0 && currentSong < 0) loadSong (0);   // apenas esté la 1a, cargarla
+            songReady.set (idx, true);
+            if (idx == 0 && currentSong < 0) loadSong (0);   // apenas esté la 1a, cargarla
         }
     }
 
@@ -3875,9 +3873,6 @@ private:
             if (! e.cover.isValid() && e.coverFile.existsAsFile())
                 e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         for (auto* c : songCards) c->dlProgress = -1.0f;
-        { juce::String d = "LOADED dlById_antes=" + juce::String ((int) dlById.size()) + " ids=";
-          for (auto& kv : dlById) d << kv.first << "(" << juce::String (kv.second, 2) << ") ";
-          npDbg (d); }
         dlById.clear();                                          // FASE B lista = TODO el audio bajó
         songReady.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i) songReady.add (true);
@@ -3952,9 +3947,6 @@ private:
                 juce::Thread::launch ([base, p, tok] { httpPostForm (base, p, tok); });
             }
         }
-        { juce::String d = "REORDER dlById=" + juce::String ((int) dlById.size()) + " ids=";
-          for (auto& kv : dlById) d << kv.first << "(" << juce::String (kv.second, 2) << ") ";
-          npDbg (d); }
         rebuildRepertoireStrip();   // re-acomoda las tarjetas (y hace snap si no cambió)
     }
 
@@ -4606,6 +4598,7 @@ private:
     juce::Array<juce::var> songMixCache;   // mezcla por cancion (del repertorio cargado)
     juce::Array<bool> songReady;      // audio de la canción ya descargado
     std::map<int, float> dlById;      // id de canción -> progreso 0..1 (ausente = sin barra). Sigue a la canción al reordenar
+    juce::Array<int> loadOrderIds;    // ids en el ORDEN del loader (fijo); mapea el índice del loader al id aunque se reordene
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
     std::unique_ptr<RepertoireLoader> offlineLoader;   // descarga de un repertorio para offline (no cambia la UI)
