@@ -2766,7 +2766,7 @@ public:
         if (! isDragging) return;
         auto inner = mapBounds.reduced (8);
         const double win = juce::jmin (20.0, totalSeconds());
-        const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth()));
+        const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * 0.5;   // menos sensible
         lastInteractionMs = juce::Time::getMillisecondCounter();
         if (dragSeeks) seekSeconds (dragStartCenter - dx);
         else { browsing = true; browseCenter = juce::jlimit (0.0, totalSeconds(), dragStartCenter - dx); repaint (mapBounds); }
@@ -2795,11 +2795,11 @@ public:
         {
             if (! browsing) browseCenter = positionSeconds();
             browsing = true;
-            browseCenter = juce::jlimit (0.0, totalSeconds(), browseCenter + d * 60.0);
+            browseCenter = juce::jlimit (0.0, totalSeconds(), browseCenter + d * 14.0);
             lastInteractionMs = juce::Time::getMillisecondCounter();
             repaint (mapBounds);
         }
-        else seekSeconds (positionSeconds() + d * 60.0);
+        else seekSeconds (positionSeconds() + d * 14.0);
     }
 
     void resized() override
