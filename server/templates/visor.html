@@ -58,6 +58,7 @@
   .perfnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:14px;
     padding:9px 13px;background:var(--raised);border-radius:7px;border-left:2px solid var(--gold)}
   .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
+  .lyrics .line.inst-line{gap:9px;align-items:center;margin:2px 0 12px}
   .lyrics .tok{display:inline-flex;flex-direction:column}
   .chord{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     font-size:var(--chord-size);font-weight:var(--chord-weight,700);color:var(--chord-color,var(--gold));
@@ -334,13 +335,11 @@ function setAcento(val){ try{ if(val) localStorage.setItem('mw_acento',val); els
 aplicarAcento();
 
 function renderLines(lines){
-  return `<div class="lyrics">${(lines||[]).map(line => `
-    <div class="line">
-      ${line.map(tok => `<div class="tok">
-        <span class="chord">${esc(tok[0])}</span>
-        <span class="lyric">${tok[1] ? esc(tok[1]) : "\u00A0"}</span>
-      </div>`).join("")}
-    </div>`).join("")}</div>`;
+  return `<div class="lyrics">${(lines||[]).map(line => {
+    var soloAcordes = line.length>0 && line.every(t => !((t[1]||"").trim()));
+    if(soloAcordes) return `<div class="line inst-line">${line.filter(t=>(t[0]||"").trim()).map(t=>`<span class="chip">${esc(t[0])}</span>`).join("")}</div>`;
+    return `<div class="line">${line.map(tok => `<div class="tok"><span class="chord">${esc(tok[0])}</span><span class="lyric">${tok[1] ? esc(tok[1]) : "\u00A0"}</span></div>`).join("")}</div>`;
+  }).join("")}</div>`;
 }
 function renderBody(sec){
   if(sec.inst && sec.prog){
