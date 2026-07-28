@@ -368,7 +368,7 @@ struct SongCard : public juce::Component
     bool active = false;
     bool editMode = false;
     int index = 0;
-    std::function<void()> onClick, onRemove, onTono;
+    std::function<void()> onClick, onRemove, onTono, onAddAfter;
     std::function<void (int fromIndex, int toIndex)> onReorder;   // arrastrar para reordenar
     float dlProgress = -1.0f;   // -1 = sin barra; 0..1 = descargando
 
@@ -382,6 +382,7 @@ struct SongCard : public juce::Component
     }
     juce::Rectangle<float> removeBtnRect() const { auto c = coverRect(); return { c.getRight() - 34.0f, c.getY() + 8.0f, 26.0f, 26.0f }; }
     juce::Rectangle<float> tonoBtnRect()   const { auto c = coverRect(); return { c.getCentreX() - 22.0f, c.getCentreY() - 18.0f, 44.0f, 36.0f }; }
+    juce::Rectangle<float> addBtnRect()    const { auto c = coverRect(); return { c.getRight() - 34.0f, c.getBottom() - 34.0f, 26.0f, 26.0f }; }
 
     void mouseDown (const juce::MouseEvent&) override
     {
@@ -411,8 +412,9 @@ struct SongCard : public juce::Component
         if (! e.mouseWasClicked()) return;
         if (editMode)
         {
-            if (removeBtnRect().contains (e.position)) { if (onRemove) onRemove(); return; }
-            if (tonoBtnRect().contains (e.position))   { if (onTono)   onTono();   return; }
+            if (removeBtnRect().contains (e.position)) { if (onRemove)   onRemove();   return; }
+            if (addBtnRect().contains (e.position))    { if (onAddAfter) onAddAfter(); return; }
+            if (tonoBtnRect().contains (e.position))   { if (onTono)     onTono();     return; }
         }
         if (onClick) onClick();
     }
@@ -452,6 +454,10 @@ struct SongCard : public juce::Component
             g.setColour (juce::Colour (0x44ffffff)); g.drawRoundedRectangle (tb, 8.0f, 1.2f);
             g.setColour (juce::Colours::white); g.setFont (juce::Font (22.0f, juce::Font::bold));
             g.drawText (juce::String::fromUTF8 ("\xe2\x8b\xaf"), tb, juce::Justification::centred);   // ⋯
+            auto ab = addBtnRect();   // + para agregar una canción después de esta
+            g.setColour (juce::Colour (0xff3ED66E)); g.fillEllipse (ab);
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (23.0f, juce::Font::bold));
+            g.drawText ("+", ab.translated (0.0f, -1.0f), juce::Justification::centred);
         }
 
         if (dlProgress >= 0.0f && dlProgress < 1.0f)   // barra de descarga sobre la portada
@@ -2286,6 +2292,17 @@ public:
         returnButton.onClick = [this] { seekSeconds (0.0); };
         addAndMakeVisible (returnButton);
 
+        for (auto* b : { &barPrevBtn, &barNextBtn })   // navegación por compás sobre el mapa
+        {
+            b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xcc1a1a1a));
+            b->setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+            addAndMakeVisible (b);
+        }
+        barPrevBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25C0));   // ◀
+        barNextBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25B6));   // ▶
+        barPrevBtn.onClick = [this] { seekBar (-1); };
+        barNextBtn.onClick = [this] { seekBar (+1); };
+
         fadeButton.onClick = [this] { toggleFade(); };
         addAndMakeVisible (fadeButton);
 
@@ -2573,7 +2590,7 @@ public:
             const int hh = compasBoxBounds.getHeight() / 2;
             g.setColour (juce::Colour (0xffe8e8e8));
             g.setFont (juce::Font (12.5f, juce::Font::bold));
-            g.drawText (juce::String (juce::roundToInt (bpm)) + " BPM",
+            g.drawText (juce::String (juce::roundToInt (currentBpm())) + " BPM",
                         compasBoxBounds.withHeight (hh).translated (0, 1), juce::Justification::centred, false);
             g.setColour (juce::Colour (0xffb0b0b0));
             g.setFont (juce::Font (11.5f));
@@ -2840,6 +2857,14 @@ public:
         area.removeFromTop (4);
 
         mapBounds = area.removeFromTop (188);
+        {   // botones de navegación por compás, pegados a los bordes del mapa
+            const int bw = 30, bh = 46, cy = mapBounds.getCentreY() - bh / 2;
+            barPrevBtn.setBounds (mapBounds.getX() + 6, cy, bw, bh);
+            barNextBtn.setBounds (mapBounds.getRight() - bw - 6, cy, bw, bh);
+            const bool showNav = (currentSong >= 0);
+            barPrevBtn.setVisible (showNav);
+            barNextBtn.setVisible (showNav);
+        }
         area.removeFromTop (8);
         faderPanelBounds = area;
 
@@ -3308,6 +3333,7 @@ private:
     void addSong (int songId, juce::String tonoName)
     {
         if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        pendingAddedId = songId;                        // para reubicarla tras el reload (botón + de la tarjeta)
         SongEntry ph;                                   // tarjeta placeholder inmediata
         ph.id = -songId;
         ph.titulo = juce::String::fromUTF8 ("Agregando\xe2\x80\xa6");
@@ -3522,6 +3548,8 @@ private:
             });
         });
     }
+
+    void openBibliotecaForAddAfter (int afterId) { pendingAddAfterId = afterId; openBibliotecaForAdd(); }
 
     void openBibliotecaForAdd()
     {
@@ -3887,6 +3915,22 @@ private:
         dlById.clear();                                          // FASE B lista = TODO el audio bajó
         songReady.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i) songReady.add (true);
+        if (pendingAddAfterId != 0 && pendingAddedId != 0)       // botón + : colocar la agregada justo después de esa
+        {
+            int fromIdx = -1, afterIdx = -1;
+            for (int i = 0; i < repertoire.size(); ++i)
+            {
+                if (repertoire.getReference (i).id == pendingAddedId)   fromIdx  = i;
+                if (repertoire.getReference (i).id == pendingAddAfterId) afterIdx = i;
+            }
+            if (fromIdx >= 0 && afterIdx >= 0 && fromIdx != afterIdx)
+            {
+                const int toIdx = (fromIdx > afterIdx) ? afterIdx + 1 : afterIdx;
+                juce::Component::SafePointer<MainComponent> sp (this);
+                juce::MessageManager::callAsync ([sp, fromIdx, toIdx] { if (sp) sp->reorderSong (fromIdx, toIdx); });
+            }
+        }
+        pendingAddAfterId = 0; pendingAddedId = 0;
         if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); enforceCap(); }   // limpieza auto (1 vez, al abrir)
         if (repertoire.isEmpty()) { clearSong(); return; }
         if (currentSong < 0) loadSong (0);
@@ -3979,10 +4023,11 @@ private:
                 c->dlProgress = (it != dlById.end()) ? it->second : -1.0f;
             }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
-            c->onClick   = [this, idx] { loadSong (idx); };
-            c->onRemove  = [this, sid] { removeSong (sid); };
-            c->onTono    = [this, sid, title] { openTonoFor (sid, title, false); };
-            c->onReorder = [this] (int from, int to) { reorderSong (from, to); };
+            c->onClick    = [this, idx] { loadSong (idx); };
+            c->onRemove   = [this, sid] { removeSong (sid); };
+            c->onTono     = [this, sid, title] { openTonoFor (sid, title, false); };
+            c->onAddAfter = [this, sid] { openBibliotecaForAddAfter (sid); };
+            c->onReorder  = [this] (int from, int to) { reorderSong (from, to); };
             addAndMakeVisible (c);
         }
         addCard.setVisible (editMode && ! lastSetlistId.isEmpty());
@@ -4381,6 +4426,38 @@ private:
             midiNext[ci] = idx;
         }
     }
+    double currentBpm() const   // BPM local según la posición (sigue cambios de tempo en medleys)
+    {
+        const auto& g = currentBeatGrid;
+        const int n = g.size();
+        if (n >= 2)
+        {
+            const double t = positionSeconds();
+            int i = 0;
+            while (i + 1 < n && g[i + 1] <= t) ++i;
+            double dt = (i + 1 < n) ? (g[i + 1] - g[i]) : (g[i] - g[i - 1]);
+            if (dt > 0.04 && dt < 4.0) return 60.0 / dt;
+        }
+        return bpm;
+    }
+    void seekBar (int dir)   // saltar al compás anterior/siguiente
+    {
+        const auto& g = currentBeatGrid;
+        const int nb = juce::jmax (1, beatsPerBar);
+        if (g.size() >= 2)
+        {
+            const double t = positionSeconds();
+            int i = 0; while (i + 1 < g.size() && g[i + 1] <= t + 0.03) ++i;   // negra actual
+            int target = ((i / nb) + dir) * nb;
+            target = juce::jlimit (0, g.size() - 1, target);
+            seekSeconds (g[target]);
+        }
+        else if (bpm > 0.0)
+        {
+            const double secPerBar = 60.0 / bpm * nb;
+            seekSeconds (juce::jmax (0.0, positionSeconds() + dir * secPerBar));
+        }
+    }
     double pulsesAt (double t) const   // pulsos de MIDI clock (24 PPQN) acumulados hasta t
     {
         const auto& g = currentBeatGrid;
@@ -4531,6 +4608,7 @@ private:
         if (browsing && ! isDragging && (juce::Time::getMillisecondCounter() - lastInteractionMs > 1200))
         { browsing = false; repaint (mapBounds); }
         if (playing.load() || browsing) repaint (mapBounds);
+        if (playing.load() && currentBeatGrid.size() >= 2) repaint (compasBoxBounds);   // BPM que sigue el medley
 
         if (fadeDir != 0)
         {
@@ -4610,6 +4688,7 @@ private:
     juce::Array<bool> songReady;      // audio de la canción ya descargado
     std::map<int, float> dlById;      // id de canción -> progreso 0..1 (ausente = sin barra). Sigue a la canción al reordenar
     juce::Array<int> loadOrderIds;    // ids en el ORDEN del loader (fijo); mapea el índice del loader al id aunque se reordene
+    int pendingAddAfterId = 0, pendingAddedId = 0;   // insertar la canción agregada justo después de otra (botón + de la tarjeta)
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
     std::unique_ptr<RepertoireLoader> offlineLoader;   // descarga de un repertorio para offline (no cambia la UI)
@@ -4678,7 +4757,7 @@ private:
     juce::Image logoImg;
     PillLNF pillLnf;
     FaderLNF faderLnf;
-    juce::TextButton connectButton, returnButton;
+    juce::TextButton connectButton, returnButton, barPrevBtn, barNextBtn;
     PlayIconButton playButton;
     FadeIconButton fadeButton;
     juce::Array<double> preFadeVals;

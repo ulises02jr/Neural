@@ -106,6 +106,9 @@
     font-family:ui-monospace,Menlo,monospace;min-width:34px;justify-content:center;
     border:none;border-left:1px solid var(--line);border-right:1px solid var(--line);cursor:pointer}
   .item .t-tono:hover{filter:brightness(0.92)}
+  .item .t-sel{height:26px;background:var(--gold);color:#000;font-weight:700;font-size:12px;border:none;border-radius:6px;padding:0 6px;font-family:ui-monospace,Menlo,monospace;cursor:pointer}
+  .item .t-orig{height:26px;width:26px;background:var(--raised);color:var(--txt2);border:1px solid var(--line);border-radius:6px;font-size:13px;cursor:pointer;margin-left:5px}
+  .item .t-orig:hover{color:var(--txt);border-color:var(--txt3)}
 
   /* Modal de edición */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;
@@ -466,18 +469,18 @@
                   <div class="transpose">
                     <form method="POST" action="{{ url_for('admin_setlist_transponer', setlist_id=s.id, numero=c.id) }}" style="display:inline">
 <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-                      <input type="hidden" name="delta" value="-1">
-                      <button type="submit" class="t-btn" title="Bajar 1 semitono">−</button>
+                      {% set _tonos = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'] %}
+                      <select name="tono" class="t-sel" title="Elegí el tono" onchange="(this.form.requestSubmit?this.form.requestSubmit():this.form.submit())">
+                        {% if c.tono and c.tono not in _tonos %}<option value="{{ c.tono }}" selected>{{ c.tono }}</option>{% endif %}
+                        {% for tn in _tonos %}<option value="{{ tn }}" {% if tn == c.tono %}selected{% endif %}>{{ tn }}</option>{% endfor %}
+                      </select>
                     </form>
+                    {% if c.es_override %}
                     <form method="POST" action="{{ url_for('admin_setlist_resetear_tono', setlist_id=s.id, numero=c.id) }}" style="display:inline">
 <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-                      <button type="submit" class="t-tono" title="Volver al tono original">{{ c.tono or '—' }}</button>
+                      <button type="submit" class="t-orig" title="Volver al tono original ({{ c.tono_original }})">↺</button>
                     </form>
-                    <form method="POST" action="{{ url_for('admin_setlist_transponer', setlist_id=s.id, numero=c.id) }}" style="display:inline">
-<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-                      <input type="hidden" name="delta" value="1">
-                      <button type="submit" class="t-btn" title="Subir 1 semitono">+</button>
-                    </form>
+                    {% endif %}
                   </div>
                   <div class="actions">
                     <form method="POST" action="{{ url_for('admin_setlist_mover', setlist_id=s.id) }}" style="display:inline">

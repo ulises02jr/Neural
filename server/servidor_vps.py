@@ -1308,6 +1308,11 @@ def admin_setlist_transponer(setlist_id, numero):
     biblioteca = cargar_biblioteca()
     base = biblioteca.get(numero, {})
     tono_actual = item.get("tono") or base.get("tono", "")
+    tono_abs = (request.form.get("tono") or "").strip()
+    if tono_abs:
+        item["tono"] = None if tono_abs == base.get("tono", "") else tono_abs
+        guardar_config(cfg)
+        return redirect(url_for("admin"))
     if not tono_actual:
         return redirect(url_for("admin"))
     # Calcular nuevo tono (smart: bemoles/sostenidos)
