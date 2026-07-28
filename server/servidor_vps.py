@@ -1579,7 +1579,7 @@ def admin_crear_admin():
 CARPETA_PISTAS = BASE_DIR / "pistas"
 CARPETA_PISTAS.mkdir(exist_ok=True)
 _EXT_AUDIO_ENSAYO = (".mp3", ".m4a", ".ogg", ".wav")
-FAMILIAS_FIJAS = {"Percusión", "Guía", "Click"}
+FAMILIAS_FIJAS = {"Batería", "Percusión", "Guía", "Click"}
 
 
 def _carpeta_tono(numero, n):
@@ -2326,8 +2326,9 @@ def admin_nueva_pistas(numero):
     return render_template("admin_nueva_pistas.html", numero=numero, titulo=titulo)
 
 
-FAMILIAS = ["Voces", "Guitarras", "Teclados", "Cuerdas", "Metales", "Bajo",
-            "Percusión", "Guía", "Música original", "Click", "Otros"]
+FAMILIAS = ["Voces", "Guitarra Acústica", "Guitarra Eléctrica", "Piano", "Teclas", "Pad",
+            "Cuerdas", "Metales", "Bajo", "Batería", "Percusión", "Loops", "FX",
+            "Guía", "Música original", "Click", "Otros"]
 
 
 def _archivo_midi(numero):
@@ -2550,22 +2551,34 @@ def _familia_auto(nombre):
     n = " " + re.sub(r"[_\-.]+", " ", nombre.lower()) + " "
     if re.search(r"click|metr", n):
         return "Click"
-    if re.search(r" voz | voces| vocal| coro| lead| choir| vox ", n):
+    if re.search(r"guide|gu.a| cue |click.?guide", n):
+        return "Guía"
+    if re.search(r" voz | voces| vocal| coro| lead| choir| vox | bgv|soprano|alto|tenor", n):
         return "Voces"
-    if re.search(r"guitarra|guit|gtr|ac.stic|el.ctric| ag | eg | ga | ge | g\d", n):
-        return "Guitarras"
-    if re.search(r"teclado| tecla|keys|piano| pad|synth| sint|organo| k\d", n):
-        return "Teclados"
+    if re.search(r"loop", n):
+        return "Loops"
+    if re.search(r" fx |efx|sfx|efecto|riser|sweep|impact|whoosh|reverse|uplifter|downlifter", n):
+        return "FX"
+    if re.search(r" bajo|bass", n):
+        return "Bajo"
+    if re.search(r" pad ", n):
+        return "Pad"
+    if re.search(r"piano|rhodes|wurli", n):
+        return "Piano"
+    if re.search(r"teclado| tecla|keys|synth| sint|organo| k\d", n):
+        return "Teclas"
+    if re.search(r"ac.stic|acou| ag | ga ", n):
+        return "Guitarra Acústica"
+    if re.search(r"el.ctric|electric| eg | ge |guitarra|guit|gtr| g\d", n):
+        return "Guitarra Eléctrica"
     if re.search(r"string|cuerda|viol|cello", n):
         return "Cuerdas"
     if re.search(r"trompeta|trumpet|sax|trombon|brass|metal", n):
         return "Metales"
-    if re.search(r" bajo|bass", n):
-        return "Bajo"
-    if re.search(r"bater|drum|percu| perc|kick|snare| hat| tom|platillo|cymbal|shaker|conga|tambor|loop", n):
+    if re.search(r"bater|drum|kick|snare| hat| tom|platillo|cymbal|beat", n):
+        return "Batería"
+    if re.search(r"percu| perc|shaker|conga|tambor|clap|pandero", n):
         return "Percusión"
-    if re.search(r"guide|gu.a| cue |click.?guide", n):
-        return "Guía"
     if re.search(r"original|mezcla|master|banda| full | todo ", n):
         return "Música original"
     return "Otros"
