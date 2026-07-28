@@ -35,6 +35,11 @@ static juce::File npAppDir()
              .getChildFile ("Library").getChildFile ("Application Support").getChildFile ("NeuralPlay");
 }
 static juce::File npCacheDir() { return npAppDir().getChildFile ("cache"); }
+static void npDbg (const juce::String& s)   // log temporal para diagnosticar bug#1
+{
+    auto f = npAppDir().getChildFile ("debug.log");
+    f.appendText (juce::Time::getCurrentTime().toString (false, true, true, true) + "  " + s + "\n");
+}
 static juce::int64 npFolderSize (const juce::File& f)
 {
     juce::int64 s = 0;
@@ -1643,7 +1648,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::Array<Key> keys;
     int renderingSem = 99, pendIdx = -1, progHechos = 0, progTotal = 0;
 
-    juce::TextButton closeBtn;
+    juce::TextButton closeBtn, backBtn;
     std::function<void (int)> onPickSong;            // biblioteca -> elegir cancion
     std::function<void (int, juce::String)> onChoose; // (semitonos, nombre) -> aplicar
 
@@ -1653,8 +1658,14 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
-        closeBtn.onClick = [this] { stopTimer(); renderingSem = 99; if (mode == Tono) showBiblioteca(); else setVisible (false); };
+        closeBtn.onClick = [this] { stopTimer(); renderingSem = 99; setVisible (false); };   // cierra del todo
         addAndMakeVisible (closeBtn);
+
+        backBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xb9 Atr\xc3\xa1s"));         // ‹ Atrás
+        backBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        backBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        backBtn.onClick = [this] { stopTimer(); renderingSem = 99; showBiblioteca(); };       // vuelve a la lista
+        addChildComponent (backBtn);
 
         searchBox.setTextToShowWhenEmpty (juce::String::fromUTF8 ("Buscar canci\xc3\xb3n\xe2\x80\xa6"), juce::Colour (0xff777777));
         searchBox.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1c1c1c));
@@ -1732,7 +1743,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         auto title = (mode == Biblioteca) ? juce::String::fromUTF8 ("Agregar canci\xc3\xb3n")
                                           : (juce::String::fromUTF8 ("Tono \xc2\xb7 ") + songTitle);
         auto tarea = panelBounds().removeFromTop (52).reduced (22, 0);
-        if (mode == Tono) tarea = tarea.withTrimmedLeft (92).withTrimmedRight (12);   // lugar para el botón Atrás
+        if (mode == Tono) tarea = tarea.withTrimmedLeft (92).withTrimmedRight (48);   // lugar para Atrás (izq) y × (der)
         else              tarea = tarea.withTrimmedRight (48);                        // lugar para la ×
         g.drawText (title, tarea, juce::Justification::centredLeft);
 
@@ -1799,16 +1810,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
     void resized() override
     {
-        if (mode == Tono)
-        {
-            closeBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xb9 Atr\xc3\xa1s"));   // ‹ Atrás
-            closeBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);
-        }
-        else
-        {
-            closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));                    // ×
-            closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30);
-        }
+        closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30);   // × siempre arriba-der
+        backBtn.setVisible (mode == Tono);
+        backBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);         // ‹ Atrás solo en tono
         searchBox.setBounds (searchRect());
     }
 
@@ -1929,6 +1933,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .sec.active .sechead{color:var(--accent);border-left-color:var(--accent)}
  .secnote{font-size:13px;color:var(--txt2);font-style:italic;margin-bottom:12px}
  .lyrics .line{display:flex;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px}
+ .lyrics .line.inst-line{gap:9px;align-items:center;margin:2px 0 12px}
  .lyrics .tok{display:inline-flex;flex-direction:column}
  .chord{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:var(--chord-size);font-weight:700;color:var(--chord-color,var(--accent));min-height:var(--chord-min);line-height:var(--chord-min);white-space:pre}
  .lyric{font-size:var(--lyric-size);color:var(--txt);line-height:1.35;white-space:pre}
@@ -2036,7 +2041,7 @@ function abrirAjustes(){ document.getElementById('bg-ajustes').classList.add('op
 function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
 // ── Chart ──
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function renderLines(lines){return '<div class="lyrics">'+(lines||[]).map(function(line){return '<div class="line">'+(line||[]).map(function(t){return '<div class="tok"><span class="chord">'+esc(t[0])+'</span><span class="lyric">'+esc((t[1]==null||t[1]==="")?" ":t[1])+'</span></div>';}).join('')+'</div>';}).join('')+'</div>';}
+function renderLines(lines){return '<div class="lyrics">'+(lines||[]).map(function(line){line=line||[];var solo=line.length>0&&line.every(function(t){return !((t[1]||'').trim());});if(solo){return '<div class="line inst-line">'+line.filter(function(t){return (t[0]||'').trim();}).map(function(t){return '<span class="chip">'+esc(t[0])+'</span>';}).join('')+'</div>';}return '<div class="line">'+line.map(function(t){return '<div class="tok"><span class="chord">'+esc(t[0])+'</span><span class="lyric">'+esc((t[1]==null||t[1]==='')?' ':t[1])+'</span></div>';}).join('')+'</div>';}).join('')+'</div>';}
 function renderBody(s){ if(s.inst&&s.prog){return '<div class="inst-label">Instrumental</div><div class="inst">'+s.prog.map(function(a){return '<span class="chip">'+esc(a)+'</span>';}).join('')+'</div>';} return renderLines(s.lines); }
 function renderSong(){
  var secs=song.secciones||[];
@@ -3829,14 +3834,12 @@ private:
             if (e.coverFile.existsAsFile()) e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         currentSong = -1;
         clearSong();
-        dlById.clear();
-        for (int i = 0; i < repertoire.size(); ++i)   // ya en caché: sin barra; falta bajar: barra en 0 (ligada al id)
-        {
-            const auto& e = repertoire.getReference (i);
-            const bool ready = cacheReady (e);
-            if (i < songReady.size()) songReady.set (i, ready);
-            if (! ready) dlById[e.id] = 0.0f;
-        }
+        dlById.clear();   // la barra la maneja SOLO el progreso real de descarga (onSongProgress), nunca un escaneo de disco
+        for (int i = 0; i < repertoire.size(); ++i)
+            if (i < songReady.size()) songReady.set (i, cacheReady (repertoire.getReference (i)));   // solo para el guard de reproducir
+        { juce::String d = "META n=" + juce::String (repertoire.size()) + " | ";
+          for (auto& e : repertoire) d << e.id << ":ready=" << (int) cacheReady (e) << ":fam=" << e.famFiles.size() << ":folder=" << e.folder.getFileName() << "  ";
+          npDbg (d); }
         rebuildRepertoireStrip();
         repaint();
     }
@@ -3872,6 +3875,9 @@ private:
             if (! e.cover.isValid() && e.coverFile.existsAsFile())
                 e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         for (auto* c : songCards) c->dlProgress = -1.0f;
+        { juce::String d = "LOADED dlById_antes=" + juce::String ((int) dlById.size()) + " ids=";
+          for (auto& kv : dlById) d << kv.first << "(" << juce::String (kv.second, 2) << ") ";
+          npDbg (d); }
         dlById.clear();                                          // FASE B lista = TODO el audio bajó
         songReady.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i) songReady.add (true);
@@ -3946,6 +3952,9 @@ private:
                 juce::Thread::launch ([base, p, tok] { httpPostForm (base, p, tok); });
             }
         }
+        { juce::String d = "REORDER dlById=" + juce::String ((int) dlById.size()) + " ids=";
+          for (auto& kv : dlById) d << kv.first << "(" << juce::String (kv.second, 2) << ") ";
+          npDbg (d); }
         rebuildRepertoireStrip();   // re-acomoda las tarjetas (y hace snap si no cambió)
     }
 
@@ -3961,8 +3970,9 @@ private:
             c->tono = s.tonoNombre;
             c->editMode = editMode;
             c->index = i;
-            {   // barra ligada al id: si no hay descarga en curso para este id, no hay barra
+            {   // barra ligada al id; si la canción ya está en caché, no hay barra (limpia entradas viejas)
                 auto it = dlById.find (s.id);
+                if (it != dlById.end() && cacheReady (s)) { dlById.erase (it); it = dlById.end(); }
                 c->dlProgress = (it != dlById.end()) ? it->second : -1.0f;
             }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
