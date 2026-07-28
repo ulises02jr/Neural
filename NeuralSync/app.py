@@ -26,14 +26,27 @@ except ImportError:
 from AppKit import (NSWindow, NSBackingStoreBuffered, NSApp,
                     NSWindowStyleMaskTitled, NSWindowStyleMaskClosable,
                     NSWindowStyleMaskMiniaturizable, NSWindowStyleMaskResizable,
-                    NSViewWidthSizable, NSViewHeightSizable)
+                    NSViewWidthSizable, NSViewHeightSizable,
+                    NSApplicationActivationPolicyRegular)
 from WebKit import WKWebView, WKWebViewConfiguration
-from Foundation import NSURL, NSURLRequest
+from Foundation import NSURL, NSURLRequest, NSObject
 
 import puente_core as core
 
 BASE = Path(__file__).resolve().parent
 ICONO_BAR = str(BASE / "icono_bar.png")
+
+_delegates = []   # retiene los delegados de ventana (evita que el GC los recoja)
+
+
+class _CerrarAlSalir(NSObject):
+    """Cierra la app por completo al cerrar la ventana (como NeuralPlay)."""
+    def windowWillClose_(self, _notif):
+        try:
+            core.enviar_heartbeat("bye")
+        except Exception:
+            pass
+        rumps.quit_application()
 
 
 def crear_ventana(url):
@@ -45,6 +58,9 @@ def crear_ventana(url):
     win.setTitle_("NeuralSync")
     win.setReleasedWhenClosed_(False)
     win.setMinSize_((780.0, 580.0))
+    _d = _CerrarAlSalir.alloc().init()   # la X cierra la app por completo
+    win.setDelegate_(_d)
+    _delegates.append(_d)
 
     cfg = WKWebViewConfiguration.alloc().init()
     web = WKWebView.alloc().initWithFrame_configuration_(rect, cfg)
@@ -94,6 +110,10 @@ class PuenteApp(rumps.App):
     def _abrir_inicial(self, _):
         try:
             self._t.stop()
+        except Exception:
+            pass
+        try:
+            NSApp().setActivationPolicy_(NSApplicationActivationPolicyRegular)   # ícono en el Dock + menú junto a la manzana
         except Exception:
             pass
         self.abrir_panel()

@@ -45,7 +45,6 @@ OPTIONS = {
         "CFBundleIdentifier": "org.miiglesiainternacional.neuralworship",
         "CFBundleVersion": "1.0.0",
         "CFBundleShortVersionString": "1.0",
-        "LSUIElement": True,   # utilidad de barra de menú (sin ícono en el Dock)
         "NSHighResolutionCapable": True,
         "NSAppTransportSecurity": {"NSAllowsLocalNetworking": True},
         "LSMinimumSystemVersion": "11.0",
