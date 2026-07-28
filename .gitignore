@@ -15,13 +15,13 @@ NeuralPlay/JUCE/
 NeuralPlay/build/
 NeuralPlay/stems/
 
-# ───── NeuralWorship (el puente) ─────
-NeuralWorship/**/config.json
-NeuralWorship/config.json
-NeuralWorship/config.windows.json
-NeuralWorship/build/
-NeuralWorship/dist/
-NeuralWorship/venv/
+# ───── NeuralSync (el puente, antes NeuralWorship) ─────
+NeuralSync/**/config.json
+NeuralSync/config.json
+NeuralSync/config.windows.json
+NeuralSync/build/
+NeuralSync/dist/
+NeuralSync/venv/
 
 # ───── General ─────
 **/__pycache__/
