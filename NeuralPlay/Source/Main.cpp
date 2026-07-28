@@ -537,27 +537,38 @@ static juce::String familyFor (const juce::String& raw)
     if (C("click") || C("cue") || C("metro"))                                   return juce::String::fromUTF8 ("Click");
     if (C("guide") || C("guia"))                                                return juce::String::fromUTF8 ("Gu\xc3\xad" "a");
     if (C("bass")  || C("bajo"))                                                return juce::String::fromUTF8 ("Bajo");
-    if (C("drum")||C("bater")||C("perc")||C("loop")||C("beat")||C("kick")||C("snare")||C("hat")||C("tom")) return juce::String::fromUTF8 ("Bater\xc3\xad" "a");
-    if (C("guit")||C("gtr")||C("guitar")|| tok=="ag" || tok=="eg" || tok=="ge") return juce::String::fromUTF8 ("Guitarras");
-    if (C("key")||C("teclad")||C("piano")||C("synth")||C("rhodes")||C("organ")||C("pad")||C("string")|| tok=="kb") return juce::String::fromUTF8 ("Teclados");
-    if (C("voz")||C("vocal")||C("coro")||C("lead")||C("bgv")||C("choir")||C("voc")) return juce::String::fromUTF8 ("Voces");
+    if (C("loop"))                                                              return juce::String::fromUTF8 ("Loops");
+    if (C("fx")||C("riser")||C("sweep")||C("impact")||C("whoosh")||C("uplift")) return juce::String::fromUTF8 ("FX");
+    if (C("drum")||C("bater")||C("beat")||C("kick")||C("snare")||C("hat")||C("tom")) return juce::String::fromUTF8 ("Bater\xc3\xad" "a");
+    if (C("perc")||C("shaker")||C("conga")||C("tambor")||C("clap")||C("pander")) return juce::String::fromUTF8 ("Percusi\xc3\xb3n");
+    if (C("pad"))                                                               return juce::String::fromUTF8 ("Pad");
+    if (C("piano")||C("rhodes")||C("wurli"))                                    return juce::String::fromUTF8 ("Piano");
+    if (C("key")||C("teclad")||C("synth")||C("organ")|| tok=="kb")              return juce::String::fromUTF8 ("Teclados");
+    if (C("acous")|| tok=="ag")                                                 return juce::String ("AG");
+    if (C("guit")||C("gtr")||C("guitar")|| tok=="eg" || tok=="ge")              return juce::String ("GE");
+    if (C("string")||C("cuerda")||C("viol")||C("cello"))                        return juce::String::fromUTF8 ("Cuerdas");
+    if (C("sax")||C("trumpet")||C("trompet")||C("brass")||C("trombon"))         return juce::String::fromUTF8 ("Metales");
+    if (C("voz")||C("vocal")||C("coro")||C("lead")||C("bgv")||C("choir")||C("voc")||C("alto")||C("tenor")||C("sopran")) return juce::String::fromUTF8 ("Voces");
     return juce::String::fromUTF8 ("Otros");
 }
 
 // ───────── Enrutamiento de salidas de audio por familia ─────────
-static const char* kRouteFam[11] = {
-    "Voces", "Guitarras", "Teclados", "Cuerdas", "Metales", "Bajo",
-    "Percusi\xc3\xb3n", "Gu\xc3\xad" "a", "M\xc3\xbasica original", "Click", "Otros" };
-static constexpr int kNumFam = 11;
+static const char* kRouteFam[17] = {
+    "Voces", "AG", "GE", "Piano", "Teclados", "Pad",
+    "Cuerdas", "Metales", "Bajo", "Bater\xc3\xad" "a", "Percusi\xc3\xb3n", "Loops", "FX",
+    "Gu\xc3\xad" "a", "M\xc3\xbasica original", "Click", "Otros" };
+static constexpr int kNumFam = 17;
 
 static int routeFamIndex (const juce::String& serverFam, const juce::String& trackName)
 {
     juce::String fam = serverFam;
     if (fam.isEmpty()) fam = familyFor (trackName);
-    if (fam.startsWithIgnoreCase ("Bater")) return 6;   // Batería -> Percusión
+    if (fam.equalsIgnoreCase ("Guitarras") || fam.startsWithIgnoreCase ("Guitarra El")) fam = "GE";   // compat familias viejas
+    if (fam.startsWithIgnoreCase ("Guitarra Ac")) fam = "AG";
+    if (fam.equalsIgnoreCase ("Teclas"))    fam = juce::String::fromUTF8 ("Teclados");
     for (int i = 0; i < kNumFam; ++i)
         if (fam.equalsIgnoreCase (juce::String::fromUTF8 (kRouteFam[i]))) return i;
-    return 10;   // Otros
+    return kNumFam - 1;   // Otros
 }
 
 struct FaderStripComp : public juce::Component

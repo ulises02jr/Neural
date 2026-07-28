@@ -2326,7 +2326,7 @@ def admin_nueva_pistas(numero):
     return render_template("admin_nueva_pistas.html", numero=numero, titulo=titulo)
 
 
-FAMILIAS = ["Voces", "Guitarra Acústica", "Guitarra Eléctrica", "Piano", "Teclas", "Pad",
+FAMILIAS = ["Voces", "AG", "GE", "Piano", "Teclados", "Pad",
             "Cuerdas", "Metales", "Bajo", "Batería", "Percusión", "Loops", "FX",
             "Guía", "Música original", "Click", "Otros"]
 
@@ -2566,11 +2566,11 @@ def _familia_auto(nombre):
     if re.search(r"piano|rhodes|wurli", n):
         return "Piano"
     if re.search(r"teclado| tecla|keys|synth| sint|organo| k\d", n):
-        return "Teclas"
+        return "Teclados"
     if re.search(r"ac.stic|acou| ag | ga ", n):
-        return "Guitarra Acústica"
+        return "AG"
     if re.search(r"el.ctric|electric| eg | ge |guitarra|guit|gtr| g\d", n):
-        return "Guitarra Eléctrica"
+        return "GE"
     if re.search(r"string|cuerda|viol|cello", n):
         return "Cuerdas"
     if re.search(r"trompeta|trumpet|sax|trombon|brass|metal", n):
