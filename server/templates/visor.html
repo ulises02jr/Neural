@@ -338,7 +338,7 @@ function renderLines(lines){
     <div class="line">
       ${line.map(tok => `<div class="tok">
         <span class="chord">${esc(tok[0])}</span>
-        <span class="lyric">${esc(tok[1])}</span>
+        <span class="lyric">${tok[1] ? esc(tok[1]) : "\u00A0"}</span>
       </div>`).join("")}
     </div>`).join("")}</div>`;
 }

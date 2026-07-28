@@ -3049,7 +3049,7 @@ def admin_cifrado(numero):
         sec = {"tipo": tipo}
         if nota:
             sec["nota"] = nota
-        if not tiene_letra:
+        if not tiene_letra and len(lineas) <= 1:
             sec["inst"] = True
             sec["prog"] = [str(t[0]) for ln in lineas for t in ln if len(t) > 0 and str(t[0]).strip()]
         else:

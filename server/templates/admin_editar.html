@@ -654,7 +654,7 @@ function renderCifPrev(texto){
   }
   return lines.map(function(l){
     return '<div class="cline">'+l.map(function(t){
-      return '<div class="ctok"><span class="cchord">'+escC(t[0]||'')+'</span><span class="clyr">'+escC(t[1]||'')+'</span></div>';
+      return '<div class="ctok"><span class="cchord">'+escC(t[0]||'')+'</span><span class="clyr">'+(t[1]?escC(t[1]):'\u00A0')+'</span></div>';
     }).join('')+'</div>';
   }).join('');
 }
