@@ -874,7 +874,19 @@ def api_live_setlist_agregar(sid):
     s = next((x for x in cfg.get("setlists", []) if x["id"] == sid), None)
     if not s: return jsonify({"ok": False, "error": "setlist"}), 404
     if numero not in cargar_biblioteca(): return jsonify({"ok": False, "error": "cancion"}), 404
-    s.setdefault("canciones", []).append({"id": numero, "tono": tono})
+    nuevo = {"id": numero, "tono": tono}
+    cs = s.setdefault("canciones", [])
+    after = request.values.get("after")
+    pos = None
+    if after:
+        try: aid = int(after)
+        except ValueError: aid = None
+        if aid is not None:
+            pos = next((i for i, c in enumerate(cs) if c.get("id") == aid), None)
+    if pos is not None:
+        cs.insert(pos + 1, nuevo)
+    else:
+        cs.append(nuevo)
     guardar_config(cfg)
     return jsonify({"ok": True})
 

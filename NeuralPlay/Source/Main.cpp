@@ -3333,18 +3333,23 @@ private:
     void addSong (int songId, juce::String tonoName)
     {
         if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
-        pendingAddedId = songId;                        // para reubicarla tras el reload (botón + de la tarjeta)
+        const int afterId = pendingAddAfterId; pendingAddAfterId = 0;   // 0 = al final; si no, tras esa canción
         SongEntry ph;                                   // tarjeta placeholder inmediata
         ph.id = -songId;
         ph.titulo = juce::String::fromUTF8 ("Agregando\xe2\x80\xa6");
         ph.tonoNombre = tonoName;
-        repertoire.add (ph);
-        songMaster.add (0.0);
-        songMixCache.add (juce::var());
-        songReady.add (false);
+        int at = repertoire.size();
+        if (afterId != 0)
+            for (int i = 0; i < repertoire.size(); ++i)
+                if (repertoire.getReference (i).id == afterId) { at = i + 1; break; }
+        repertoire.insert (at, ph);
+        songMaster.insert (at, 0.0);
+        songMixCache.insert (at, juce::var());
+        songReady.insert (at, false);
         rebuildRepertoireStrip();
-        stripScroll = 1000000; resized();               // desliza para mostrar la nueva
+        if (afterId == 0) { stripScroll = 1000000; resized(); }         // al final: desliza para mostrarla
         juce::StringPairArray p; p.set ("numero", juce::String (songId)); p.set ("tono", tonoName);
+        if (afterId != 0) p.set ("after", juce::String (afterId));
         postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/agregar", p);
     }
 
@@ -3915,22 +3920,6 @@ private:
         dlById.clear();                                          // FASE B lista = TODO el audio bajó
         songReady.clearQuick();
         for (int i = 0; i < repertoire.size(); ++i) songReady.add (true);
-        if (pendingAddAfterId != 0 && pendingAddedId != 0)       // botón + : colocar la agregada justo después de esa
-        {
-            int fromIdx = -1, afterIdx = -1;
-            for (int i = 0; i < repertoire.size(); ++i)
-            {
-                if (repertoire.getReference (i).id == pendingAddedId)   fromIdx  = i;
-                if (repertoire.getReference (i).id == pendingAddAfterId) afterIdx = i;
-            }
-            if (fromIdx >= 0 && afterIdx >= 0 && fromIdx != afterIdx)
-            {
-                const int toIdx = (fromIdx > afterIdx) ? afterIdx + 1 : afterIdx;
-                juce::Component::SafePointer<MainComponent> sp (this);
-                juce::MessageManager::callAsync ([sp, fromIdx, toIdx] { if (sp) sp->reorderSong (fromIdx, toIdx); });
-            }
-        }
-        pendingAddAfterId = 0; pendingAddedId = 0;
         if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); enforceCap(); }   // limpieza auto (1 vez, al abrir)
         if (repertoire.isEmpty()) { clearSong(); return; }
         if (currentSong < 0) loadSong (0);
@@ -4145,6 +4134,16 @@ private:
             flushMidiOffs();
             recalcMidiNext (0.0);
             midiCursor = 0.0;
+        }
+        {   // tempo base de la grilla (mediana de intervalos) para escalar el BPM mostrado
+            gridBaseBpm = 0.0;
+            juce::Array<double> iv;
+            for (int i = 0; i + 1 < currentBeatGrid.size(); ++i)
+            {
+                const double d = currentBeatGrid[i + 1] - currentBeatGrid[i];
+                if (d > 0.02 && d < 4.0) iv.add (d);
+            }
+            if (iv.size() >= 3) { iv.sort(); const double med = iv[iv.size() / 2]; if (med > 0.0) gridBaseBpm = 60.0 / med; }
         }
 
         liveSectionIdx.store (0);
@@ -4426,17 +4425,24 @@ private:
             midiNext[ci] = idx;
         }
     }
-    double currentBpm() const   // BPM local según la posición (sigue cambios de tempo en medleys)
+    double currentBpm() const   // BPM local según la posición (sigue cambios de tempo en medleys), estable
     {
         const auto& g = currentBeatGrid;
         const int n = g.size();
-        if (n >= 2)
+        if (n >= 6 && bpm > 0.0 && gridBaseBpm > 0.0)
         {
             const double t = positionSeconds();
             int i = 0;
             while (i + 1 < n && g[i + 1] <= t) ++i;
-            double dt = (i + 1 < n) ? (g[i + 1] - g[i]) : (g[i] - g[i - 1]);
-            if (dt > 0.04 && dt < 4.0) return 60.0 / dt;
+            // promedio sobre una ventana de ~8 negras (mata el jitter de la detección del click)
+            const int a = juce::jlimit (0, n - 1, i - 4);
+            const int b = juce::jlimit (0, n - 1, i + 4);
+            if (b - a >= 2 && g[b] > g[a])
+            {
+                const double localBpm = 60.0 * (b - a) / (g[b] - g[a]);
+                // se muestra RELATIVO al tempo declarado (así sale 125 y no 280 si la grilla va a doble resolución)
+                return bpm * (localBpm / gridBaseBpm);
+            }
         }
         return bpm;
     }
@@ -4688,7 +4694,7 @@ private:
     juce::Array<bool> songReady;      // audio de la canción ya descargado
     std::map<int, float> dlById;      // id de canción -> progreso 0..1 (ausente = sin barra). Sigue a la canción al reordenar
     juce::Array<int> loadOrderIds;    // ids en el ORDEN del loader (fijo); mapea el índice del loader al id aunque se reordene
-    int pendingAddAfterId = 0, pendingAddedId = 0;   // insertar la canción agregada justo después de otra (botón + de la tarjeta)
+    int pendingAddAfterId = 0;   // botón + de la tarjeta: insertar la canción agregada justo después de esta (0 = al final)
     int currentSong = -1;
     std::unique_ptr<RepertoireLoader> loader;
     std::unique_ptr<RepertoireLoader> offlineLoader;   // descarga de un repertorio para offline (no cambia la UI)
@@ -4710,6 +4716,7 @@ private:
     juce::StringArray sectionNames;
     juce::Array<juce::File> stemFiles;
     double bpm = 0.0;
+    double gridBaseBpm = 0.0;   // tempo base de la grilla (mediana) para escalar el BPM mostrado en medleys
     int beatsPerBar = 4;
     juce::String songCompas = "4/4";
     juce::AudioBuffer<float> temp;
