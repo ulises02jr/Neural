@@ -368,6 +368,7 @@ struct SongCard : public juce::Component
     bool active = false;
     bool editMode = false;
     int index = 0;
+    int songId = 0;   // #4 id de la canción (para mapping de teclado)
     std::function<void()> onClick, onRemove, onTono, onAddAfter;
     std::function<void (int fromIndex, int toIndex)> onReorder;   // arrastrar para reordenar
     float dlProgress = -1.0f;   // -1 = sin barra; 0..1 = descargando
@@ -1069,6 +1070,7 @@ struct RepertoirePicker : public juce::Component
     int selected = -1;
     int menuRow = -1;                 // fila con el menú (Cargar/Guardar/Borrar) desplegado
     bool loading = true;
+    bool dirty = false;               // hay cambios de mezcla sin guardar
     juce::String currentLoadedId;     // repertorio cargado (para mostrar "Guardar")
     juce::uint32 savedAt = 0;
     std::function<void (juce::String)> onLoad;
@@ -1150,6 +1152,15 @@ struct RepertoirePicker : public juce::Component
             g.setFont (juce::Font (12.5f, juce::Font::bold));
             g.drawText (juce::String::fromUTF8 ("\xe2\x9c\x93 Mezcla guardada"),
                         panelBounds().removeFromTop (56).reduced (22, 0), juce::Justification::centredRight);
+        }
+        else if (dirty)
+        {
+            auto hr = panelBounds().removeFromTop (56).reduced (22, 0).withTrimmedRight (40);
+            g.setColour (juce::Colour (0xffE5484D));
+            g.fillEllipse ((float) hr.getRight() - 10.0f, (float) hr.getCentreY() - 4.0f, 8.0f, 8.0f);
+            g.setFont (juce::Font (12.5f, juce::Font::bold));
+            g.drawText (juce::String::fromUTF8 ("Cambios sin guardar"), hr.withTrimmedRight (16),
+                        juce::Justification::centredRight);
         }
 
         if (loading)
@@ -1360,13 +1371,16 @@ struct StoragePanel : public juce::Component
 
 struct SettingsPanel : public juce::Component
 {
-    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, closeBtn;
-    bool syncOn = false, linked = false;
+    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn;
+    bool syncOn = false, linked = false, countInOn = false, masterPSOn = true, mixPSOn = true;
     juce::Rectangle<int> statusBounds;
     std::function<void (bool)> onSync;
     std::function<void()> onConfig;
     std::function<void()> onRefresh;
     std::function<void()> onStorage;
+    std::function<void (bool)> onCountIn;
+    std::function<void (bool)> onMasterPS;
+    std::function<void (bool)> onMixPS;
 
     SettingsPanel()
     {
@@ -1391,6 +1405,18 @@ struct SettingsPanel : public juce::Component
         storeBtn.onClick = [this] { if (onStorage) onStorage(); };
         addAndMakeVisible (storeBtn);
 
+        countInBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        countInBtn.onClick = [this] { countInOn = ! countInOn; if (onCountIn) onCountIn (countInOn); refresh(); };
+        addAndMakeVisible (countInBtn);
+
+        masterPSBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        masterPSBtn.onClick = [this] { masterPSOn = ! masterPSOn; if (onMasterPS) onMasterPS (masterPSOn); refresh(); };
+        addAndMakeVisible (masterPSBtn);
+
+        mixPSBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        mixPSBtn.onClick = [this] { mixPSOn = ! mixPSOn; if (onMixPS) onMixPS (mixPSOn); refresh(); };
+        addAndMakeVisible (mixPSBtn);
+
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
@@ -1402,6 +1428,9 @@ struct SettingsPanel : public juce::Component
     }
 
     void setState (bool on, bool lk) { syncOn = on; linked = lk; refresh(); }
+    void setCountIn (bool on) { countInOn = on; refresh(); }
+    void setMasterPS (bool on) { masterPSOn = on; refresh(); }
+    void setMixPS (bool on) { mixPSOn = on; refresh(); }
 
     void refresh()
     {
@@ -1409,10 +1438,28 @@ struct SettingsPanel : public juce::Component
         syncBtn.setColour (juce::TextButton::buttonColourId,
                            syncOn ? juce::Colour (0xff17361f) : juce::Colour (0xff1f1f1f));
         syncBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+
+        countInBtn.setButtonText (countInOn ? juce::String::fromUTF8 ("Pre-roll por secci\xc3\xb3n \xe2\x9c\x93")
+                                            : juce::String::fromUTF8 ("Pre-roll por secci\xc3\xb3n"));
+        countInBtn.setColour (juce::TextButton::buttonColourId,
+                              countInOn ? juce::Colour (0xff17361f) : juce::Colour (0xff1f1f1f));
+        countInBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+
+        masterPSBtn.setButtonText (masterPSOn ? juce::String::fromUTF8 ("Master por canci\xc3\xb3n \xe2\x9c\x93")
+                                              : juce::String::fromUTF8 ("Master general (setlist)"));
+        masterPSBtn.setColour (juce::TextButton::buttonColourId,
+                               masterPSOn ? juce::Colour (0xff17361f) : juce::Colour (0xff2a2410));
+        masterPSBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+
+        mixPSBtn.setButtonText (mixPSOn ? juce::String::fromUTF8 ("Buses y mute por canci\xc3\xb3n \xe2\x9c\x93")
+                                        : juce::String::fromUTF8 ("Buses y mute generales"));
+        mixPSBtn.setColour (juce::TextButton::buttonColourId,
+                            mixPSOn ? juce::Colour (0xff17361f) : juce::Colour (0xff2a2410));
+        mixPSBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         repaint();
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (360, 372); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (380, 548); }
 
     void paint (juce::Graphics& g) override
     {
@@ -1456,10 +1503,13 @@ struct SettingsPanel : public juce::Component
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
         auto b = p.reduced (24); b.removeFromTop (44);
         const int bh = 46, gap = 12;
-        syncBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
-        cfgBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
-        storeBtn.setBounds   (b.removeFromTop (bh)); b.removeFromTop (gap);
-        refreshBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
+        syncBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
+        cfgBtn.setBounds      (b.removeFromTop (bh)); b.removeFromTop (gap);
+        countInBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
+        masterPSBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
+        mixPSBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
+        storeBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
+        refreshBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
         statusBounds = b.removeFromTop (22);
     }
 
@@ -1664,6 +1714,53 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     std::function<void (int)> onPickSong;            // biblioteca -> elegir cancion
     std::function<void (int, juce::String)> onChoose; // (semitonos, nombre) -> aplicar
 
+    // #2 punto de inicio/fin por canción
+    juce::TextButton inTgl, outTgl;                  // activar inicio / fin
+    juce::TextEditor inEdit, outEdit;                // min:seg
+    bool inOn = false, outOn = false;
+    std::function<void (int, double, double)> onInOut;   // (songId, inicio|-1, fin|-1)
+
+    static juce::String secsToMMSS (double s)
+    {
+        if (s < 0.0) s = 0.0;
+        const int t = (int) (s + 0.5);
+        return juce::String (t / 60) + ":" + juce::String (t % 60).paddedLeft ('0', 2);
+    }
+    static double mmssToSecs (const juce::String& txt)
+    {
+        auto t = txt.trim();
+        if (t.isEmpty()) return -1.0;
+        if (t.contains (":"))
+        {
+            const int m = t.upToFirstOccurrenceOf (":", false, false).getIntValue();
+            const int s = t.fromLastOccurrenceOf (":", false, false).getIntValue();
+            return (double) (m * 60 + s);
+        }
+        return (double) t.getIntValue();
+    }
+    void pushInOut()
+    {
+        if (onInOut) onInOut (songId,
+                              inOn  ? juce::jmax (0.0, mmssToSecs (inEdit.getText()))  : -1.0,
+                              outOn ? juce::jmax (0.0, mmssToSecs (outEdit.getText())) : -1.0);
+    }
+    void refreshInOut()   // estado visual de toggles/editores
+    {
+        auto styleTgl = [] (juce::TextButton& b, bool on)
+        {
+            b.setButtonText (on ? juce::String::fromUTF8 ("\xe2\x9c\x93") : "");
+            b.setColour (juce::TextButton::buttonColourId, on ? juce::Colour (0xff17361f) : juce::Colour (0xff1f1f1f));
+            b.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff3ED66E));
+        };
+        styleTgl (inTgl, inOn);
+        styleTgl (outTgl, outOn);
+        inEdit.setEnabled (inOn);   outEdit.setEnabled (outOn);
+        inEdit.setAlpha (inOn ? 1.0f : 0.4f);   outEdit.setAlpha (outOn ? 1.0f : 0.4f);
+        const bool t = (mode == Tono);
+        inTgl.setVisible (t);  outTgl.setVisible (t);
+        inEdit.setVisible (t); outEdit.setVisible (t);
+    }
+
     RepEditPanel()
     {
         setAlwaysOnTop (true);
@@ -1686,6 +1783,29 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         searchBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (0x66ffffff));
         searchBox.onTextChange = [this] { applyFilter(); };
         addChildComponent (searchBox);
+
+        // #2 controles de inicio/fin
+        auto setupTgl = [this] (juce::TextButton& b)
+        {
+            b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+            addChildComponent (b);
+        };
+        setupTgl (inTgl);  setupTgl (outTgl);
+        inTgl.onClick  = [this] { inOn  = ! inOn;  if (inOn  && inEdit.getText().trim().isEmpty())  inEdit.setText ("0:00", false); refreshInOut(); pushInOut(); };
+        outTgl.onClick = [this] { outOn = ! outOn; if (outOn && outEdit.getText().trim().isEmpty()) outEdit.setText ("0:00", false); refreshInOut(); pushInOut(); };
+
+        auto setupEdit = [this] (juce::TextEditor& e)
+        {
+            e.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1c1c1c));
+            e.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+            e.setColour (juce::TextEditor::outlineColourId, juce::Colour (0x33ffffff));
+            e.setJustification (juce::Justification::centred);
+            e.setInputRestrictions (5, "0123456789:");
+            e.onReturnKey = [this] { pushInOut(); };
+            e.onFocusLost = [this] { pushInOut(); };
+            addChildComponent (e);
+        };
+        setupEdit (inEdit);  setupEdit (outEdit);
     }
 
     void applyFilter()
@@ -1711,14 +1831,18 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         for (auto& b : bib)    if (b.id == id) b.cover = img;
         repaint();
     }
-    void openTono (int id, juce::String title, bool add, juce::Array<Key> ks)
+    void openTono (int id, juce::String title, bool add, juce::Array<Key> ks, double inSec = -1.0, double outSec = -1.0)
     { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
+      inOn = (inSec >= 0.0); outOn = (outSec >= 0.0);
+      inEdit.setText (secsToMMSS (inSec >= 0.0 ? inSec : 0.0), false);
+      outEdit.setText (secsToMMSS (outSec >= 0.0 ? outSec : 0.0), false);
+      refreshInOut();
       renderingSem = 99; stopTimer(); resized(); repaint(); }
 
     void showBiblioteca()   // volver del grid de tonos a la lista de canciones
-    { mode = Biblioteca; searchBox.setVisible (true); renderingSem = 99; stopTimer(); resized(); repaint(); }
+    { mode = Biblioteca; searchBox.setVisible (true); refreshInOut(); renderingSem = 99; stopTimer(); resized(); repaint(); }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 520); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 592); }
 
     juce::Rectangle<int> keyRect (int i) const
     {
@@ -1726,6 +1850,22 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         const int cols = 4, gap = 9, cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = 46;
         return { p.getX() + (i % cols) * (cw + gap), p.getY() + (i / cols) * (ch + gap), cw, ch };
     }
+    juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del grid de 3 filas
+    {
+        auto p = panelBounds().reduced (22);
+        p.removeFromTop (58 + 3 * 55 + 20);
+        return p.removeFromTop (108);
+    }
+    juce::Rectangle<int> ioRow (int row) const   // row 0 = inicio, 1 = fin
+    {
+        auto a = inOutArea(); a.removeFromTop (30);       // debajo del título
+        const int rh = 34, gap = 10;
+        a.removeFromTop (row * (rh + gap));
+        return a.removeFromTop (rh);
+    }
+    juce::Rectangle<int> ioTglRect (int row)   const { return ioRow (row).removeFromLeft (30).withSizeKeepingCentre (28, 28); }
+    juce::Rectangle<int> ioLabelRect (int row) const { auto r = ioRow (row); r.removeFromLeft (38); return r.removeFromLeft (96); }
+    juce::Rectangle<int> ioEditRect (int row)  const { auto r = ioRow (row); r.removeFromLeft (38 + 96); return r.removeFromLeft (90).withSizeKeepingCentre (90, 30); }
     juce::Rectangle<int> bibListArea() const
     {
         auto p = panelBounds().reduced (18); p.removeFromTop (52 + 44);   // título + buscador
@@ -1817,6 +1957,19 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 float frac = progTotal > 0 ? juce::jlimit (0.05f, 1.0f, (float) progHechos / (float) progTotal) : 0.1f;
                 g.setColour (juce::Colour (0xff3ED66E)); g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * frac), 4.0f);
             }
+
+            // #2 sección de inicio/fin (opcional)
+            if (renderingSem == 99)
+            {
+                auto ttl = inOutArea().removeFromTop (24);
+                g.setColour (juce::Colour (0xffcfcfcf)); g.setFont (juce::Font (13.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("Punto de inicio y final (opcional)"), ttl, juce::Justification::centredLeft);
+                g.setColour (juce::Colour (0xffe8e8e8)); g.setFont (juce::Font (13.0f));
+                g.drawText (juce::String::fromUTF8 ("Iniciar en"), ioLabelRect (0), juce::Justification::centredLeft);
+                g.drawText (juce::String::fromUTF8 ("Terminar en"), ioLabelRect (1), juce::Justification::centredLeft);
+                g.setColour (juce::Colour (0xff777777)); g.setFont (juce::Font (10.5f));
+                g.drawText ("min:seg", ioEditRect (0).translated (0, -18).withHeight (16), juce::Justification::centred);
+            }
         }
     }
 
@@ -1826,6 +1979,10 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         backBtn.setVisible (mode == Tono);
         backBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);         // ‹ Atrás solo en tono
         searchBox.setBounds (searchRect());
+
+        inTgl.setBounds  (ioTglRect (0));  inEdit.setBounds  (ioEditRect (0));
+        outTgl.setBounds (ioTglRect (1));  outEdit.setBounds (ioEditRect (1));
+        refreshInOut();
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -2174,6 +2331,7 @@ public:
     {
         loadConfig();
         setLookAndFeel (&pillLnf);
+        setWantsKeyboardFocus (true);   // #4 recibir teclas para el mapping de teclado
         logoImg = juce::ImageFileFormat::loadFrom (BinaryData::AppIcon_png, (size_t) BinaryData::AppIcon_pngSize);
         splash.logo = logoImg;
         formatManager.registerBasicFormats();
@@ -2212,9 +2370,27 @@ public:
         settingsPanel.onConfig  = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
         settingsPanel.onRefresh = [this] { settingsPanel.setVisible (false); reloadCurrent(); };
         settingsPanel.onStorage = [this] { settingsPanel.setVisible (false); openStorage(); };
+        settingsPanel.onCountIn = [this] (bool on) { countInEnabled = on; saveStorageCfg(); };
+        settingsPanel.onMasterPS = [this] (bool on)
+        {
+            masterPerSong = on; saveStorageCfg();
+            if (! on && currentSong >= 0) globalMasterDb = masterSlider.getValue();   // arranca el general desde el actual
+        };
+        settingsPanel.onMixPS = [this] (bool on)
+        {
+            mixPerSong = on; saveStorageCfg();
+            if (! on) snapshotGlobalFromCurrent();     // arranca la mezcla general desde la actual
+            applyGlobalOverrides();
+        };
         addChildComponent (settingsPanel);
 
         loadStorageCfg();
+        loadInOut();
+        loadKeyMap();
+        loadClickSec();
+        settingsPanel.setCountIn (countInEnabled);
+        settingsPanel.setMasterPS (masterPerSong);
+        settingsPanel.setMixPS (mixPerSong);
         storagePanel.onFreeUnused = [this] { deleteUnusedCache(); };
         storagePanel.onAutoClean  = [this] (bool on) { cacheAutoClean = on; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); if (on) { deleteUnusedCache(); enforceCap(); } };
         storagePanel.onCap        = [this] (int gb) { cacheCapGB = gb; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); enforceCap(); refreshStorageStats(); };
@@ -2252,6 +2428,19 @@ public:
         editBtn.onClick = [this] { toggleEdit(); };
         addAndMakeVisible (editBtn);
 
+        keyMapBtn.setButtonText (juce::String::fromUTF8 ("Mapping de teclado"));   // #4 (barra de Editar)
+        keyMapBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        keyMapBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        keyMapBtn.onClick = [this]
+        {
+            toggleKeyMapMode();
+            keyMapBtn.setColour (juce::TextButton::buttonColourId, keyMapMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));
+            keyMapBtn.setButtonText (keyMapMode ? juce::String::fromUTF8 ("Mapping de teclado \xe2\x9c\x93")
+                                                : juce::String::fromUTF8 ("Mapping de teclado"));
+            keyMapBtn.repaint();
+        };
+        addChildComponent (keyMapBtn);   // se muestra solo en la barra de Editar
+
 
         addCard.onClick = [this] { openBibliotecaForAdd(); };
         addChildComponent (addCard);
@@ -2271,10 +2460,23 @@ public:
             else     setSongTono (sid, nombre);
         };
         repEdit.onNeedCovers = [this] (juce::Array<RepEditPanel::BibItem> items) { loadBibCovers (items); };
+        repEdit.onInOut = [this] (int sid, double inS, double outS)   // #2 guardar inicio/fin
+        {
+            if (inS < 0.0 && outS < 0.0) songInOut.erase (sid);
+            else                         songInOut[sid] = { inS, outS };
+            saveInOut();
+            if (currentSong >= 0 && currentSong < repertoire.size()
+                && repertoire.getReference (currentSong).id == sid)
+            {
+                aplicarInOut (sid);                                  // aplicar en vivo si es la canción actual
+                if (! playing.load() && inS > 0.0) seekSeconds (inS);
+            }
+        };
         addChildComponent (repEdit);
         padBtn.setButtonText ("PAD");
         padBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         padBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        padBtn.onClick = [this] { if (clickOrArm (kaPad)) return; /* acción del PAD (pendiente) */ };
         addAndMakeVisible (padBtn);
 
         connStatus.setJustificationType (juce::Justification::centred);
@@ -2283,13 +2485,13 @@ public:
         addAndMakeVisible (connStatus);
 
         playButton.setButtonText ("Play");
-        playButton.onClick = [this] { togglePlay(); };
+        playButton.onClick = [this] { if (clickOrArm (kaPlay)) return; togglePlay(); };
         addAndMakeVisible (playButton);
 
         returnButton.setButtonText ("|" + juce::String::charToString ((juce_wchar) 0x25C0));
         returnButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         returnButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
-        returnButton.onClick = [this] { seekSeconds (0.0); };
+        returnButton.onClick = [this] { if (clickOrArm (kaReturn)) return; seekSeconds (0.0); };
         addAndMakeVisible (returnButton);
 
         for (auto* b : { &barPrevBtn, &barNextBtn })   // navegación por compás sobre el mapa
@@ -2300,10 +2502,10 @@ public:
         }
         barPrevBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25C0));   // ◀
         barNextBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25B6));   // ▶
-        barPrevBtn.onClick = [this] { seekBar (-1); };
-        barNextBtn.onClick = [this] { seekBar (+1); };
+        barPrevBtn.onClick = [this] { if (clickOrArm (kaPrevBar)) return; seekBar (-1); };
+        barNextBtn.onClick = [this] { if (clickOrArm (kaNextBar)) return; seekBar (+1); };
 
-        fadeButton.onClick = [this] { toggleFade(); };
+        fadeButton.onClick = [this] { if (clickOrArm (kaFade)) return; toggleFade(); };
         addAndMakeVisible (fadeButton);
 
         timeLabel.setJustificationType (juce::Justification::centred);
@@ -2313,16 +2515,21 @@ public:
         addAndMakeVisible (timeLabel);
 
         masterSlider.setSliderStyle (juce::Slider::LinearVertical);
-        masterSlider.setRange (-60.0, 6.0, 0.1);
+        masterSlider.setRange (-60.0, 0.0, 0.1);   // tope = volumen original (sin boost)
         masterSlider.setValue (0.0);
         masterSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         masterSlider.textFromValueFunction = [] (double v) { return dbText (v); };
         masterSlider.valueFromTextFunction = [] (const juce::String& t) { return t.containsIgnoreCase ("inf") ? -60.0 : t.getDoubleValue(); };
         masterSlider.onValueChange = [this]
         {
-            masterGain.store (dbToGain ((float) masterSlider.getValue()));
-            if (currentSong >= 0 && currentSong < songMaster.size())
-                songMaster.set (currentSong, masterSlider.getValue());
+            const double v = masterSlider.getValue();
+            masterGain.store (dbToGain ((float) v));
+            markDirty();
+            if (masterPerSong)
+            {
+                if (currentSong >= 0 && currentSong < songMaster.size()) songMaster.set (currentSong, v);
+            }
+            else { globalMasterDb = v; saveStorageCfg(); }   // master general del setlist
         };
         masterGain.store (dbToGain (0.0f));
         masterSlider.setLookAndFeel (&faderLnf);
@@ -2342,50 +2549,18 @@ public:
             tb->setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
             addAndMakeVisible (tb);
         }
+        padPlayerBtn.onClick = [this] { if (clickOrArm (kaPadPlayer)) return; /* acción Pad Player (pendiente) */ };
         faderViewBtn.kind = 0; repeatBtn.kind = 1; infiniteBtn.kind = 2;
         faderViewBtn.active = true;
         addAndMakeVisible (faderViewBtn);
         addAndMakeVisible (repeatBtn);
         addAndMakeVisible (infiniteBtn);
-        faderViewBtn.onClick = [this] { setFaderView (0); };
-        busesBtn.onClick     = [this] { setFaderView (1); };
-        muteMidiBtn.onClick  = [this] { setFaderView (2); };
+        faderViewBtn.onClick = [this] { if (clickOrArm (kaFaderView)) return; setFaderView (0); };
+        busesBtn.onClick     = [this] { if (clickOrArm (kaBuses))     return; setFaderView (1); };
+        muteMidiBtn.onClick  = [this] { if (clickOrArm (kaMidi))      return; setFaderView (2); };
 
-        repeatBtn.onClick = [this]
-        {
-            if (loopOnce.load())   // ya estaba armado -> cancelar
-            {
-                loopOnce.store (false);
-                if (! loopActive.load()) { loopStartSec.store (-1.0); loopEndSec.store (-1.0); }
-            }
-            else
-            {
-                double t0, t1; currentSectionRange (positionSeconds(), t0, t1);
-                loopStartSec.store (t0);
-                loopEndSec.store (t1);
-                loopOnce.store (true);
-            }
-        };
-        infiniteBtn.onClick = [this]
-        {
-            const bool on = ! loopActive.load();
-            if (on)
-            {
-                double t0, t1; currentSectionRange (positionSeconds(), t0, t1);
-                loopStartSec.store (t0);
-                loopEndSec.store (t1);
-                loopActive.store (true);
-            }
-            else
-            {
-                loopActive.store (false);
-                loopOnce.store (false);
-                loopStartSec.store (-1.0);
-                loopEndSec.store (-1.0);
-            }
-            infiniteBtn.active = on;
-            infiniteBtn.repaint();
-        };
+        repeatBtn.onClick   = [this] { if (clickOrArm (kaRepeat)) return; toggleRepeatOnce(); };
+        infiniteBtn.onClick = [this] { if (clickOrArm (kaLoop))   return; toggleLoopInfinite(); };
 
         for (auto& b : busGain) b.store (1.0f);
 
@@ -2497,13 +2672,23 @@ public:
         bool anySolo = false;
         for (int t = 0; t < resamplers.size(); ++t) if (trackSolo[t].load()) { anySolo = true; break; }
 
+        float ciG = 1.0f;   // #1 conteo: swell de entrada (0->1) durante el compás previo a la sección
+        if (countInActive.load())
+        {
+            const double p = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
+            const double a = countInStartSec.load(), b = countInEndSec.load();
+            if (p >= b || b <= a) { ciG = 1.0f; countInActive.store (false); }
+            else                  ciG = (float) juce::jlimit (0.0, 1.0, (p - a) / (b - a));
+        }
+
         for (int t = 0; t < resamplers.size(); ++t)
         {
             temp.clear();
             juce::AudioSourceChannelInfo ti (&temp, 0, nn);
             resamplers.getUnchecked (t)->getNextAudioBlock (ti);
             const bool audible = ! trackMuted[t].load() && (! anySolo || trackSolo[t].load());
-            const float g = audible ? trackGain[t].load() * busGain[trackFamily[t]].load() : 0.0f;
+            const float cg = (t < kMaxTracks && trackNoFade[t]) ? 1.0f : ciG;   // Click/Guía no suben
+            const float g = audible ? trackGain[t].load() * busGain[trackFamily[t]].load() * cg : 0.0f;
             const float* tL = temp.getReadPointer (0);
             const float* tR = temp.getNumChannels() > 1 ? temp.getReadPointer (1) : tL;
 
@@ -2543,14 +2728,48 @@ public:
             const float prev = trackLevel[t].load();
             trackLevel[t].store (peak > prev ? peak : prev * 0.82f);
         }
+
+        // #3 metrónomo sintetizado en el bloque de click (después del final, donde no hay audio grabado)
+        if (clickSecArmed.load() && bpm > 0.0)
+        {
+            const long long blockStart = positionOut.load();
+            const double beatLen = deviceSampleRate * 60.0 / bpm;
+            const double startAbs = totalSeconds() * deviceSampleRate;      // el bloque empieza en el final
+            const int bpb = juce::jmax (1, beatsPerBar);
+            int cb = -1, cm = 2;                                   // ruta de salida del click
+            for (int t = 0; t < resamplers.size(); ++t)
+                if (t < kMaxTracks && trackIsClick[t]) { const int fi = trackRouteFam[t]; cm = famMode[fi]; cb = famBaseCh[fi]; break; }
+            if (cb < 0) { cb = 0; cm = 2; }
+            float* cL = (cb >= 0 && cb < useCh) ? out[cb] : nullptr;
+            float* cR = (cm == 2 && cb + 1 < useCh) ? out[cb + 1] : nullptr;
+            const double twoPi = juce::MathConstants<double>::twoPi;
+            for (int n = 0; n < nn; ++n)
+            {
+                const double rel = (double) (blockStart + n) - startAbs;
+                if (rel >= 0.0)
+                {
+                    const long long bi = (long long) std::floor (rel / beatLen);
+                    if (bi != clkLastBeat) { clkLastBeat = bi; clkEnv = 1.0; clkPhase = 0.0; clkFreq = ((bi % bpb) == 0) ? 1600.0 : 1050.0; }
+                }
+                if (clkEnv > 0.0002)
+                {
+                    const float s = (float) (std::sin (clkPhase) * clkEnv * 0.55);
+                    if (cL) cL[n] += s;
+                    if (cR) cR[n] += s;
+                    clkPhase += twoPi * clkFreq / deviceSampleRate;
+                    clkEnv *= 0.9990;
+                }
+            }
+        }
+
         const float m = masterGain.load();
         for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] = softClip (o[n] * m); }
         positionOut.fetch_add (nn);
 
         const double posSec = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
+        const double fr2 = fileRates.isEmpty() ? 44100.0 : fileRates[0];
         if ((loopActive.load() || loopOnce.load()) && loopEndSec.load() > 0.0 && posSec >= loopEndSec.load())
         {
-            const double fr2 = fileRates.isEmpty() ? 44100.0 : fileRates[0];
             seekTo.store ((long long) (juce::jmax (0.0, loopStartSec.load()) * fr2));
             if (loopOnce.load())
             {
@@ -2558,10 +2777,35 @@ public:
                 if (! loopActive.load()) { loopStartSec.store (-1.0); loopEndSec.store (-1.0); }
             }
         }
+        else if (clickSecArmed.load() && clickLenSec.load() > 0.0)
+        {   // #3 canción con sección de click: al pasar el final entra al bloque (metrónomo)
+            const double bEnd = totalSeconds() + clickLenSec.load();
+            if (posSec >= bEnd - 1.0e-4)
+            {
+                if (clickLoopOn.load())                                   // ∞ ON: loop del bloque
+                {
+                    seekTo.store ((long long) (totalSeconds() * fr2));    // volver al inicio del bloque (= final)
+                    clkLastBeat = -1;
+                }
+                else
+                {                                                        // ∞ OFF: al terminar, volver al inicio de la canción
+                    playing.store (false);
+                    const double inS = juce::jmax (0.0, songInSec.load());
+                    seekTo.store ((long long) (inS * fr2));
+                }
+            }
+        }
         else
         {
-            const long long totalDev = (long long) (totalSeconds() * deviceSampleRate);
-            if (totalDev > 0 && positionOut.load() >= totalDev) { playing.store (false); seekTo.store (0); }   // fin: parar y volver al inicio
+            const double outS = songOutSec.load();                       // #2 punto de salida (si hay)
+            const double effEnd = (outS > 0.0) ? juce::jmin (outS, totalSeconds()) : totalSeconds();
+            const long long endDev = (long long) (effEnd * deviceSampleRate);
+            if (endDev > 0 && positionOut.load() >= endDev)
+            {
+                playing.store (false);
+                const double inS = juce::jmax (0.0, songInSec.load());   // volver al inicio (o al punto de entrada)
+                seekTo.store ((long long) (inS * fr2));
+            }
         }
     }
 
@@ -2696,6 +2940,64 @@ public:
                 const double t1 = (i + 1 < sectionTimes.size() ? sectionTimes[i + 1] : total);
                 drawBlk (t0, t1, sectionNames[i]);
             }
+
+            // #3 sección de click: bloque anexo "Click ∞" + agregar/quitar (modo edición)
+            addClickBtnRect = {}; delClickBtnRect = {};
+            const double lastEnd = total;
+            if (songHasClickSec)
+            {
+                const double cl = clickSecLen();
+                if (cl > 0.0)
+                {
+                    drawBlk (lastEnd, lastEnd + cl, juce::String::fromUTF8 ("Click \xe2\x88\x9e"));
+                    // ticks del click: un pulso por beat (8 en 2 compases 4/4), downbeats más marcados
+                    const int nbeats = juce::jmax (2, beatsPerBar * 2);
+                    for (int k = 0; k <= nbeats; ++k)
+                    {
+                        const double tt = lastEnd + cl * (double) k / (double) nbeats;
+                        if (tt < vs || tt > ve) continue;
+                        const float x = inner.getX() + (float) ((tt - vs) / span) * inner.getWidth();
+                        const bool down = (k % juce::jmax (1, beatsPerBar)) == 0;
+                        g.setColour (down ? juce::Colour (0xcc3ED66E) : juce::Colour (0x66ffffff));
+                        g.fillRect (x - (down ? 1.2f : 0.7f), (float) inner.getY() + 26.0f,
+                                    down ? 2.4f : 1.4f, (float) inner.getHeight() - 30.0f);
+                    }
+                    if (clickLoopOn.load() && positionSeconds() >= totalSeconds() - 0.05)   // ícono ∞ solo al estar en el bloque
+                    {
+                        const double c1 = juce::jmin (lastEnd + cl, ve);
+                        if (c1 > vs)
+                        {
+                            const float x1 = inner.getX() + (float) ((c1 - vs) / span) * inner.getWidth();
+                            juce::Rectangle<float> cor (x1 - 26.0f, (float) inner.getBottom() - 24.0f, 21.0f, 20.0f);
+                            g.setColour (juce::Colour (0xff2E8BFF)); g.setFont (juce::Font (17.0f, juce::Font::bold));
+                            g.drawText (juce::String::fromUTF8 ("\xe2\x88\x9e"), cor, juce::Justification::centred);
+                        }
+                    }
+                }
+                if (editMode && lastEnd <= ve + 0.5)   // − para eliminar
+                {
+                    const float xr = inner.getX() + (float) ((juce::jmin (lastEnd + cl, ve) - vs) / span) * inner.getWidth();
+                    juce::Rectangle<int> pill (juce::jlimit (inner.getX(), inner.getRight() - 30, (int) xr - 30),
+                                               inner.getY() + inner.getHeight() / 2 - 14, 28, 28);
+                    delClickBtnRect = pill;
+                    auto pf = pill.toFloat();
+                    g.setColour (juce::Colour (0xffE5534B)); g.fillRoundedRectangle (pf, 7.0f);
+                    g.setColour (juce::Colours::white); g.setFont (juce::Font (20.0f, juce::Font::bold));
+                    g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), pill, juce::Justification::centred);
+                }
+            }
+            else if (editMode && currentSong >= 0 && ! resamplers.isEmpty() && lastEnd <= ve + 0.5)
+            {   // + justo al final de la última sección
+                const float xr = inner.getX() + (float) ((juce::jmin (lastEnd, ve) - vs) / span) * inner.getWidth();
+                juce::Rectangle<int> pill (juce::jlimit (inner.getX(), inner.getRight() - 32, (int) xr + 4),
+                                           inner.getY() + inner.getHeight() / 2 - 15, 30, 30);
+                addClickBtnRect = pill;
+                auto pf = pill.toFloat();
+                g.setColour (juce::Colour (0xff2E6BE6)); g.fillRoundedRectangle (pf, 7.0f);
+                g.setColour (juce::Colour (0x66000000)); g.drawRoundedRectangle (pf, 7.0f, 1.0f);
+                g.setColour (juce::Colours::white); g.setFont (juce::Font (20.0f, juce::Font::bold));
+                g.drawText ("+", pill, juce::Justification::centred);
+            }
         }
 
         const double pos = positionSeconds();
@@ -2739,7 +3041,7 @@ public:
             g.setColour (juce::Colour (0x14ffffff));
             g.drawLine (fp.getX() + 12.0f, fp.getY() + 1.5f, fp.getRight() - 12.0f, fp.getY() + 1.5f, 1.0f);
 
-            if (masterSepX > 0)
+            if (masterSepX > 0)   // separador doble entre faders y la columna fija (Buses/MIDI/etc)
             {
                 auto fpr = fp.reduced (0.0f, 14.0f);
                 auto dl = [&] (float sx)
@@ -2756,6 +3058,10 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (editMode && ! addClickBtnRect.isEmpty() && addClickBtnRect.contains (e.getPosition()))
+        { agregarSeccionClick(); return; }               // #3 + agrega la sección de click
+        if (editMode && ! delClickBtnRect.isEmpty() && delClickBtnRect.contains (e.getPosition()))
+        { quitarSeccionClick(); return; }                // #3 − elimina la sección de click
         if (! mapBounds.contains (e.getPosition())) return;
         isDragging = true;
         dragSeeks = ! playing.load();
@@ -2775,7 +3081,17 @@ public:
     {
         if (! isDragging) return;
         isDragging = false;
-        if (dragSeeks) { if (e.getDistanceFromDragStart() < 5) seekFromMouse (e); }
+        if (dragSeeks)
+        {
+            if (e.getDistanceFromDragStart() < 5) seekFromMouse (e);          // clic simple
+            else
+            {                                                                // al soltar el arrastre, cae en un click
+                auto inner = mapBounds.reduced (8);
+                const double win = juce::jmin (20.0, totalSeconds());
+                const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * 0.5;
+                seekSeconds (snapToBeat (dragStartCenter - dx));
+            }
+        }
         else { browsing = false; repaint (mapBounds); }
     }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
@@ -2800,6 +3116,194 @@ public:
             repaint (mapBounds);
         }
         else seekSeconds (positionSeconds() + d * 14.0);
+    }
+
+    // #4 teclas: en modo mapping asigna/desasigna; en modo normal dispara lo mapeado
+    bool keyPressed (const juce::KeyPress& kp) override
+    {
+        const int code = kp.getKeyCode();
+        if (keyMapMode)
+        {
+            if (armKind == 0) return false;   // nada armado
+            // re-teclar la MISMA tecla ya asignada al elemento -> desasignar
+            const bool same =
+                (armKind == 1 && armedAct >= 0 && actKey[armedAct] == code)
+             || (armKind == 2 && keyByTrack.count (armTrack)   && keyByTrack[armTrack]   == code)
+             || (armKind == 4 && keyBySolo.count (armTrack)    && keyBySolo[armTrack]    == code)
+             || (armKind == 5 && keyByBusMute.count (armTrack) && keyByBusMute[armTrack] == code)
+             || (armKind == 6 && keyByBusSolo.count (armTrack) && keyByBusSolo[armTrack] == code)
+             || (armKind == 3 && keyBySong.count (armSong)     && keyBySong[armSong]     == code);
+            if (same)
+            {
+                if (armKind == 1) actKey[armedAct] = 0;
+                else if (armKind == 2) keyByTrack[armTrack] = 0;
+                else if (armKind == 4) keyBySolo[armTrack] = 0;
+                else if (armKind == 5) keyByBusMute[armTrack] = 0;
+                else if (armKind == 6) keyByBusSolo[armTrack] = 0;
+                else if (armKind == 3) keyBySong[armSong] = 0;
+            }
+            else
+            {
+                clearAllForKey (code);   // sin duplicados: se quita de cualquier otro
+                if (armKind == 1) actKey[armedAct] = code;
+                else if (armKind == 2) keyByTrack[armTrack] = code;
+                else if (armKind == 4) keyBySolo[armTrack] = code;
+                else if (armKind == 5) keyByBusMute[armTrack] = code;
+                else if (armKind == 6) keyByBusSolo[armTrack] = code;
+                else if (armKind == 3) keyBySong[armSong] = code;
+            }
+            clearArm();
+            saveKeyMap();
+            repaint();
+            return true;
+        }
+        // modo normal: disparar
+        for (int a = 0; a < kaCount; ++a)
+            if (actKey[a] != 0 && actKey[a] == code) { doAct (a); return true; }
+        for (auto& kv : keyByTrack)
+            if (kv.second == code) { const int idx = trackIndexForName (kv.first); if (idx >= 0) toggleTrackMute (idx); return true; }
+        for (auto& kv : keyBySolo)
+            if (kv.second == code) { const int idx = trackIndexForName (kv.first); if (idx >= 0) toggleTrackSolo (idx); return true; }
+        for (auto& kv : keyByBusMute)
+            if (kv.second == code) { const int f = familyNames.indexOf (kv.first); if (f >= 0) toggleBusMute (f); return true; }
+        for (auto& kv : keyByBusSolo)
+            if (kv.second == code) { const int f = familyNames.indexOf (kv.first); if (f >= 0) toggleBusSolo (f); return true; }
+        for (auto& kv : keyBySong)
+            if (kv.second == code) { selectSongById (kv.first); return true; }
+        return false;
+    }
+    void toggleTrackSolo (int idx)
+    {
+        if (idx < 0 || idx >= kMaxTracks || idx >= trackSliders.size()) return;
+        const bool on = ! trackSolo[idx].load();
+        trackSolo[idx].store (on);
+        if (idx < soloDots.size()) { soloDots[idx]->on = on; soloDots[idx]->repaint(); }
+        markDirty();
+    }
+    int trackIndexForName (const juce::String& name) const
+    {
+        for (int i = 0; i < trackNames.size(); ++i) if (trackNames[i] == name) return i;
+        return -1;
+    }
+    void toggleTrackMute (int idx)
+    {
+        if (idx < 0 || idx >= trackSliders.size() || idx >= trackLabels.size()) return;
+        const int fam = trackFamily[idx];
+        const bool famLocked = ! mixPerSong && fam < familyNames.size() && globalMutedFamilies.count (familyNames[fam]) > 0;
+        bool m = ! trackMuted[idx].load();
+        if (famLocked) m = true;   // regla: no se puede desmutear un canal si su familia (bus) está muteada
+        trackMuted[idx].store (m);
+        trackLabels[idx]->setColour (juce::Label::textColourId, m ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
+        trackLabels[idx]->repaint();
+        trackSliders[idx]->getProperties().set ("muted", m);
+        trackSliders[idx]->repaint();
+        markDirty();
+        if (! mixPerSong && ! suppressGlobalSave && ! famLocked && idx < trackNames.size())   // canal suelto en la mezcla general
+        {
+            if (m) globalMuted.insert (trackNames[idx]); else globalMuted.erase (trackNames[idx]);
+            saveStorageCfg();
+        }
+    }
+    void selectSongById (int songId)
+    {
+        for (int i = 0; i < repertoire.size(); ++i)
+            if (repertoire.getReference (i).id == songId) { if (i < songReady.size() && ! songReady[i]) return; loadSong (i); return; }
+    }
+
+    void drawKeyBadge (juce::Graphics& g, juce::Rectangle<int> host, int code, bool armd,
+                       juce::Rectangle<int> clip = {})
+    {
+        if (! clip.isEmpty() && ! clip.contains (host.getCentre())) return;   // no pintar elementos a medio cortar
+        // tinte translúcido sobre TODA el área mapeable (se ve el botón debajo)
+        auto hf = host.toFloat().reduced (1.0f);
+        const float rad = juce::jmin (6.0f, hf.getHeight() * 0.4f);
+        g.setColour (armd ? juce::Colour (0x55F2B23A) : juce::Colour (0x330A84FF));
+        g.fillRoundedRectangle (hf, rad);
+        g.setColour (armd ? juce::Colour (0xccF2B23A) : juce::Colour (0x770A84FF));
+        g.drawRoundedRectangle (hf, rad, 1.4f);
+        // chip con la tecla en la esquina sup-derecha (se acomoda a controles chicos)
+        const int w = juce::jmin (22, host.getWidth()  - 2);
+        const int h = juce::jmin (16, host.getHeight() - 2);
+        juce::Rectangle<int> chip (juce::jmax (host.getX() + 1, host.getRight() - w - 2), host.getY() + 1, w, h);
+        g.setColour (armd ? juce::Colour (0xffF2B23A) : juce::Colour (0xfff2f2f2));
+        g.fillRoundedRectangle (chip.toFloat(), 4.0f);
+        g.setColour (juce::Colour (0xff141414)); g.setFont (juce::Font ((float) juce::jmin (11, h - 3) + 0.5f, juce::Font::bold));
+        const juce::String lbl = armd ? juce::String::fromUTF8 ("\xe2\x80\xa6")
+                                      : (code ? keyLabel (code) : juce::String::fromUTF8 ("\xe2\x80\x94"));
+        g.drawText (lbl, chip, juce::Justification::centred);
+    }
+
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        if (mixDirty && repertoireBtn.isVisible())   // puntito rojo: hay cambios de mezcla sin guardar
+        {
+            auto r = repertoireBtn.getBounds();
+            const float d = 9.0f;
+            juce::Rectangle<float> dot ((float) r.getRight() - d - 3.0f, (float) r.getY() + 3.0f, d, d);
+            g.setColour (juce::Colour (0xff0a0a0a)); g.fillEllipse (dot.expanded (1.6f));
+            g.setColour (juce::Colour (0xffE5484D)); g.fillEllipse (dot);
+        }
+
+        if (! keyMapMode) return;   // #4 badges de tecla sobre elementos mapeables (sin banner)
+
+        // botones fijos (transporte + Pad/Buses/MIDI/Faders)
+        for (int a = 0; a < kaCount; ++a)
+        {
+            auto* b = btnForAct (a);
+            if (b == nullptr || ! b->isVisible()) continue;
+            drawKeyBadge (g, getLocalArea (b, b->getLocalBounds()), actKey[a], armKind == 1 && armedAct == a);
+        }
+        // mutes (nombre del track) y solos (S) — áreas separadas
+        {
+            const auto clip = faderViewport.isVisible() ? getLocalArea (&faderViewport, faderViewport.getLocalBounds())
+                                                        : juce::Rectangle<int>();
+            for (int i = 0; i < trackLabels.size() && i < trackNames.size(); ++i)
+            {
+                auto* l = trackLabels[i];
+                if (l == nullptr || ! l->isShowing()) continue;
+                const auto nm = trackNames[i];
+                const int mc = keyByTrack.count (nm) ? keyByTrack[nm] : 0;
+                drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), mc, armKind == 2 && armTrack == nm, clip);
+            }
+            for (int i = 0; i < soloDots.size() && i < trackNames.size(); ++i)
+            {
+                auto* d = soloDots[i];
+                if (d == nullptr || ! d->isShowing()) continue;
+                const auto nm = trackNames[i];
+                const int sc = keyBySolo.count (nm) ? keyBySolo[nm] : 0;
+                drawKeyBadge (g, getLocalArea (d, d->getLocalBounds()), sc, armKind == 4 && armTrack == nm, clip);
+            }
+            // buses (familias): mute (nombre) y solo (S)
+            for (int f = 0; f < busLabels.size() && f < familyNames.size(); ++f)
+            {
+                auto* l = busLabels[f];
+                if (l == nullptr || ! l->isShowing()) continue;
+                const auto nm = familyNames[f];
+                const int mc = keyByBusMute.count (nm) ? keyByBusMute[nm] : 0;
+                drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), mc, armKind == 5 && armTrack == nm, clip);
+            }
+            for (int f = 0; f < busSoloDots.size() && f < familyNames.size(); ++f)
+            {
+                auto* d = busSoloDots[f];
+                if (d == nullptr || ! d->isShowing()) continue;
+                const auto nm = familyNames[f];
+                const int sc = keyByBusSolo.count (nm) ? keyByBusSolo[nm] : 0;
+                drawKeyBadge (g, getLocalArea (d, d->getLocalBounds()), sc, armKind == 6 && armTrack == nm, clip);
+            }
+        }
+        // bloques de canción (tarjetas del repertorio)
+        {
+            const auto clip = getLocalArea (this, stripBounds);
+            for (auto* c : songCards)
+            {
+                if (c == nullptr || ! c->isShowing()) continue;
+                const int sid = c->songId;
+                const int code = keyBySong.count (sid) ? keyBySong[sid] : 0;
+                auto full = getLocalArea (c, c->getLocalBounds());
+                auto host = full.withTrimmedTop (6).withHeight ((int) ((full.getHeight() - 6) * 0.76));   // encierra la portada
+                drawKeyBadge (g, host, code, armKind == 3 && armSong == sid, clip);
+            }
+        }
     }
 
     void resized() override
@@ -2865,7 +3369,18 @@ public:
             barPrevBtn.setVisible (showNav);
             barNextBtn.setVisible (showNav);
         }
-        area.removeFromTop (8);
+        // #4 barra de Editar en el espacio entre el mapa y los faders (solo en edición)
+        editBarBounds = {};
+        if (editMode)
+        {
+            area.removeFromTop (5);
+            auto bar = area.removeFromTop (34);
+            editBarBounds = juce::Rectangle<int> (bar.getX(), bar.getY(), 220, bar.getHeight());
+            keyMapBtn.setBounds (editBarBounds);
+            keyMapBtn.toFront (false);
+            area.removeFromTop (5);
+        }
+        else area.removeFromTop (8);
         faderPanelBounds = area;
 
         // Region FIJA a la derecha: separador doble + 6 botones + Master (no se desplazan)
@@ -3293,7 +3808,16 @@ private:
         playButton.setEnabled (! editMode);
         returnButton.setEnabled (! editMode);
         fadeButton.setEnabled (! editMode);
+        keyMapBtn.setVisible (editMode);              // #4 botón de mapping solo en la barra de Editar
+        if (! editMode && keyMapMode)                  // al salir de edición, salir del mapping
+        {
+            keyMapMode = false; clearArm();
+            keyMapBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+            keyMapBtn.setButtonText (juce::String::fromUTF8 ("Mapping de teclado"));
+        }
+        resized();
         rebuildRepertoireStrip();
+        repaint();   // #4 limpiar badges de mapping que hayan quedado pintados
     }
 
     void postThenReload (juce::String baseUrl, juce::StringPairArray params)
@@ -3415,6 +3939,19 @@ private:
         return juce::var (root.get());
     }
 
+    // Cambios de mezcla sin guardar → puntito rojo en Repertorios
+    void markDirty()
+    {
+        if (suppressGlobalSave) return;                 // cambio programático (cargar/aplicar), no cuenta
+        if (! mixDirty) { mixDirty = true; repaint (repertoireBtn.getBounds().expanded (6)); }
+    }
+    void setMixSaved()
+    {
+        mixDirty = false;
+        repPicker.dirty = false; repPicker.repaint();    // sincronizar el aviso del picker
+        repaint (repertoireBtn.getBounds().expanded (6));
+    }
+
     // Guarda la mezcla de la canción actual en la caché en memoria (por repertorio)
     void snapshotCurrentMix()
     {
@@ -3426,6 +3963,7 @@ private:
     void saveRepertoireMixes (juce::String sid)
     {
         if (sid.isEmpty() || serverUrl.isEmpty()) return;
+        setMixSaved();                                   // se apaga el puntito rojo
         snapshotCurrentMix();
         juce::String data ("{");
         bool first = true;
@@ -3445,14 +3983,15 @@ private:
 
     void applyMix (const juce::var& mix)
     {
-        if (mix.hasProperty ("master"))
+        const bool prevSup = suppressGlobalSave; suppressGlobalSave = true;   // no pisar la mezcla general
+        if (masterPerSong && mix.hasProperty ("master"))                 // master solo si es por canción
             masterSlider.setValue ((double) mix.getProperty ("master", 0.0), juce::sendNotificationSync);
         if (auto* tr = mix.getProperty ("tracks", juce::var()).getArray())
             for (auto& t : *tr)
             {
                 const int i = trackNames.indexOf (t.getProperty ("n", "").toString());
                 if (i < 0 || i >= trackSliders.size()) continue;
-                trackSliders[i]->setValue ((double) t.getProperty ("g", 0.0), juce::sendNotificationSync);
+                trackSliders[i]->setValue ((double) t.getProperty ("g", 0.0), juce::sendNotificationSync);   // fader: siempre por canción
                 const bool m = (bool) t.getProperty ("m", false), s = (bool) t.getProperty ("s", false);
                 trackMuted[i].store (m);
                 trackLabels[i]->setColour (juce::Label::textColourId, m ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
@@ -3467,6 +4006,50 @@ private:
                 if (f >= 0 && f < busSliders.size())
                     busSliders[f]->setValue ((double) b.getProperty ("g", 0.0), juce::sendNotificationSync);
             }
+        suppressGlobalSave = prevSup;
+        applyGlobalOverrides();   // si buses/mute son generales, ganan sobre lo de la canción
+    }
+
+    void snapshotGlobalFromCurrent()   // toma la mezcla actual (buses+mute) como base de la general
+    {
+        globalBusGain.clear(); globalMuted.clear(); globalMutedFamilies.clear();
+        for (int f = 0; f < busSliders.size() && f < familyNames.size(); ++f)
+        {
+            globalBusGain[familyNames[f]] = busSliders[f]->getValue();
+            int cnt = 0; bool allM = true;
+            for (int i = 0; i < trackSliders.size(); ++i)
+                if (trackFamily[i] == f) { ++cnt; if (! trackMuted[i].load()) allM = false; }
+            if (cnt > 0 && allM) globalMutedFamilies.insert (familyNames[f]);   // familia completa muteada = bus muteado
+        }
+        for (int i = 0; i < trackSliders.size() && i < trackNames.size(); ++i)   // canales sueltos (familia no muteada completa)
+        {
+            const int fam = trackFamily[i];
+            const bool famMute = fam < familyNames.size() && globalMutedFamilies.count (familyNames[fam]) > 0;
+            if (trackMuted[i].load() && ! famMute) globalMuted.insert (trackNames[i]);
+        }
+        saveStorageCfg();
+    }
+    void applyGlobalOverrides()   // mezcla general de buses + mute (cuando mixPerSong = false)
+    {
+        if (mixPerSong) return;
+        const bool prevSup = suppressGlobalSave; suppressGlobalSave = true;
+        for (int i = 0; i < trackSliders.size() && i < trackNames.size(); ++i)
+        {
+            const int fam = trackFamily[i];
+            const bool famMute = fam < familyNames.size() && globalMutedFamilies.count (familyNames[fam]) > 0;
+            const bool m = famMute || globalMuted.count (trackNames[i]) > 0;   // familia (bus) O canal suelto
+            trackMuted[i].store (m);
+            trackLabels[i]->setColour (juce::Label::textColourId, m ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
+            trackLabels[i]->repaint();
+            trackSliders[i]->getProperties().set ("muted", m); trackSliders[i]->repaint();
+        }
+        for (int f = 0; f < busSliders.size() && f < familyNames.size(); ++f)
+        {
+            auto it = globalBusGain.find (familyNames[f]);
+            busSliders[f]->setValue (it != globalBusGain.end() ? it->second : 0.0, juce::sendNotificationSync);
+        }
+        refreshBusStates();
+        suppressGlobalSave = prevSup;
     }
 
     void createSetlist()
@@ -3611,7 +4194,10 @@ private:
             juce::MessageManager::callAsync ([sp, songId, title, addFlow, ks]
             {
                 if (sp == nullptr) return;
-                sp->repEdit.openTono (songId, title, addFlow, ks);
+                double i2 = -1.0, o2 = -1.0;
+                auto it = sp->songInOut.find (songId);
+                if (it != sp->songInOut.end()) { i2 = it->second.first; o2 = it->second.second; }
+                sp->repEdit.openTono (songId, title, addFlow, ks, i2, o2);
                 sp->repEdit.setVisible (true); sp->repEdit.toFront (true);
             });
         });
@@ -3623,13 +4209,71 @@ private:
         auto v = juce::JSON::parse (npAppDir().getChildFile ("storage.json"));
         cacheAutoClean = (bool) v.getProperty ("auto", false);
         cacheCapGB = juce::jlimit (0, 500, (int) v.getProperty ("capGB", 0));
+        countInEnabled = (bool) v.getProperty ("countin", false);
+        masterPerSong = (bool) v.getProperty ("masterPerSong", true);
+        globalMasterDb = (double) v.getProperty ("globalMaster", 0.0);
+        mixPerSong = (bool) v.getProperty ("mixPerSong", true);
+        globalBusGain.clear(); globalMuted.clear(); globalMutedFamilies.clear();
+        if (auto* bg = v.getProperty ("globalBus", juce::var()).getDynamicObject())
+            for (auto& pr : bg->getProperties()) globalBusGain[pr.name.toString()] = (double) pr.value;
+        if (auto* gm = v.getProperty ("globalMuted", juce::var()).getArray())
+            for (auto& e : *gm) globalMuted.insert (e.toString());
+        if (auto* gf = v.getProperty ("globalMutedFam", juce::var()).getArray())
+            for (auto& e : *gf) globalMutedFamilies.insert (e.toString());
     }
     void saveStorageCfg()
     {
         juce::DynamicObject::Ptr o = new juce::DynamicObject();
         o->setProperty ("auto", cacheAutoClean);
         o->setProperty ("capGB", cacheCapGB);
+        o->setProperty ("countin", countInEnabled);
+        o->setProperty ("masterPerSong", masterPerSong);
+        o->setProperty ("globalMaster", globalMasterDb);
+        o->setProperty ("mixPerSong", mixPerSong);
+        juce::DynamicObject::Ptr bg = new juce::DynamicObject();
+        for (auto& kv : globalBusGain) bg->setProperty (kv.first, kv.second);
+        o->setProperty ("globalBus", juce::var (bg.get()));
+        juce::Array<juce::var> gm; for (auto& n : globalMuted) gm.add (n);
+        o->setProperty ("globalMuted", juce::var (gm));
+        juce::Array<juce::var> gf; for (auto& n : globalMutedFamilies) gf.add (n);
+        o->setProperty ("globalMutedFam", juce::var (gf));
         npAppDir().getChildFile ("storage.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
+    }
+
+    // #2 puntos de inicio/fin por canción (persistencia local)
+    void loadInOut()
+    {
+        songInOut.clear();
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("inout.json"));
+        if (auto* a = v.getArray())
+            for (auto& e : *a)
+            {
+                const int id = (int) e.getProperty ("id", 0);
+                if (id <= 0) continue;
+                songInOut[id] = { (double) e.getProperty ("in", -1.0), (double) e.getProperty ("out", -1.0) };
+            }
+    }
+    void saveInOut()
+    {
+        juce::Array<juce::var> a;
+        for (auto& kv : songInOut)
+        {
+            if (kv.second.first < 0.0 && kv.second.second < 0.0) continue;
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("id", kv.first);
+            o->setProperty ("in",  kv.second.first);
+            o->setProperty ("out", kv.second.second);
+            a.add (juce::var (o.get()));
+        }
+        npAppDir().getChildFile ("inout.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+    }
+    void aplicarInOut (int songId)   // establece los atomics del reproductor para la canción actual
+    {
+        double inS = -1.0, outS = -1.0;
+        auto it = songInOut.find (songId);
+        if (it != songInOut.end()) { inS = it->second.first; outS = it->second.second; }
+        songInSec.store (inS);
+        songOutSec.store (outS);
     }
     juce::Array<juce::File> cacheFolders() const
     {
@@ -3789,6 +4433,7 @@ private:
         repPicker.items.clearQuick();
         repPicker.selected = -1;
         repPicker.currentLoadedId = lastSetlistId;   // para mostrar "Guardar" en el repertorio cargado
+        repPicker.dirty = mixDirty;                  // aviso de cambios sin guardar
         repPicker.setBounds (getLocalBounds());
         repPicker.setVisible (true);
         repPicker.toFront (true);
@@ -3872,6 +4517,7 @@ private:
         for (auto& e : repertoire)
             if (e.coverFile.existsAsFile()) e.cover = juce::ImageFileFormat::loadFrom (e.coverFile);
         currentSong = -1;
+        setMixSaved();   // repertorio recién cargado: sin cambios pendientes
         clearSong();
         dlById.clear();   // la barra la maneja SOLO el progreso real de descarga (onSongProgress), nunca un escaneo de disco
         loadOrderIds.clearQuick();
@@ -4006,13 +4652,14 @@ private:
             c->tono = s.tonoNombre;
             c->editMode = editMode;
             c->index = i;
+            c->songId = s.id;
             {   // barra ligada al id; si la canción ya está en caché, no hay barra (limpia entradas viejas)
                 auto it = dlById.find (s.id);
                 if (it != dlById.end() && cacheReady (s)) { dlById.erase (it); it = dlById.end(); }
                 c->dlProgress = (it != dlById.end()) ? it->second : -1.0f;
             }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
-            c->onClick    = [this, idx] { loadSong (idx); };
+            c->onClick    = [this, idx, sid] { if (armSongIfMapping (sid)) return; loadSong (idx); };
             c->onRemove   = [this, sid] { removeSong (sid); };
             c->onTono     = [this, sid, title] { openTonoFor (sid, title, false); };
             c->onAddAfter = [this, sid] { openBibliotecaForAddAfter (sid); };
@@ -4118,7 +4765,8 @@ private:
         }
 
         {
-            const double mv = (index >= 0 && index < songMaster.size()) ? songMaster[index] : 0.0;
+            const double perSong = (index >= 0 && index < songMaster.size()) ? songMaster[index] : 0.0;
+            const double mv = masterPerSong ? perSong : globalMasterDb;   // master por canción o general
             masterSlider.setValue (mv, juce::dontSendNotification);
             masterGain.store (dbToGain ((float) mv));
         }
@@ -4126,6 +4774,9 @@ private:
         loopStartSec.store (-1.0); loopEndSec.store (-1.0);
         infiniteBtn.active = false; infiniteBtn.repaint();
         waveImg = juce::Image(); waveDirty = true;
+
+        aplicarInOut (sng.id);                         // #2 punto de inicio/fin de esta canción
+        if (songInSec.load() > 0.0) seekSeconds (songInSec.load());
 
         {
             const juce::ScopedLock sl (midiLock);
@@ -4146,12 +4797,16 @@ private:
             if (iv.size() >= 3) { iv.sort(); const double med = iv[iv.size() / 2]; if (med > 0.0) gridBaseBpm = 60.0 / med; }
         }
 
+        aplicarClickSec (sng.id);                      // #3 sección de click (ya con grilla/tempo listos)
+
         liveSectionIdx.store (0);
         if (syncEnabled) fetchLiveChart (sng.id, sng.tono);
 
         rebuildMixerUI();
         if (currentSong >= 0 && currentSong < songMixCache.size() && songMixCache[currentSong].isObject())
             applyMix (songMixCache[currentSong]);   // mezcla del repertorio (si hay)
+        else
+            applyGlobalOverrides();                 // sin caché: aplicar buses/mute generales si toca
         highlightSongButton();
         resized();
         repaint();
@@ -4176,7 +4831,7 @@ private:
             s->textFromValueFunction = [] (double v) { return dbText (v); };
             s->valueFromTextFunction = [] (const juce::String& t) { return t.containsIgnoreCase ("inf") ? -60.0 : t.getDoubleValue(); };
             const int idx = i;
-            s->onValueChange = [this, idx] { trackGain[idx].store (dbToGain ((float) trackSliders[idx]->getValue())); };
+            s->onValueChange = [this, idx] { trackGain[idx].store (dbToGain ((float) trackSliders[idx]->getValue())); markDirty(); };
             s->setLookAndFeel (&faderLnf);
             s->setRepaintsOnMouseActivity (false);
             faderStrip.addAndMakeVisible (s);
@@ -4189,23 +4844,16 @@ private:
             l->setFont (juce::Font (13.0f, juce::Font::bold));
             l->onClick = [this, idx]
             {
-                const bool m = ! trackMuted[idx].load();
-                trackMuted[idx].store (m);
-                trackLabels[idx]->setColour (juce::Label::textColourId,
-                    m ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
-                trackLabels[idx]->repaint();
-                trackSliders[idx]->getProperties().set ("muted", m);
-                trackSliders[idx]->repaint();
+                if (idx < trackNames.size() && armTrackIfMapping (trackNames[idx])) return;   // #4 armar mute
+                toggleTrackMute (idx);
             };
             faderStrip.addAndMakeVisible (l);
 
             auto* d = soloDots.add (new SoloDot());
             d->onClick = [this, idx]
             {
-                const bool on = ! trackSolo[idx].load();
-                trackSolo[idx].store (on);
-                soloDots[idx]->on = on;
-                soloDots[idx]->repaint();
+                if (idx < trackNames.size() && armSoloIfMapping (trackNames[idx])) return;   // #4 armar SOLO
+                toggleTrackSolo (idx);
             };
             faderStrip.addAndMakeVisible (d);
         }
@@ -4241,18 +4889,27 @@ private:
             int idx = familyNames.indexOf (fam);
             if (idx < 0) { idx = familyNames.size(); familyNames.add (fam); }
             trackFamily[i] = idx;
+            trackIsClick[i] = fam.equalsIgnoreCase ("Click");                          // #3 solo click
+            trackNoFade[i] = trackIsClick[i]
+                          || fam.equalsIgnoreCase (juce::String::fromUTF8 ("Gu\xc3\xad" "a"));   // Click/Guía no suben en el conteo
         }
         for (int f = 0; f < familyNames.size() && f < 16; ++f)
         {
             busGain[f].store (1.0f);
             auto* s = busSliders.add (new juce::Slider());
             s->setSliderStyle (juce::Slider::LinearVertical);
-            s->setRange (-60.0, 6.0, 0.1);
+            s->setRange (-60.0, 0.0, 0.1);   // tope = volumen original (sin boost)
             s->setValue (0.0);
             s->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
             s->textFromValueFunction = [] (double v) { return dbText (v); };
             const int bf = f;
-            s->onValueChange = [this, bf] { busGain[bf].store (dbToGain ((float) busSliders[bf]->getValue())); };
+            s->onValueChange = [this, bf]
+            {
+                const double v = busSliders[bf]->getValue();
+                busGain[bf].store (dbToGain ((float) v));
+                markDirty();
+                if (! mixPerSong && ! suppressGlobalSave && bf < familyNames.size()) { globalBusGain[familyNames[bf]] = v; saveStorageCfg(); }
+            };
             s->setLookAndFeel (&faderLnf);
             s->setRepaintsOnMouseActivity (false);
             faderStrip.addAndMakeVisible (s);
@@ -4262,11 +4919,11 @@ private:
             l->setJustificationType (juce::Justification::centred);
             l->setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
             l->setFont (juce::Font (12.0f, juce::Font::bold));
-            l->onClick = [this, bf] { toggleBusMute (bf); };
+            l->onClick = [this, bf] { if (bf < familyNames.size() && armBusMuteIfMapping (familyNames[bf])) return; toggleBusMute (bf); };
             faderStrip.addAndMakeVisible (l);
 
             auto* d = busSoloDots.add (new SoloDot());
-            d->onClick = [this, bf] { toggleBusSolo (bf); };
+            d->onClick = [this, bf] { if (bf < familyNames.size() && armBusSoloIfMapping (familyNames[bf])) return; toggleBusSolo (bf); };
             faderStrip.addAndMakeVisible (d);
         }
         refreshBusStates();
@@ -4287,6 +4944,17 @@ private:
                 trackLabels[i]->setColour (juce::Label::textColourId, nu ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
                 trackLabels[i]->repaint();
             }
+        if (! mixPerSong && ! suppressGlobalSave && f < familyNames.size())   // mezcla general: mute por FAMILIA (bus)
+        {
+            if (nu) globalMutedFamilies.insert (familyNames[f]);
+            else                                                              // al desmutear la familia, se limpian sus canales sueltos
+            {
+                globalMutedFamilies.erase (familyNames[f]);
+                for (int i = 0; i < trackNames.size(); ++i) if (trackFamily[i] == f) globalMuted.erase (trackNames[i]);
+            }
+            saveStorageCfg();
+        }
+        markDirty();
         refreshBusStates();
     }
 
@@ -4302,6 +4970,7 @@ private:
                 trackSolo[i].store (nu);
                 soloDots[i]->on = nu; soloDots[i]->repaint();
             }
+        markDirty();
         refreshBusStates();
     }
 
@@ -4592,7 +5261,7 @@ private:
     }
     double positionSeconds() const
     {
-        const double t = totalSeconds();
+        const double t = clickSecArmed.load() ? (totalSeconds() + clickLenSec.load()) : totalSeconds();   // #3 permite el bloque de click
         return t > 0 ? juce::jlimit (0.0, t, (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate)) : 0.0;
     }
     void timerCallback() override
@@ -4624,6 +5293,7 @@ private:
         {
             bool done = true;
             const double step = 0.33;  // dB por tick (~3s de desvanecimiento)
+            const bool prevSup = suppressGlobalSave; suppressGlobalSave = true;   // el fade no marca "sin guardar"
             for (int i = 0; i < trackSliders.size(); ++i)
             {
                 auto* s = trackSliders[i];
@@ -4635,6 +5305,7 @@ private:
                 if (v != s->getValue()) s->setValue (v, juce::sendNotificationSync);
                 if (v != target) done = false;
             }
+            suppressGlobalSave = prevSup;
             if (done) fadeDir = 0;
         }
 
@@ -4652,17 +5323,292 @@ private:
             if (anyLvl || pl) for (auto* s : trackSliders) s->repaint();
         }
 
-        if (repeatBtn.active   != loopOnce.load())   { repeatBtn.active   = loopOnce.load();   repeatBtn.repaint(); }
-        if (infiniteBtn.active != loopActive.load()) { infiniteBtn.active = loopActive.load(); infiniteBtn.repaint(); }
+        if (repeatBtn.active != loopOnce.load()) { repeatBtn.active = loopOnce.load(); repeatBtn.repaint(); }
+        // #3 el ∞ solo se ve encendido cuando el playhead está EN el bloque de click (no confunde en otras partes)
+        const bool inClk = clickSecArmed.load() && clickLoopOn.load() && positionSeconds() >= totalSeconds() - 0.05;
+        const bool infOn = loopActive.load() || inClk;
+        if (infiniteBtn.active != infOn) { infiniteBtn.active = infOn; infiniteBtn.repaint(); }
     }
     void togglePlay()
     {
         if (editMode || resamplers.isEmpty()) return;   // en edición no se reproduce
         const bool p = ! playing.load();
-        if (p && positionSeconds() >= totalSeconds() - 0.1) seekSeconds (0.0);
+        // al final: reiniciar — PERO no si estás en el bloque de click (ahí se reanuda libre)
+        if (p && positionSeconds() >= totalSeconds() - 0.1
+            && ! (clickSecArmed.load() && positionSeconds() >= totalSeconds() - 0.05))
+            seekSeconds (0.0);
+        if (p && countInEnabled) prepararConteo();       // #1 conteo con entrada de faders (si está al inicio de una sección)
+        else                     countInActive.store (false);
         playing.store (p);
         playButton.setButtonText (p ? "Pausa" : "Play");
     }
+
+    double tiempoUnCompasAntes (double ts) const   // 1 compás antes de ts (por grilla o bpm)
+    {
+        const auto& g = currentBeatGrid;
+        const int nb0 = juce::jmax (1, beatsPerBar);
+        const int div = (gridBaseBpm > 0.0 && bpm > 0.0) ? juce::jlimit (1, 4, (int) std::llround (gridBaseBpm / bpm)) : 1;
+        const int nb  = nb0 * div;
+        if (g.size() >= 2)
+        {
+            int i = 0; while (i + 1 < g.size() && g[i + 1] <= ts + 0.03) ++i;
+            return g[juce::jlimit (0, g.size() - 1, i - nb)];
+        }
+        if (bpm > 0.0) return juce::jmax (0.0, ts - 60.0 / bpm * nb0);
+        return ts;
+    }
+
+    void prepararConteo()   // si el playhead está justo al inicio de una sección, arma el conteo con swell
+    {
+        countInActive.store (false);
+        const double pos = positionSeconds();
+        double ts = -1.0;
+        for (auto& s : sectionTimes) if (s > 0.05 && std::abs (s - pos) < 0.18) { ts = s; break; }
+        if (ts < 0.0) return;                          // no está en un inicio de sección -> play normal
+        const double ci = tiempoUnCompasAntes (ts);
+        if (ci >= ts - 0.05) return;                   // sin espacio para el conteo
+        seekSeconds (ci);
+        countInStartSec.store (ci);
+        countInEndSec.store (ts);
+        countInActive.store (true);
+    }
+
+    // #3 sección de click al final (persistente por canción)
+    void loadClickSec()
+    {
+        clickSecSongs.clear();
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("clicksec.json"));
+        if (auto* a = v.getArray()) for (auto& e : *a) { const int id = (int) e; if (id > 0) clickSecSongs.insert (id); }
+    }
+    void saveClickSec()
+    {
+        juce::Array<juce::var> a;
+        for (int id : clickSecSongs) a.add (id);
+        npAppDir().getChildFile ("clicksec.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+    }
+    double clickSecLen() const { return clickLenSec.load(); }               // largo del bloque de click
+    double clickBlockEnd() const { return totalSeconds() + clickLenSec.load(); }
+    bool   inClickBlock (double s) const
+    { return songHasClickSec && clickLenSec.load() > 0.0 && s >= totalSeconds() - 1.0e-4 && s <= clickBlockEnd() + 1.0e-4; }
+
+    void aplicarClickSec (int songId)   // fija estado de la sección de click para la canción actual
+    {
+        songHasClickSec = clickSecSongs.count (songId) > 0;
+        clickSecArmed.store (songHasClickSec);
+        if (songHasClickSec && totalSeconds() > 0.0 && bpm > 0.0)
+        {
+            const int nb = juce::jmax (1, beatsPerBar) * 2;                 // 2 compases
+            clickLenSec.store (60.0 / bpm * nb);
+            clickLoopOn.store (true);                                        // ∞ ON por defecto
+        }
+        else { clickLenSec.store (0.0); clickLoopOn.store (false); }
+        clkLastBeat = -1;
+    }
+    void agregarSeccionClick()   // + : agrega la sección de click (persiste, ∞ ON por defecto)
+    {
+        if (currentSong < 0 || currentSong >= repertoire.size()) return;
+        const int id = repertoire.getReference (currentSong).id;
+        clickSecSongs.insert (id);
+        saveClickSec();
+        aplicarClickSec (id);
+        infiniteBtn.active = clickLoopOn.load(); infiniteBtn.repaint();
+        repaint (mapBounds);
+    }
+    void quitarSeccionClick()   // − : elimina la sección de click de esta canción
+    {
+        if (currentSong < 0 || currentSong >= repertoire.size()) return;
+        const int id = repertoire.getReference (currentSong).id;
+        clickSecSongs.erase (id);
+        saveClickSec();
+        clickLoopOn.store (false);
+        if (positionSeconds() > totalSeconds()) seekSeconds (juce::jmax (0.0, totalSeconds() - 0.05));
+        aplicarClickSec (id);
+        infiniteBtn.active = false; infiniteBtn.repaint();
+        repaint (mapBounds);
+    }
+
+    void toggleRepeatOnce()   // repetir una vez la sección actual
+    {
+        if (loopOnce.load())
+        {
+            loopOnce.store (false);
+            if (! loopActive.load()) { loopStartSec.store (-1.0); loopEndSec.store (-1.0); }
+        }
+        else
+        {
+            double t0, t1; currentSectionRange (positionSeconds(), t0, t1);
+            loopStartSec.store (t0); loopEndSec.store (t1); loopOnce.store (true);
+        }
+        repeatBtn.active = loopOnce.load(); repeatBtn.repaint();   // instantáneo, sin esperar el timer
+        repaint (mapBounds);
+    }
+    void toggleLoopInfinite()   // loop infinito de la sección actual (o de la sección de click si estamos en ella)
+    {
+        if (songHasClickSec && clickLenSec.load() > 0.0 && positionSeconds() >= totalSeconds() - 0.15)
+        {   // #3 en/cerca del bloque de click, el ∞ enciende/apaga su loop (reactivable, sin saltos)
+            const bool on = ! clickLoopOn.load();
+            clickLoopOn.store (on);
+            if (on && positionSeconds() < totalSeconds()) seekSeconds (totalSeconds());   // entrar al bloque
+            infiniteBtn.active = on; infiniteBtn.repaint();
+            repaint (mapBounds);
+            return;
+        }
+        const bool on = ! loopActive.load();
+        if (on)
+        {
+            double t0, t1; currentSectionRange (positionSeconds(), t0, t1);
+            loopStartSec.store (t0); loopEndSec.store (t1); loopActive.store (true);
+        }
+        else
+        {
+            loopActive.store (false); loopOnce.store (false);
+            loopStartSec.store (-1.0); loopEndSec.store (-1.0);
+        }
+        infiniteBtn.active = on; infiniteBtn.repaint();
+        repaint (mapBounds);
+    }
+
+    // ── #4 mapping de teclado ──
+    void doAct (int a)
+    {
+        switch (a)
+        {
+            case kaPlay:      togglePlay();        break;
+            case kaReturn:    seekSeconds (0.0);   break;
+            case kaPrevBar:   seekBar (-1);        break;
+            case kaNextBar:   seekBar (+1);        break;
+            case kaFade:      toggleFade();        break;
+            case kaLoop:      toggleLoopInfinite(); break;
+            case kaRepeat:    toggleRepeatOnce();  break;
+            case kaPad:       padBtn.triggerClick(); break;
+            case kaBuses:     setFaderView (1);    break;
+            case kaMidi:      setFaderView (2);    break;
+            case kaFaderView: setFaderView (0);    break;
+            case kaPadPlayer: padPlayerBtn.triggerClick(); break;
+            default: break;
+        }
+    }
+    bool clickOrArm (int a)   // en modo mapping arma la acción fija y NO la ejecuta; true si armó
+    {
+        if (! keyMapMode) return false;
+        armKind = 1; armedAct = a; armTrack = {}; armSong = -1; repaint(); return true;
+    }
+    bool armTrackIfMapping (const juce::String& name)   // MUTE
+    {
+        if (! keyMapMode) return false;
+        armKind = 2; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+    }
+    bool armSoloIfMapping (const juce::String& name)     // SOLO
+    {
+        if (! keyMapMode) return false;
+        armKind = 4; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+    }
+    bool armBusMuteIfMapping (const juce::String& name)
+    {
+        if (! keyMapMode) return false;
+        armKind = 5; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+    }
+    bool armBusSoloIfMapping (const juce::String& name)
+    {
+        if (! keyMapMode) return false;
+        armKind = 6; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+    }
+    bool armSongIfMapping (int songId)
+    {
+        if (! keyMapMode) return false;
+        armKind = 3; armSong = songId; armedAct = -1; armTrack = {}; repaint(); return true;
+    }
+    void clearAllForKey (int code)   // quita esa tecla de cualquier asignación previa (sin duplicados)
+    {
+        for (int a = 0; a < kaCount; ++a) if (actKey[a] == code) actKey[a] = 0;
+        for (auto& kv : keyByTrack)   if (kv.second == code) kv.second = 0;
+        for (auto& kv : keyBySolo)    if (kv.second == code) kv.second = 0;
+        for (auto& kv : keyByBusMute) if (kv.second == code) kv.second = 0;
+        for (auto& kv : keyByBusSolo) if (kv.second == code) kv.second = 0;
+        for (auto& kv : keyBySong)    if (kv.second == code) kv.second = 0;
+    }
+    static juce::String keyLabel (int code)
+    {
+        if (code <= 0) return {};
+        if (code == juce::KeyPress::spaceKey)  return juce::String::fromUTF8 ("Espacio");
+        if (code == juce::KeyPress::leftKey)   return juce::String::fromUTF8 ("\xe2\x86\x90");
+        if (code == juce::KeyPress::rightKey)  return juce::String::fromUTF8 ("\xe2\x86\x92");
+        if (code == juce::KeyPress::upKey)     return juce::String::fromUTF8 ("\xe2\x86\x91");
+        if (code == juce::KeyPress::downKey)   return juce::String::fromUTF8 ("\xe2\x86\x93");
+        if (code == juce::KeyPress::returnKey) return juce::String::fromUTF8 ("\xe2\x8f\x8e");
+        if (code >= 33 && code < 127) return juce::String::charToString ((juce_wchar) code).toUpperCase();
+        return "?";
+    }
+    void loadKeyMap()
+    {
+        for (auto& k : actKey) k = 0;
+        keyByTrack.clear(); keyBySolo.clear(); keyByBusMute.clear(); keyByBusSolo.clear(); keyBySong.clear();
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("keymap.json"));
+        if (auto* o = v.getDynamicObject())
+        {
+            for (int a = 0; a < kaCount; ++a) actKey[a] = (int) o->getProperty (juce::String (a));
+            if (auto* tk = o->getProperty ("tracks").getDynamicObject())
+                for (auto& pr : tk->getProperties()) keyByTrack[pr.name.toString()] = (int) pr.value;
+            if (auto* so = o->getProperty ("solos").getDynamicObject())
+                for (auto& pr : so->getProperties()) keyBySolo[pr.name.toString()] = (int) pr.value;
+            if (auto* bm = o->getProperty ("busmutes").getDynamicObject())
+                for (auto& pr : bm->getProperties()) keyByBusMute[pr.name.toString()] = (int) pr.value;
+            if (auto* bs = o->getProperty ("bussolos").getDynamicObject())
+                for (auto& pr : bs->getProperties()) keyByBusSolo[pr.name.toString()] = (int) pr.value;
+            if (auto* sg = o->getProperty ("songs").getDynamicObject())
+                for (auto& pr : sg->getProperties()) keyBySong[pr.name.toString().getIntValue()] = (int) pr.value;
+        }
+    }
+    void saveKeyMap()
+    {
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        for (int a = 0; a < kaCount; ++a) o->setProperty (juce::String (a), actKey[a]);
+        juce::DynamicObject::Ptr tk = new juce::DynamicObject();
+        for (auto& kv : keyByTrack) if (kv.second != 0) tk->setProperty (kv.first, kv.second);
+        juce::DynamicObject::Ptr so = new juce::DynamicObject();
+        for (auto& kv : keyBySolo) if (kv.second != 0) so->setProperty (kv.first, kv.second);
+        juce::DynamicObject::Ptr bm = new juce::DynamicObject();
+        for (auto& kv : keyByBusMute) if (kv.second != 0) bm->setProperty (kv.first, kv.second);
+        juce::DynamicObject::Ptr bs = new juce::DynamicObject();
+        for (auto& kv : keyByBusSolo) if (kv.second != 0) bs->setProperty (kv.first, kv.second);
+        juce::DynamicObject::Ptr sg = new juce::DynamicObject();
+        for (auto& kv : keyBySong) if (kv.second != 0) sg->setProperty (juce::String (kv.first), kv.second);
+        o->setProperty ("tracks",   juce::var (tk.get()));
+        o->setProperty ("solos",    juce::var (so.get()));
+        o->setProperty ("busmutes", juce::var (bm.get()));
+        o->setProperty ("bussolos", juce::var (bs.get()));
+        o->setProperty ("songs",    juce::var (sg.get()));
+        npAppDir().getChildFile ("keymap.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
+    }
+    void clearArm() { armKind = 0; armedAct = -1; armSong = -1; armTrack = {}; }
+    void toggleKeyMapMode()
+    {
+        keyMapMode = ! keyMapMode;
+        clearArm();
+        if (keyMapMode) grabKeyboardFocus();
+        resized();
+        repaint();
+    }
+    juce::Component* btnForAct (int a)
+    {
+        switch (a)
+        {
+            case kaPlay:      return &playButton;
+            case kaReturn:    return &returnButton;
+            case kaPrevBar:   return &barPrevBtn;
+            case kaNextBar:   return &barNextBtn;
+            case kaFade:      return &fadeButton;
+            case kaLoop:      return &infiniteBtn;
+            case kaRepeat:    return &repeatBtn;
+            case kaPad:       return &padBtn;
+            case kaBuses:     return &busesBtn;
+            case kaMidi:      return &muteMidiBtn;
+            case kaFaderView: return &faderViewBtn;
+            case kaPadPlayer: return &padPlayerBtn;
+        }
+        return nullptr;
+    }
+
     void toggleFade()
     {
         if (trackSliders.isEmpty()) return;
@@ -4676,16 +5622,35 @@ private:
         else fadeDir = 1;
         fadeButton.setButtonText (fadedDown ? "Subir" : "Fade");
     }
+    double snapToBeat (double sec) const   // cae en la barra de click (beat) más cercana
+    {
+        if (bpm <= 0.0) return sec;
+        const double bl = 60.0 / bpm;
+        if (clickSecArmed.load() && sec >= totalSeconds() - 1.0e-4)                 // en el bloque de click: pulsos parejos
+            return totalSeconds() + std::round ((sec - totalSeconds()) / bl) * bl;
+
+        const auto& g = currentBeatGrid;                                           // en la canción: grilla de beats (si hay)
+        if (g.size() >= 2)
+        {
+            const int div = (gridBaseBpm > 0.0 && bpm > 0.0) ? juce::jlimit (1, 4, (int) std::llround (gridBaseBpm / bpm)) : 1;
+            double best = g[0], bd = std::abs (sec - g[0]);
+            for (int i = 0; i < g.size(); i += div) { const double d = std::abs (sec - g[i]); if (d < bd) { bd = d; best = g[i]; } }
+            return best;
+        }
+        const double anchor = (sectionTimes.size() > 0 ? sectionTimes[0] : 0.0);   // respaldo: beats uniformes por BPM
+        return juce::jmax (0.0, anchor + std::round ((sec - anchor) / bl) * bl);
+    }
     void seekFromMouse (const juce::MouseEvent& e)
     {
         auto inner = mapBounds.reduced (8);
         if (! inner.contains (e.getPosition())) return;
         double vs = 0.0, ve = 0.0; getViewWindow (vs, ve);
         const double frac = juce::jlimit (0.0, 1.0, (double) (e.x - inner.getX()) / juce::jmax (1, inner.getWidth()));
-        seekSeconds (vs + frac * (ve - vs));
+        seekSeconds (snapToBeat (vs + frac * (ve - vs)));   // al soltar, cae en un click
     }
     void seekSeconds (double sec)
     {
+        countInActive.store (false);   // #1 cualquier seek manual cancela el conteo
         const double fr = fileRates.isEmpty() ? 44100.0 : fileRates[0];
         seekTo.store ((long long) (juce::jmax (0.0, sec) * fr));
         repaint (mapBounds);
@@ -4753,6 +5718,20 @@ private:
     std::atomic<bool> trackMuted[kMaxTracks];
     std::atomic<bool> trackSolo[kMaxTracks];
     std::atomic<float> trackLevel[kMaxTracks];
+    // Ajustes de mezcla compartida (menú)
+    bool masterPerSong = true;                          // master independiente por canción vs general del setlist
+    double globalMasterDb = 0.0;                        // master general (cuando masterPerSong = false)
+    bool mixPerSong = true;                             // buses+mute independientes por canción vs generales
+    std::map<juce::String,double> globalBusGain;        // familia -> dB (mezcla general de buses)
+    std::set<juce::String> globalMutedFamilies;         // familias (buses) silenciadas en la mezcla general
+    std::set<juce::String> globalMuted;                 // canales sueltos silenciados en la mezcla general (por nombre)
+    bool suppressGlobalSave = false;                    // no pisar la mezcla general durante cambios programáticos
+    bool mixDirty = false;                              // hay cambios de mezcla sin guardar (puntito rojo en Repertorios)
+    bool trackNoFade[kMaxTracks] = { false };          // #1 Click/Guía NO suben en el conteo (para oír las indicaciones)
+    bool countInEnabled = false;                        // #1 toggle del usuario (menú de opciones)
+    std::atomic<bool> countInActive { false };          // conteo en curso
+    std::atomic<double> countInStartSec { 0.0 };        // inicio del swell
+    std::atomic<double> countInEndSec { 0.0 };          // downbeat de la sección (llega a nivel normal aquí)
     std::atomic<float> masterGain { 1.0f };
 
     std::atomic<float> busGain[16];         // ganancia por familia (bus)
@@ -4765,6 +5744,40 @@ private:
     std::atomic<double> loopStartSec { -1.0 };
     std::atomic<double> loopEndSec { -1.0 };
 
+    // #2 punto de inicio/fin por canción (-1 = sin definir)
+    std::map<int, std::pair<double,double>> songInOut;   // id de canción -> {inicio, fin}
+    std::atomic<double> songInSec  { -1.0 };
+    std::atomic<double> songOutSec { -1.0 };
+
+    // #3 sección de click: bloque de 2 compases DESPUÉS del final, con metrónomo sintetizado
+    bool trackIsClick[kMaxTracks] = { false };
+    std::set<int> clickSecSongs;                 // ids de canciones con sección de click (persistente)
+    bool songHasClickSec = false;                // la canción actual tiene sección de click
+    std::atomic<bool> clickSecArmed { false };   // hay sección de click (para el hilo de audio)
+    std::atomic<bool> clickLoopOn { false };     // ∞ del bloque de click (por defecto ON al agregar)
+    std::atomic<double> clickLenSec { 0.0 };     // largo del bloque (2 compases)
+    juce::Rectangle<int> addClickBtnRect;        // + al final de la última sección (modo edición)
+    juce::Rectangle<int> delClickBtnRect;        // − sobre el bloque de click (modo edición)
+    // metrónomo sintetizado para la sección de click (el click grabado suele acabar antes del final)
+    double clkEnv = 0.0, clkPhase = 0.0, clkFreq = 1200.0;
+    long long clkLastBeat = -1;
+
+    // #4 mapping de teclado
+    enum KMAct { kaPlay = 0, kaReturn, kaPrevBar, kaNextBar, kaFade, kaLoop, kaRepeat,
+                 kaPad, kaBuses, kaMidi, kaFaderView, kaPadPlayer, kaCount };
+    int  actKey[kaCount] = { 0 };               // código de tecla por acción fija (0 = sin asignar)
+    std::map<juce::String,int> keyByTrack;      // nombre de track (MUTE) -> tecla
+    std::map<juce::String,int> keyBySolo;       // nombre de track (SOLO) -> tecla
+    std::map<juce::String,int> keyByBusMute;    // familia/bus (MUTE) -> tecla
+    std::map<juce::String,int> keyByBusSolo;    // familia/bus (SOLO) -> tecla
+    std::map<int,int> keyBySong;                // id de canción (bloque) -> tecla
+    bool keyMapMode = false;                    // modo de asignación de teclas
+    // arming: kind 0=nada,1=acción,2=mute,3=canción,4=solo,5=busMute,6=busSolo
+    int armKind = 0, armedAct = -1, armSong = -1;
+    juce::String armTrack;
+    bool editBarOpen = false;                   // barra desplegable de Editar
+    juce::Rectangle<int> editBarBounds;         // fondo de la barra de Editar
+
     juce::Image logoImg;
     PillLNF pillLnf;
     FaderLNF faderLnf;
@@ -4776,7 +5789,7 @@ private:
     bool fadedDown = false;
     juce::Label connStatus, timeLabel, masterLabel;
     juce::Slider masterSlider;
-    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn;
+    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn, keyMapBtn;
     IconButton faderViewBtn, repeatBtn, infiniteBtn, settingsBtn, repertoireBtn;
     FaderStripComp faderStrip;
     HScrollViewport faderViewport;
