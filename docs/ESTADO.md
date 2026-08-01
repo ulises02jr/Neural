@@ -38,12 +38,12 @@ Bloque de mejoras 2026-08-01 (commit `bef500a` en GitHub / `4619586` en Mac):
 - **Snap del playhead a la barra de click** al soltar el arrastre en el mapa: implementado pero no funciona en la práctica; quedó pausado para retomar después.
 
 ## Roadmap (19 ítems, orden de dificultad)
-Hechos: **1** (pre-roll), **2** (in/out), **3** (click final), **4** (mapping teclado). También (de sesiones previas): 32 salidas y Dante (vía Dante Virtual Soundcard).
+Hechos: **1** (pre-roll), **2** (in/out), **3** (click final), **4** (mapping teclado), **5+6** (MIDI IN + MIDI learn). También (de sesiones previas): 32 salidas y Dante (vía Dante Virtual Soundcard).
+
+MIDI (5+6) — detalle: entrada MIDI abierta a todos los puertos (`MidiInputCallback`), botón "MIDI Mapping" en la barra de Editar junto a "Mapping de teclado" (conviven). Aprende las mismas acciones que el teclado (transporte, mute/solo de tracks y buses, canciones, Pad/Buses/MIDI/faders) por Note o CC-botón, MÁS **faders continuos** por CC (perilla/fader del controlador -> dB, click en el fader en pantalla para armarlo). Re-aprender desasigna, sin duplicados. Persistente en `midimap.json`. Play/Inicio/Fade se habilitan en modo mapping para poder armarlos.
 
 Pendientes, del más fácil:
-5. Controlador MIDI externo (recibir MIDI IN) — base del 6.
-6. Mapping de controladores MIDI (MIDI learn) — depende del 5. **<- siguiente recomendado (5+6 juntos)**.
-7. Pads ambientales (loop por tono + crossfade) — alto valor musical.
+7. Pads ambientales (loop por tono + crossfade) — alto valor musical. **<- siguiente recomendado**.
 8. NeuralCharts (empaquetar panel del músico como app).
 9. SMPTE/LTC (arrancar por MTC vía MIDI).
 10. Control remoto a distancia de NeuralPlay (server embebido).

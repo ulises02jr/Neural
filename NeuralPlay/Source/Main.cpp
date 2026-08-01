@@ -581,7 +581,9 @@ static int routeFamIndex (const juce::String& serverFam, const juce::String& tra
 struct FaderStripComp : public juce::Component
 {
     std::function<void (juce::Graphics&)> onPaint;
+    std::function<void (const juce::MouseEvent&)> onMouseDown;   // para armar faders en modo MIDI
     void paint (juce::Graphics& g) override { if (onPaint) onPaint (g); }
+    void mouseDown (const juce::MouseEvent& e) override { if (onMouseDown) onMouseDown (e); }
 };
 
 // Viewport con la rueda invertida (para que el desplazamiento de los tracks
@@ -2324,7 +2326,8 @@ struct HttpLiveServer : private juce::Thread
 
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer,
-                      private juce::ChangeListener
+                      private juce::ChangeListener,
+                      private juce::MidiInputCallback
 {
 public:
     MainComponent()
@@ -2387,6 +2390,8 @@ public:
         loadStorageCfg();
         loadInOut();
         loadKeyMap();
+        loadMidiMap();
+        openMidiInputs();
         loadClickSec();
         settingsPanel.setCountIn (countInEnabled);
         settingsPanel.setMasterPS (masterPerSong);
@@ -2431,15 +2436,27 @@ public:
         keyMapBtn.setButtonText (juce::String::fromUTF8 ("Mapping de teclado"));   // #4 (barra de Editar)
         keyMapBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         keyMapBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
-        keyMapBtn.onClick = [this]
-        {
-            toggleKeyMapMode();
-            keyMapBtn.setColour (juce::TextButton::buttonColourId, keyMapMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));
-            keyMapBtn.setButtonText (keyMapMode ? juce::String::fromUTF8 ("Mapping de teclado \xe2\x9c\x93")
-                                                : juce::String::fromUTF8 ("Mapping de teclado"));
-            keyMapBtn.repaint();
-        };
+        keyMapBtn.onClick = [this] { toggleKeyMapMode(); refreshMapButtons(); };
         addChildComponent (keyMapBtn);   // se muestra solo en la barra de Editar
+
+        midiMapBtn.setButtonText (juce::String::fromUTF8 ("MIDI Mapping"));   // #5/#6
+        midiMapBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        midiMapBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        midiMapBtn.onClick = [this] { toggleMidiMapMode(); refreshMapButtons(); };
+        addChildComponent (midiMapBtn);
+
+        faderStrip.onMouseDown = [this] (const juce::MouseEvent& e)   // en modo MIDI, el click arma el fader
+        {
+            if (! midiMapMode) return;
+            const auto& sl = (faderView == 1) ? busSliders : trackSliders;
+            for (int i = 0; i < sl.size(); ++i)
+                if (sl[i]->isVisible() && sl[i]->getBounds().contains (e.getPosition()))
+                {
+                    if (faderView == 1) armFaderIfMidi (-1, (i < familyNames.size() ? familyNames[i] : juce::String()), false);
+                    else                armFaderIfMidi (i, {}, false);
+                    return;
+                }
+        };
 
 
         addCard.onClick = [this] { openBibliotecaForAdd(); };
@@ -3058,6 +3075,8 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        if (midiMapMode && masterSlider.getBounds().contains (e.getPosition()))   // armar el master (MIDI)
+        { armFaderIfMidi (-1, {}, true); return; }
         if (editMode && ! addClickBtnRect.isEmpty() && addClickBtnRect.contains (e.getPosition()))
         { agregarSeccionClick(); return; }               // #3 + agrega la sección de click
         if (editMode && ! delClickBtnRect.isEmpty() && delClickBtnRect.contains (e.getPosition()))
@@ -3229,9 +3248,10 @@ public:
         g.fillRoundedRectangle (chip.toFloat(), 4.0f);
         g.setColour (juce::Colour (0xff141414)); g.setFont (juce::Font ((float) juce::jmin (11, h - 3) + 0.5f, juce::Font::bold));
         const juce::String lbl = armd ? juce::String::fromUTF8 ("\xe2\x80\xa6")
-                                      : (code ? keyLabel (code) : juce::String::fromUTF8 ("\xe2\x80\x94"));
+                                      : (code ? (badgeMidi ? midiLabel (code) : keyLabel (code)) : juce::String::fromUTF8 ("\xe2\x80\x94"));
         g.drawText (lbl, chip, juce::Justification::centred);
     }
+    bool badgeMidi = false;   // los badges muestran MIDI (true) o tecla (false)
 
     void paintOverChildren (juce::Graphics& g) override
     {
@@ -3244,16 +3264,20 @@ public:
             g.setColour (juce::Colour (0xffE5484D)); g.fillEllipse (dot);
         }
 
-        if (! keyMapMode) return;   // #4 badges de tecla sobre elementos mapeables (sin banner)
+        if (! keyMapMode && ! midiMapMode) return;   // badges sobre elementos mapeables (sin banner)
+        badgeMidi = midiMapMode;
+        auto codeOf = [this] (const std::map<juce::String,int>& km, const std::map<juce::String,int>& mm, const juce::String& n) -> int
+        { auto& m = midiMapMode ? mm : km; auto it = m.find (n); return it != m.end() ? it->second : 0; };
 
         // botones fijos (transporte + Pad/Buses/MIDI/Faders)
         for (int a = 0; a < kaCount; ++a)
         {
             auto* b = btnForAct (a);
             if (b == nullptr || ! b->isVisible()) continue;
-            drawKeyBadge (g, getLocalArea (b, b->getLocalBounds()), actKey[a], armKind == 1 && armedAct == a);
+            const int code = midiMapMode ? (a < 16 ? actMidi[a] : 0) : actKey[a];
+            drawKeyBadge (g, getLocalArea (b, b->getLocalBounds()), code, armKind == 1 && armedAct == a);
         }
-        // mutes (nombre del track) y solos (S) — áreas separadas
+        // mutes (nombre), solos (S) y —en MIDI— faders de cada track
         {
             const auto clip = faderViewport.isVisible() ? getLocalArea (&faderViewport, faderViewport.getLocalBounds())
                                                         : juce::Rectangle<int>();
@@ -3262,35 +3286,52 @@ public:
                 auto* l = trackLabels[i];
                 if (l == nullptr || ! l->isShowing()) continue;
                 const auto nm = trackNames[i];
-                const int mc = keyByTrack.count (nm) ? keyByTrack[nm] : 0;
-                drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), mc, armKind == 2 && armTrack == nm, clip);
+                drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), codeOf (keyByTrack, midiTrackMute, nm), armKind == 2 && armTrack == nm, clip);
             }
             for (int i = 0; i < soloDots.size() && i < trackNames.size(); ++i)
             {
                 auto* d = soloDots[i];
                 if (d == nullptr || ! d->isShowing()) continue;
                 const auto nm = trackNames[i];
-                const int sc = keyBySolo.count (nm) ? keyBySolo[nm] : 0;
-                drawKeyBadge (g, getLocalArea (d, d->getLocalBounds()), sc, armKind == 4 && armTrack == nm, clip);
+                drawKeyBadge (g, getLocalArea (d, d->getLocalBounds()), codeOf (keyBySolo, midiTrackSolo, nm), armKind == 4 && armTrack == nm, clip);
             }
-            // buses (familias): mute (nombre) y solo (S)
+            if (midiMapMode)   // faders continuos (solo MIDI): sobre el slider
+                for (int i = 0; i < trackSliders.size() && i < trackNames.size(); ++i)
+                {
+                    auto* s = trackSliders[i];
+                    if (s == nullptr || ! s->isShowing()) continue;
+                    const auto nm = trackNames[i];
+                    const int fc = midiTrackFader.count (nm) ? midiTrackFader[nm] : 0;
+                    drawKeyBadge (g, getLocalArea (s, s->getLocalBounds()), fc, armFader && armFaderIdx == i, clip);
+                }
+            // buses (familias): mute, solo y fader
             for (int f = 0; f < busLabels.size() && f < familyNames.size(); ++f)
             {
                 auto* l = busLabels[f];
                 if (l == nullptr || ! l->isShowing()) continue;
                 const auto nm = familyNames[f];
-                const int mc = keyByBusMute.count (nm) ? keyByBusMute[nm] : 0;
-                drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), mc, armKind == 5 && armTrack == nm, clip);
+                drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), codeOf (keyByBusMute, midiBusMute, nm), armKind == 5 && armTrack == nm, clip);
             }
             for (int f = 0; f < busSoloDots.size() && f < familyNames.size(); ++f)
             {
                 auto* d = busSoloDots[f];
                 if (d == nullptr || ! d->isShowing()) continue;
                 const auto nm = familyNames[f];
-                const int sc = keyByBusSolo.count (nm) ? keyByBusSolo[nm] : 0;
-                drawKeyBadge (g, getLocalArea (d, d->getLocalBounds()), sc, armKind == 6 && armTrack == nm, clip);
+                drawKeyBadge (g, getLocalArea (d, d->getLocalBounds()), codeOf (keyByBusSolo, midiBusSolo, nm), armKind == 6 && armTrack == nm, clip);
             }
+            if (midiMapMode)
+                for (int f = 0; f < busSliders.size() && f < familyNames.size(); ++f)
+                {
+                    auto* s = busSliders[f];
+                    if (s == nullptr || ! s->isShowing()) continue;
+                    const auto nm = familyNames[f];
+                    const int fc = midiBusFader.count (nm) ? midiBusFader[nm] : 0;
+                    drawKeyBadge (g, getLocalArea (s, s->getLocalBounds()), fc, armFader && armFaderIdx == -2 && armTrack == nm, clip);
+                }
         }
+        // master fader (solo MIDI)
+        if (midiMapMode && masterSlider.isShowing())
+            drawKeyBadge (g, getLocalArea (&masterSlider, masterSlider.getLocalBounds()), midiMasterFader, armFader && armFaderIdx == -1);
         // bloques de canción (tarjetas del repertorio)
         {
             const auto clip = getLocalArea (this, stripBounds);
@@ -3298,7 +3339,8 @@ public:
             {
                 if (c == nullptr || ! c->isShowing()) continue;
                 const int sid = c->songId;
-                const int code = keyBySong.count (sid) ? keyBySong[sid] : 0;
+                const int code = midiMapMode ? (midiSong.count (sid) ? midiSong[sid] : 0)
+                                             : (keyBySong.count (sid) ? keyBySong[sid] : 0);
                 auto full = getLocalArea (c, c->getLocalBounds());
                 auto host = full.withTrimmedTop (6).withHeight ((int) ((full.getHeight() - 6) * 0.76));   // encierra la portada
                 drawKeyBadge (g, host, code, armKind == 3 && armSong == sid, clip);
@@ -3375,9 +3417,11 @@ public:
         {
             area.removeFromTop (5);
             auto bar = area.removeFromTop (34);
-            editBarBounds = juce::Rectangle<int> (bar.getX(), bar.getY(), 220, bar.getHeight());
-            keyMapBtn.setBounds (editBarBounds);
-            keyMapBtn.toFront (false);
+            editBarBounds = juce::Rectangle<int> (bar.getX(), bar.getY(), 400, bar.getHeight());
+            auto b = editBarBounds;
+            keyMapBtn.setBounds (b.removeFromLeft (188)); b.removeFromLeft (8);
+            midiMapBtn.setBounds (b.removeFromLeft (150));
+            keyMapBtn.toFront (false); midiMapBtn.toFront (false);
             area.removeFromTop (5);
         }
         else area.removeFromTop (8);
@@ -3797,6 +3841,13 @@ private:
         if (! hay && editMode) toggleEdit();   // si quedó sin repertorio estando en edición, salir
     }
 
+    void updateTransportEnabled()   // Play/Inicio/Fade: off en edición, PERO on en modo mapping (para poder armarlos)
+    {
+        const bool en = ! editMode || keyMapMode || midiMapMode;
+        playButton.setEnabled (en);
+        returnButton.setEnabled (en);
+        fadeButton.setEnabled (en);
+    }
     void toggleEdit()
     {
         if (! editMode && lastSetlistId.isEmpty()) return;   // no entrar en edición sin repertorio
@@ -3805,15 +3856,13 @@ private:
         editBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         editBtn.repaint();
         if (editMode) playing.store (false);          // en edición no se reproduce
-        playButton.setEnabled (! editMode);
-        returnButton.setEnabled (! editMode);
-        fadeButton.setEnabled (! editMode);
-        keyMapBtn.setVisible (editMode);              // #4 botón de mapping solo en la barra de Editar
-        if (! editMode && keyMapMode)                  // al salir de edición, salir del mapping
+        updateTransportEnabled();
+        keyMapBtn.setVisible (editMode);              // #4 botones de mapping solo en la barra de Editar
+        midiMapBtn.setVisible (editMode);
+        if (! editMode && (keyMapMode || midiMapMode))   // al salir de edición, salir de los mappings
         {
-            keyMapMode = false; clearArm();
-            keyMapBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
-            keyMapBtn.setButtonText (juce::String::fromUTF8 ("Mapping de teclado"));
+            keyMapMode = false; midiMapMode = false; clearArm(); setFadersArmable (false);
+            refreshMapButtons();
         }
         resized();
         rebuildRepertoireStrip();
@@ -4875,6 +4924,7 @@ private:
 
         buildBuses();
         updateFaderVisibility();
+        if (midiMapMode) setFadersArmable (true);   // #5/#6 mantener faders armables si se rearma la UI en modo MIDI
     }
 
     void buildBuses()
@@ -5488,35 +5538,44 @@ private:
             default: break;
         }
     }
+    bool mapping() const { return keyMapMode || midiMapMode; }   // algún modo de asignación activo
     bool clickOrArm (int a)   // en modo mapping arma la acción fija y NO la ejecuta; true si armó
     {
-        if (! keyMapMode) return false;
-        armKind = 1; armedAct = a; armTrack = {}; armSong = -1; repaint(); return true;
+        if (! mapping()) return false;
+        clearArm(); armKind = 1; armedAct = a; repaint(); return true;
     }
     bool armTrackIfMapping (const juce::String& name)   // MUTE
     {
-        if (! keyMapMode) return false;
-        armKind = 2; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+        if (! mapping()) return false;
+        clearArm(); armKind = 2; armTrack = name; repaint(); return true;
     }
     bool armSoloIfMapping (const juce::String& name)     // SOLO
     {
-        if (! keyMapMode) return false;
-        armKind = 4; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+        if (! mapping()) return false;
+        clearArm(); armKind = 4; armTrack = name; repaint(); return true;
     }
     bool armBusMuteIfMapping (const juce::String& name)
     {
-        if (! keyMapMode) return false;
-        armKind = 5; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+        if (! mapping()) return false;
+        clearArm(); armKind = 5; armTrack = name; repaint(); return true;
     }
     bool armBusSoloIfMapping (const juce::String& name)
     {
-        if (! keyMapMode) return false;
-        armKind = 6; armTrack = name; armedAct = -1; armSong = -1; repaint(); return true;
+        if (! mapping()) return false;
+        clearArm(); armKind = 6; armTrack = name; repaint(); return true;
     }
     bool armSongIfMapping (int songId)
     {
-        if (! keyMapMode) return false;
-        armKind = 3; armSong = songId; armedAct = -1; armTrack = {}; repaint(); return true;
+        if (! mapping()) return false;
+        clearArm(); armKind = 3; armSong = songId; repaint(); return true;
+    }
+    bool armFaderIfMidi (int trackIdx, const juce::String& busName, bool master)   // solo en modo MIDI
+    {
+        if (! midiMapMode) return false;
+        clearArm(); armFader = true;
+        armFaderIdx = master ? -1 : (busName.isNotEmpty() ? -2 : trackIdx);
+        armTrack = busName;
+        repaint(); return true;
     }
     void clearAllForKey (int code)   // quita esa tecla de cualquier asignación previa (sin duplicados)
     {
@@ -5580,15 +5639,192 @@ private:
         o->setProperty ("songs",    juce::var (sg.get()));
         npAppDir().getChildFile ("keymap.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
     }
-    void clearArm() { armKind = 0; armedAct = -1; armSong = -1; armTrack = {}; }
+    void clearArm() { armKind = 0; armedAct = -1; armSong = -1; armTrack = {}; armFader = false; armFaderIdx = -1; }
     void toggleKeyMapMode()
     {
         keyMapMode = ! keyMapMode;
         clearArm();
-        if (keyMapMode) grabKeyboardFocus();
+        if (keyMapMode) { midiMapMode = false; setFadersArmable (false); grabKeyboardFocus(); }
+        updateTransportEnabled();
         resized();
         repaint();
     }
+
+    // ─────────── #5/#6 MIDI IN + learn ───────────
+    void openMidiInputs()   // abre TODAS las entradas MIDI disponibles y escucha
+    {
+        midiInputs.clear();
+        for (auto& d : juce::MidiInput::getAvailableDevices())
+        {
+            if (auto in = juce::MidiInput::openDevice (d.identifier, this))
+            { in->start(); midiInputs.add (in.release()); }
+        }
+    }
+    void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& m) override
+    {   // llega en el hilo MIDI -> pasar al hilo de mensajes
+        juce::Component::SafePointer<MainComponent> sp (this);
+        const juce::MidiMessage msg (m);
+        juce::MessageManager::callAsync ([sp, msg] { if (sp) sp->onMidiMessage (msg); });
+    }
+    static int midiTrigCode (const juce::MidiMessage& m)   // código de disparador (Note o CC-botón); 0 si no aplica
+    {
+        const int ch = juce::jlimit (1, 16, m.getChannel()) - 1;
+        if (m.isNoteOn())      return 1000000 + ch * 128 + m.getNoteNumber();
+        if (m.isController())  return 2000000 + ch * 128 + m.getControllerNumber();
+        return 0;
+    }
+    static int midiCcCode (const juce::MidiMessage& m)     // código de un CC (para faders continuos); 0 si no es CC
+    { return m.isController() ? (2000000 + (juce::jlimit (1,16,m.getChannel())-1) * 128 + m.getControllerNumber()) : 0; }
+    static juce::String midiLabel (int code)
+    {
+        if (code <= 0) return {};
+        const int type = code / 1000000, n = code % 128;
+        return (type == 1 ? "N" : "CC") + juce::String (n);
+    }
+    void clearAllForMidi (int code)   // quita ese código MIDI de cualquier asignación previa (sin duplicados)
+    {
+        for (auto& v : actMidi) if (v == code) v = 0;
+        for (auto* mp : { &midiTrackMute, &midiTrackSolo, &midiBusMute, &midiBusSolo, &midiTrackFader, &midiBusFader })
+            for (auto& kv : *mp) if (kv.second == code) kv.second = 0;
+        for (auto& kv : midiSong) if (kv.second == code) kv.second = 0;
+        if (midiMasterFader == code) midiMasterFader = 0;
+    }
+    void setFadersArmable (bool on)   // en modo MIDI, los faders no se arrastran: el click los arma
+    {
+        for (auto* s : trackSliders) s->setInterceptsMouseClicks (! on, ! on);
+        for (auto* s : busSliders)   s->setInterceptsMouseClicks (! on, ! on);
+        masterSlider.setInterceptsMouseClicks (! on, ! on);
+    }
+    void toggleMidiMapMode()
+    {
+        midiMapMode = ! midiMapMode;
+        clearArm();
+        if (midiMapMode) { keyMapMode = false; openMidiInputs(); }   // re-escanear por si conectaron el controlador
+        setFadersArmable (midiMapMode);
+        updateTransportEnabled();
+        resized();
+        repaint();
+    }
+    void refreshMapButtons()   // estado visual de los dos botones de mapping
+    {
+        keyMapBtn.setColour (juce::TextButton::buttonColourId, keyMapMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));
+        keyMapBtn.setButtonText (keyMapMode ? juce::String::fromUTF8 ("Mapping de teclado \xe2\x9c\x93") : juce::String::fromUTF8 ("Mapping de teclado"));
+        midiMapBtn.setColour (juce::TextButton::buttonColourId, midiMapMode ? juce::Colour (0xffB84BE6) : juce::Colour (0xff1f1f1f));
+        midiMapBtn.setButtonText (midiMapMode ? juce::String::fromUTF8 ("MIDI Mapping \xe2\x9c\x93") : juce::String::fromUTF8 ("MIDI Mapping"));
+        keyMapBtn.repaint(); midiMapBtn.repaint();
+    }
+    void loadMidiMap()
+    {
+        for (auto& v : actMidi) v = 0;
+        midiTrackMute.clear(); midiTrackSolo.clear(); midiBusMute.clear(); midiBusSolo.clear();
+        midiSong.clear(); midiTrackFader.clear(); midiBusFader.clear(); midiMasterFader = 0;
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("midimap.json"));
+        if (auto* o = v.getDynamicObject())
+        {
+            for (int a = 0; a < kaCount && a < 16; ++a) actMidi[a] = (int) o->getProperty (juce::String (a));
+            auto rd = [&o] (const char* k, std::map<juce::String,int>& mp)
+            { if (auto* d = o->getProperty (k).getDynamicObject()) for (auto& pr : d->getProperties()) mp[pr.name.toString()] = (int) pr.value; };
+            rd ("tmute", midiTrackMute); rd ("tsolo", midiTrackSolo);
+            rd ("bmute", midiBusMute);   rd ("bsolo", midiBusSolo);
+            rd ("tfader", midiTrackFader); rd ("bfader", midiBusFader);
+            if (auto* d = o->getProperty ("songs").getDynamicObject())
+                for (auto& pr : d->getProperties()) midiSong[pr.name.toString().getIntValue()] = (int) pr.value;
+            midiMasterFader = (int) o->getProperty ("master");
+        }
+    }
+    void saveMidiMap()
+    {
+        juce::DynamicObject::Ptr o = new juce::DynamicObject();
+        for (int a = 0; a < kaCount && a < 16; ++a) o->setProperty (juce::String (a), actMidi[a]);
+        auto wr = [&o] (const char* k, std::map<juce::String,int>& mp)
+        { juce::DynamicObject::Ptr d = new juce::DynamicObject(); for (auto& kv : mp) if (kv.second != 0) d->setProperty (kv.first, kv.second); o->setProperty (k, juce::var (d.get())); };
+        wr ("tmute", midiTrackMute); wr ("tsolo", midiTrackSolo);
+        wr ("bmute", midiBusMute);   wr ("bsolo", midiBusSolo);
+        wr ("tfader", midiTrackFader); wr ("bfader", midiBusFader);
+        juce::DynamicObject::Ptr sg = new juce::DynamicObject();
+        for (auto& kv : midiSong) if (kv.second != 0) sg->setProperty (juce::String (kv.first), kv.second);
+        o->setProperty ("songs", juce::var (sg.get()));
+        o->setProperty ("master", midiMasterFader);
+        npAppDir().getChildFile ("midimap.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
+    }
+    static double ccToDb (int value) { return -60.0 + juce::jlimit (0, 127, value) / 127.0 * 60.0; }
+
+    void onMidiMessage (const juce::MidiMessage& m)
+    {
+        if (midiMapMode)
+        {
+            if (armFader)                       // aprendiendo un fader continuo: necesita un CC
+            {
+                const int cc = midiCcCode (m);
+                if (cc == 0) return;            // ignorar notas para faders
+                const bool same = (armFaderIdx == -1 && midiMasterFader == cc)
+                               || (armFaderIdx == -2 && midiBusFader.count (armTrack) && midiBusFader[armTrack] == cc)
+                               || (armFaderIdx >= 0  && armFaderIdx < trackNames.size() && midiTrackFader.count (trackNames[armFaderIdx]) && midiTrackFader[trackNames[armFaderIdx]] == cc);
+                if (same) { if (armFaderIdx == -1) midiMasterFader = 0; else if (armFaderIdx == -2) midiBusFader[armTrack] = 0; else midiTrackFader[trackNames[armFaderIdx]] = 0; }
+                else
+                {
+                    clearAllForMidi (cc);
+                    if (armFaderIdx == -1) midiMasterFader = cc;
+                    else if (armFaderIdx == -2) midiBusFader[armTrack] = cc;
+                    else midiTrackFader[trackNames[armFaderIdx]] = cc;
+                }
+                clearArm(); saveMidiMap(); repaint(); return;
+            }
+            if (armKind == 0) return;
+            const int code = midiTrigCode (m);
+            if (code == 0) return;              // ignorar mensajes que no son Note/CC
+            const bool same =
+                (armKind == 1 && armedAct >= 0 && actMidi[armedAct] == code)
+             || (armKind == 2 && midiTrackMute.count (armTrack) && midiTrackMute[armTrack] == code)
+             || (armKind == 4 && midiTrackSolo.count (armTrack) && midiTrackSolo[armTrack] == code)
+             || (armKind == 5 && midiBusMute.count (armTrack)   && midiBusMute[armTrack]   == code)
+             || (armKind == 6 && midiBusSolo.count (armTrack)   && midiBusSolo[armTrack]   == code)
+             || (armKind == 3 && midiSong.count (armSong)       && midiSong[armSong]       == code);
+            if (same)
+            {
+                if (armKind == 1) actMidi[armedAct] = 0;
+                else if (armKind == 2) midiTrackMute[armTrack] = 0;
+                else if (armKind == 4) midiTrackSolo[armTrack] = 0;
+                else if (armKind == 5) midiBusMute[armTrack] = 0;
+                else if (armKind == 6) midiBusSolo[armTrack] = 0;
+                else if (armKind == 3) midiSong[armSong] = 0;
+            }
+            else
+            {
+                clearAllForMidi (code);
+                if (armKind == 1) actMidi[armedAct] = code;
+                else if (armKind == 2) midiTrackMute[armTrack] = code;
+                else if (armKind == 4) midiTrackSolo[armTrack] = code;
+                else if (armKind == 5) midiBusMute[armTrack] = code;
+                else if (armKind == 6) midiBusSolo[armTrack] = code;
+                else if (armKind == 3) midiSong[armSong] = code;
+            }
+            clearArm(); saveMidiMap(); repaint(); return;
+        }
+
+        // Modo normal: primero faders continuos (CC), luego disparadores
+        if (m.isController())
+        {
+            const int cc = midiCcCode (m);
+            const double db = ccToDb (m.getControllerValue());
+            if (midiMasterFader == cc) { masterSlider.setValue (db, juce::sendNotificationSync); return; }
+            for (auto& kv : midiBusFader)
+                if (kv.second == cc) { const int f = familyNames.indexOf (kv.first); if (f >= 0 && f < busSliders.size()) busSliders[f]->setValue (db, juce::sendNotificationSync); return; }
+            for (auto& kv : midiTrackFader)
+                if (kv.second == cc) { const int i = trackIndexForName (kv.first); if (i >= 0 && i < trackSliders.size()) trackSliders[i]->setValue (db, juce::sendNotificationSync); return; }
+        }
+        const bool press = (m.isNoteOn()) || (m.isController() && m.getControllerValue() >= 64);
+        if (! press) return;
+        const int code = midiTrigCode (m);
+        if (code == 0) return;
+        for (int a = 0; a < kaCount; ++a) if (actMidi[a] == code) { doAct (a); return; }
+        for (auto& kv : midiTrackMute) if (kv.second == code) { const int i = trackIndexForName (kv.first); if (i >= 0) toggleTrackMute (i); return; }
+        for (auto& kv : midiTrackSolo) if (kv.second == code) { const int i = trackIndexForName (kv.first); if (i >= 0) toggleTrackSolo (i); return; }
+        for (auto& kv : midiBusMute)   if (kv.second == code) { const int f = familyNames.indexOf (kv.first); if (f >= 0) toggleBusMute (f); return; }
+        for (auto& kv : midiBusSolo)   if (kv.second == code) { const int f = familyNames.indexOf (kv.first); if (f >= 0) toggleBusSolo (f); return; }
+        for (auto& kv : midiSong)      if (kv.second == code) { selectSongById (kv.first); return; }
+    }
+
     juce::Component* btnForAct (int a)
     {
         switch (a)
@@ -5777,6 +6013,20 @@ private:
     juce::String armTrack;
     bool editBarOpen = false;                   // barra desplegable de Editar
     juce::Rectangle<int> editBarBounds;         // fondo de la barra de Editar
+
+    // #5/#6 MIDI IN + learn (paralelo al mapping de teclado)
+    juce::OwnedArray<juce::MidiInput> midiInputs;   // todas las entradas MIDI abiertas
+    bool midiMapMode = false;                        // modo "MIDI Mapping"
+    bool armFader = false;                           // se armó un fader (control continuo), no un disparador
+    int  armFaderIdx = -1;                           // -1=master, >=0 track, o bus por nombre en armTrack
+    juce::TextButton midiMapBtn;                     // botón "MIDI Mapping" en la barra de Editar
+    // disparadores (Note/CC-botón) — códigos MIDI, mismos elementos que el teclado
+    int  actMidi[16] = { 0 };                        // por acción fija (kaCount<=16)
+    std::map<juce::String,int> midiTrackMute, midiTrackSolo, midiBusMute, midiBusSolo;
+    std::map<int,int> midiSong;
+    // faders continuos (CC -> dB)
+    std::map<juce::String,int> midiTrackFader, midiBusFader;   // nombre -> código CC
+    int  midiMasterFader = 0;
 
     juce::Image logoImg;
     PillLNF pillLnf;
