@@ -47,7 +47,7 @@ from flask import (
 )
 from werkzeug.utils import secure_filename
 
-from transposicion import transponer_cancion
+from transposicion import transponer_cancion, NOTA_A_INDICE
 import usuarios
 import emails as emails_module
 
@@ -1121,9 +1121,13 @@ def admin():
             **s,
             "canciones_resolved": canciones,
         })
+    pads_lista = []
+    for _p in _pads_cargar():
+        pads_lista.append({**_p, **_pad_estado(_p["id"])})
     return render_template(
         "admin.html",
         biblioteca=biblioteca_ordenada,
+        pads=pads_lista,
         setlists=setlists_full,
         live_activo=live_activo,
         live_ip=cfg.get("mac_local_ip"),
@@ -1760,6 +1764,351 @@ def _render_tono(numero, n):
         _asegurar_web(numero, n)
     except Exception as e:
         logging.error("proxys tono %s/%s: %s", numero, n, e)
+
+
+# ───────────────────────── Pads ambientales ─────────────────────────
+# Biblioteca GLOBAL de pads por tono (12 raíces), reutilizable por todas
+# las canciones. Se sube UN pad base y el servidor genera los otros 11 por
+# pitch-shift (rubberband), igual que los tonos de las canciones. Cada pack
+# es un timbre distinto (Warm, Cinematic, etc.). NeuralPlay elige el pad
+# según la raíz del tono de cada canción.
+CARPETA_PADS = BASE_DIR / "pads"
+CARPETA_PADS.mkdir(exist_ok=True)
+_PADS_INDEX = CARPETA_PADS / "packs.json"
+_EXT_AUDIO_PAD = (".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aif", ".aiff")
+PAD_ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+_pads_lock = threading.Lock()
+
+
+def _pad_root_idx(tono):
+    """Raíz de un tono ('Db', 'Am', 'F#m'...) -> clase de altura 0-11, o None."""
+    m = re.match(r'^\s*([A-G][#b]?)', tono or '')
+    if not m:
+        return None
+    return NOTA_A_INDICE.get(m.group(1))
+
+
+def _pads_cargar():
+    try:
+        return json.loads(_PADS_INDEX.read_text())
+    except Exception:
+        return []
+
+
+def _pads_guardar(lst):
+    try:
+        _PADS_INDEX.write_text(json.dumps(lst, ensure_ascii=False, indent=2))
+    except Exception as e:
+        logging.error("guardar packs.json: %s", e)
+
+
+def _pad_pack(pack_id):
+    for p in _pads_cargar():
+        if p.get("id") == pack_id:
+            return p
+    return None
+
+
+def _pad_semitonos(base_idx, target_idx):
+    """Semitonos mínimos (rango -5..+6) para ir de base_idx a target_idx."""
+    d = (target_idx - base_idx) % 12
+    if d > 6:
+        d -= 12
+    return d
+
+
+def _pad_estado(pack_id):
+    """Progreso/estado del render de un pack: {hechos,total,listo,render}."""
+    d = CARPETA_PADS / pack_id
+    total = 12
+    lock = d / ".lock"
+    if lock.exists():
+        hechos = 0
+        try:
+            hechos, total = (int(x) for x in lock.read_text().split("/"))
+        except Exception:
+            pass
+        return {"hechos": hechos, "total": total, "listo": False, "render": True}
+    hechos = sum(1 for i in range(12) if (d / ("pad_%d.wav" % i)).is_file())
+    return {"hechos": hechos, "total": total, "listo": hechos >= total, "render": False}
+
+
+def _render_pad_pack(pack_id):
+    """Genera los 12 tonos del pad desde el base, por pitch-shift (rubberband)."""
+    pack = _pad_pack(pack_id)
+    if not pack:
+        return
+    d = CARPETA_PADS / pack_id
+    d.mkdir(parents=True, exist_ok=True)
+    base = d / ("base" + pack.get("ext", ".wav"))
+    if not base.is_file():
+        logging.error("pad pack %s sin base", pack_id)
+        return
+    base_idx = int(pack.get("base_idx", 0))
+    lock = d / ".lock"
+    try:
+        lock.write_text("0/12")
+        hechos = 0
+        for i in range(12):
+            out = d / ("pad_%d.wav" % i)
+            if not out.exists():
+                semis = _pad_semitonos(base_idx, i)
+                if semis == 0:
+                    cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
+                           "-i", str(base), str(out)]
+                else:
+                    ratio = 2 ** (semis / 12.0)
+                    cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
+                           "-i", str(base), "-af", "rubberband=pitch=" + repr(ratio),
+                           str(out)]
+                try:
+                    subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, timeout=600)
+                except Exception as e:
+                    logging.error("render pad %s idx %d: %s", pack_id, i, e)
+            hechos += 1
+            try:
+                lock.write_text(str(hechos) + "/12")
+            except Exception:
+                pass
+    finally:
+        try:
+            lock.unlink()
+        except Exception:
+            pass
+
+
+def _render_pad_async(pack_id):
+    threading.Thread(target=_render_pad_pack, args=(pack_id,), daemon=True).start()
+
+
+# ---- Admin: gestión de pads ----
+@app.route("/admin/pads")
+@login_required("admin")
+def admin_pads():
+    packs = []
+    for p in _pads_cargar():
+        packs.append({**p, **_pad_estado(p["id"])})
+    return render_template("admin_pads.html", packs=packs, roots=PAD_ROOTS)
+
+
+@app.route("/admin/pads/crear", methods=["POST"])
+@login_required("admin")
+def admin_pads_crear():
+    nombre = (request.form.get("nombre") or "").strip()
+    artista = (request.form.get("artista") or "").strip()
+    base_root = (request.form.get("base_root") or "").strip()
+    archivo = request.files.get("pad")
+    if not nombre:
+        flash("Ponele nombre al pack", "error")
+        return redirect(url_for("admin_pads"))
+    base_idx = _pad_root_idx(base_root)
+    if base_idx is None:
+        flash("Tono base inválido", "error")
+        return redirect(url_for("admin_pads"))
+    if not archivo or archivo.filename == "":
+        flash("Subí el pad base", "error")
+        return redirect(url_for("admin_pads"))
+    ext = os.path.splitext(archivo.filename)[1].lower()
+    if ext not in _EXT_AUDIO_PAD:
+        flash("Formato no válido (wav/mp3/m4a/ogg/flac/aiff)", "error")
+        return redirect(url_for("admin_pads"))
+    with _pads_lock:
+        lst = _pads_cargar()
+        pack_id = secrets.token_hex(4)
+        while any(x.get("id") == pack_id for x in lst):
+            pack_id = secrets.token_hex(4)
+        d = CARPETA_PADS / pack_id
+        d.mkdir(parents=True, exist_ok=True)
+        archivo.save(str(d / ("base" + ext)))
+        portada_rel = ""
+        pf = request.files.get("portada")
+        if pf and pf.filename:
+            pext = os.path.splitext(pf.filename)[1].lower()
+            if pext in (".png", ".jpg", ".jpeg", ".webp"):
+                try:
+                    (BASE_DIR / "static" / "portadas").mkdir(parents=True, exist_ok=True)
+                    pf.save(str(BASE_DIR / "static" / "portadas" / ("pad_" + pack_id + pext)))
+                    portada_rel = "portadas/pad_" + pack_id + pext
+                except Exception as e:
+                    logging.error("portada pad %s: %s", pack_id, e)
+        entrada = {"id": pack_id, "nombre": nombre, "artista": artista,
+                   "base_root": PAD_ROOTS[base_idx], "base_idx": base_idx, "ext": ext}
+        if portada_rel:
+            import time as _t
+            entrada["portada"] = portada_rel
+            entrada["portada_ts"] = int(_t.time())
+        lst.append(entrada)
+        _pads_guardar(lst)
+    _render_pad_async(pack_id)
+    flash("Pad creado. Generando los 12 tonos…", "success")
+    return redirect(url_for("admin_pads"))
+
+
+@app.route("/admin/pads/<pack_id>/eliminar", methods=["POST"])
+@login_required("admin")
+def admin_pads_eliminar(pack_id):
+    with _pads_lock:
+        _pads_guardar([x for x in _pads_cargar() if x.get("id") != pack_id])
+    d = CARPETA_PADS / pack_id
+    if d.is_dir():
+        try:
+            shutil.rmtree(str(d))
+        except Exception:
+            pass
+    for _ext in (".png", ".jpg", ".jpeg", ".webp"):
+        _pf = BASE_DIR / "static" / "portadas" / ("pad_" + pack_id + _ext)
+        try:
+            if _pf.exists():
+                _pf.unlink()
+        except Exception:
+            pass
+    flash("Pad eliminado", "success")
+    return redirect(url_for("admin_pads"))
+
+
+@app.route("/admin/pads/<pack_id>/regenerar", methods=["POST"])
+@login_required("admin")
+def admin_pads_regenerar(pack_id):
+    if not _pad_pack(pack_id):
+        abort(404)
+    d = CARPETA_PADS / pack_id
+    for i in range(12):
+        f = d / ("pad_%d.wav" % i)
+        try:
+            if f.exists():
+                f.unlink()
+        except Exception:
+            pass
+    _render_pad_async(pack_id)
+    flash("Regenerando los 12 tonos…", "success")
+    return redirect(url_for("admin_pads"))
+
+
+@app.route("/admin/pads/<pack_id>/estado")
+@login_required("admin")
+def admin_pads_estado(pack_id):
+    if not _pad_pack(pack_id):
+        abort(404)
+    return jsonify(_pad_estado(pack_id))
+
+
+@app.route("/admin/pads/<pack_id>/editar", methods=["GET", "POST"])
+@login_required("admin")
+def admin_pads_editar(pack_id):
+    pack = _pad_pack(pack_id)
+    if not pack:
+        abort(404)
+    if request.method == "GET":
+        return render_template("admin_pad_editar.html", p=pack, roots=PAD_ROOTS)
+    nombre = (request.form.get("nombre") or "").strip()
+    artista = (request.form.get("artista") or "").strip()
+    base_root = (request.form.get("base_root") or "").strip()
+    base_idx = _pad_root_idx(base_root)
+    if not nombre or base_idx is None:
+        flash("Datos invalidos", "error")
+        return redirect(url_for("admin_pads_editar", pack_id=pack_id))
+    d = CARPETA_PADS / pack_id
+    regen = False
+    with _pads_lock:
+        lst = _pads_cargar()
+        for it in lst:
+            if it.get("id") != pack_id:
+                continue
+            it["nombre"] = nombre
+            it["artista"] = artista
+            if int(it.get("base_idx", 0)) != base_idx:
+                it["base_idx"] = base_idx
+                it["base_root"] = PAD_ROOTS[base_idx]
+                regen = True
+            nuevo = request.files.get("pad")
+            if nuevo and nuevo.filename:
+                ext = os.path.splitext(nuevo.filename)[1].lower()
+                if ext in _EXT_AUDIO_PAD:
+                    for old in d.glob("base.*"):
+                        try:
+                            old.unlink()
+                        except Exception:
+                            pass
+                    d.mkdir(parents=True, exist_ok=True)
+                    nuevo.save(str(d / ("base" + ext)))
+                    it["ext"] = ext
+                    regen = True
+            pf = request.files.get("portada")
+            if pf and pf.filename:
+                pext = os.path.splitext(pf.filename)[1].lower()
+                if pext in (".png", ".jpg", ".jpeg", ".webp"):
+                    try:
+                        (BASE_DIR / "static" / "portadas").mkdir(parents=True, exist_ok=True)
+                        for oe in (".png", ".jpg", ".jpeg", ".webp"):
+                            of = BASE_DIR / "static" / "portadas" / ("pad_" + pack_id + oe)
+                            if oe != pext and of.exists():
+                                try:
+                                    of.unlink()
+                                except Exception:
+                                    pass
+                        pf.save(str(BASE_DIR / "static" / "portadas" / ("pad_" + pack_id + pext)))
+                        import time as _t
+                        it["portada"] = "portadas/pad_" + pack_id + pext
+                        it["portada_ts"] = int(_t.time())
+                    except Exception as e:
+                        logging.error("portada edit %s: %s", pack_id, e)
+            break
+        _pads_guardar(lst)
+    if regen:
+        for i in range(12):
+            f = d / ("pad_%d.wav" % i)
+            try:
+                if f.exists():
+                    f.unlink()
+            except Exception:
+                pass
+        _render_pad_async(pack_id)
+    flash("Pad actualizado" + (". Regenerando los 12 tonos…" if regen else ""), "success")
+    return redirect(url_for("admin_pads"))
+
+
+@app.route("/admin/pads/<pack_id>/audio/<int:idx>")
+@login_required("admin")
+def admin_pads_audio(pack_id, idx):
+    """Pre-escucha en el admin: sirve el pad renderizado del tono idx (0-11)."""
+    if idx < 0 or idx > 11 or not _pad_pack(pack_id):
+        abort(404)
+    f = CARPETA_PADS / pack_id / ("pad_%d.wav" % idx)
+    if not f.is_file():
+        abort(404)
+    return send_file(str(f))
+
+
+# ---- API NeuralPlay: pads ----
+@app.route("/api/live/pads")
+def api_live_pads():
+    """NeuralPlay: lista de packs de pads con su estado. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    out = []
+    for p in _pads_cargar():
+        est = _pad_estado(p["id"])
+        out.append({"id": p["id"], "nombre": p.get("nombre"),
+                    "base_root": p.get("base_root"), "base_idx": p.get("base_idx", 0),
+                    "artista": p.get("artista", ""),
+                    "portada": p.get("portada", ""), "portada_ts": p.get("portada_ts", 0),
+                    "listo": est["listo"]})
+    return jsonify(out)
+
+
+@app.route("/api/live/pad/<pack_id>/<int:idx>")
+def api_live_pad(pack_id, idx):
+    """NeuralPlay: sirve el pad (wav) del pack para la raíz idx (0-11). Token."""
+    if not _token_ok():
+        abort(403)
+    if idx < 0 or idx > 11 or not _pad_pack(pack_id):
+        abort(404)
+    f = CARPETA_PADS / pack_id / ("pad_%d.wav" % idx)
+    if not f.is_file():
+        abort(404)
+    return send_file(str(f))
+
 
 
 @app.route("/api/pistas/<int:numero>")

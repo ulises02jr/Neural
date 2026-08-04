@@ -26,6 +26,7 @@ rsync -a \
   --exclude='*.db' \
   --exclude='*.bak' --exclude='*.bak-*' --exclude='*.bak*' \
   --exclude='pistas' \
+  --exclude='pads' \
   --exclude='descargas' \
   --exclude='backups_canciones' \
   --exclude='canciones/*.json' \

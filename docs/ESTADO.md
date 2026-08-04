@@ -1,63 +1,74 @@
 # Estado del proyecto — Neural (memoria)
 
-> Última actualización: 2026-08-01. Snapshot de dónde está el ecosistema, qué se hizo y qué sigue.
+> Última actualización: 2026-08-04. Snapshot de dónde está el ecosistema, qué se hizo y qué sigue.
 
 ## Ecosistema (3 apps)
-- **NeuralPlay** — reproductor multipista nativo macOS (C++/JUCE 8, un solo `Main.cpp` ~5.9k líneas). App en desarrollo activo.
+- **NeuralPlay** — reproductor multipista nativo macOS (C++/JUCE 8, un solo `Main.cpp` ~6.8k líneas). App en desarrollo activo. Proyecto **CMake**, target `NeuralPlaySpike` (PRODUCT_NAME `NeuralPlay`).
 - **Server** — Flask en VPS `root@64.227.10.28`, en `/home/charts/charts_app` (usuario `charts`), gunicorn `127.0.0.1:5051`, nginx + Let's Encrypt. Panel admin + charts + API `/api/live/...`.
 - **NeuralSync** — app puente (Python/rumps) para músicos que tocan desde su propio DAW; sincroniza la sesión en vivo con los charts.
 
 Dominio: `miworship.miiglesiainternacional.org`. Repo: `github.com/ulises02jr/Neural` (monorepo: `NeuralPlay/`, `NeuralSync/`, `server/`, `docs/`).
 
 ## Git / despliegue (IMPORTANTE)
-- El **Mac** commitea local pero **NO tiene push** (llave sin acceso).
-- El **VPS** (`/home/charts/Neural`, dueño **root**) es el que **pushea** a GitHub con el alias SSH `github-charts` (llave de deploy en root).
-- Flujo para subir cambios del Mac: `scp` del archivo al VPS -> en el VPS (como root) `git add/commit/push`.
-- `respaldar.sh` (en `/home/charts/Neural`, corre como root) respalda SOLO el código del server (`charts_app` -> `server/`), nunca datos ni secretos.
-- Nunca subir: `pistas/`, `usuarios.db`, `secrets.json`, `config.json`.
+- El **Mac** commitea local pero **NO tiene push** (llave sin acceso). Código autoritativo de **NeuralPlay** = el del Mac.
+- El **VPS** (`/home/charts/Neural`, dueño **root**) es el que **pushea** a GitHub con el alias SSH `github-charts`. Código autoritativo del **server** = `charts_app` (producción).
+- Flujo del server: `respaldar.sh` hace rsync `charts_app -> server/` (excluye datos/secretos/`pistas`/`pads`/portadas), luego `git add/commit/push`.
+- Flujo de NeuralPlay: `scp Main.cpp` del Mac al VPS repo, y commit/push desde el VPS.
+- Nunca subir: `pistas/`, `pads/`, `static/portadas`, `usuarios.db`, `secrets.json`, `config.json`.
 - Nota: Mac y VPS tienen historiales divergentes (mismo contenido, distinto hash). Alinear con pull cuando convenga.
 
 ## NeuralPlay — funciones ya hechas
 Motor de audio: mezcla por-track con ganancias atómicas, ruteo por familia (hasta 32 salidas), grilla de beats (`currentBeatGrid`), tempo dinámico por medley (`currentBpm()`), MIDI out por cajas, sección/mapa de canciones, descarga en 2 fases con barra por track.
 
-Bloque de mejoras 2026-08-01 (commit `bef500a` en GitHub / `4619586` en Mac):
-1. **Pre-roll por sección** (menú, opcional): al dar Play justo al inicio de una sección, retrocede 1 compás y sube los faders hasta el downbeat. Click y Guía se quedan a nivel para oír el conteo. Persistente (`storage.json`).
-2. **Puntos de inicio/fin por canción** (in/out): en la ventana de tono, min:seg opcional. Persistente (`inout.json`).
-3. **Sección de click al final**: bloque de 2 compases DESPUÉS del final, con **metrónomo sintetizado** ruteado a la salida del Click (el click grabado suele acabar antes). Loop infinito reactivable sin saltos, ticks por beat, `+`/`-` en modo Editar. Sin loop, al terminar vuelve al inicio. Persistente (`clicksec.json`).
-4. **Mapping de teclado**: barra desplegable en Editar (entre mapa y faders). Asigna teclas a transporte, Pad/Buses/MIDI/faders, **mute y solo de tracks y de buses**, y bloques de canción. Re-teclar desasigna, sin duplicados, badges translúcidos con la tecla en la esquina. Persistente (`keymap.json`).
-- **Tope de faders** en el volumen original (0 dB, sin boost) en tracks, buses y master.
-- Menú **"Master por canción"** y **"Buses y mute por canción"**: independiente por canción o general para todo el setlist. El mute general es por **FAMILIA (bus)** (estable entre canciones) con regla de dos capas (canal suelto vs familia bus-bloqueada). Persistente (`storage.json`).
-- **Aviso de cambios sin guardar**: puntito rojo en el botón Repertorios + "Cambios sin guardar" en el picker; se apaga al Guardar; no se activa con cambios programáticos ni con el Fade.
+1. **Pre-roll por sección** (menú): al dar Play al inicio de una sección, retrocede 1 compás y sube los faders hasta el downbeat (Click/Guía a nivel). `storage.json`.
+2. **Puntos de inicio/fin por canción** (in/out): min:seg opcional en la ventana de tono. `inout.json`.
+3. **Sección de click al final**: 2 compases DESPUÉS del final con **metrónomo sintetizado** al Click; loop ∞, `+`/`-` en Editar. `clicksec.json`.
+4. **Mapping de teclado**: barra en Editar; teclas a transporte, mute/solo de tracks y buses, bloques de canción. `keymap.json`.
+5+6. **MIDI IN + MIDI learn**: botón "MIDI Mapping"; aprende acciones + **faders continuos** por CC (incluye master y el fader del Pad). `midimap.json`.
+- **Tope de faders** a 0 dB. Menú **Master/Buses por canción** (mute general por FAMILIA). **Aviso de cambios sin guardar** (punto rojo en Repertorios).
 
 ## Guardado / sincronización de mezcla
-- La mezcla por canción (faders, mutes, solos, buses, master) vive **en memoria** durante la sesión (se recuerda al cambiar de canción). Se persiste **al servidor SOLO al tocar "Guardar"** en Repertorios (`saveRepertoireMixes` -> `/api/live/setlist/<id>/mix`).
-- Las opciones del menú (pre-roll, master/buses generales, mezcla general) **autoguardan localmente** en `storage.json` (preferencias del dispositivo, no viajan a la nube).
-- Otro músico de la organización ve los cambios de mezcla **solo después de que alguien dio Guardar**.
+- La mezcla por canción vive **en memoria**; se persiste al servidor **SOLO al tocar "Guardar"** en Repertorios. Opciones del menú autoguardan local en `storage.json`. Otro músico ve los cambios solo tras Guardar.
 
 ## Pendiente conocido (bug menor)
-- **Snap del playhead a la barra de click** al soltar el arrastre en el mapa: implementado pero no funciona en la práctica; quedó pausado para retomar después.
+- **Snap del playhead a la barra de click**: implementado pero no funciona; pausado.
 
-## Roadmap (19 ítems, orden de dificultad)
-Hechos: **1** (pre-roll), **2** (in/out), **3** (click final), **4** (mapping teclado), **5+6** (MIDI IN + MIDI learn). También (de sesiones previas): 32 salidas y Dante (vía Dante Virtual Soundcard).
+## Roadmap y plataformas
 
-MIDI (5+6) — detalle: entrada MIDI abierta a todos los puertos (`MidiInputCallback`), botón "MIDI Mapping" en la barra de Editar junto a "Mapping de teclado" (conviven). Aprende las mismas acciones que el teclado (transporte, mute/solo de tracks y buses, canciones, Pad/Buses/MIDI/faders) por Note o CC-botón, MÁS **faders continuos** por CC (perilla/fader del controlador -> dB, click en el fader en pantalla para armarlo). Re-aprender desasigna, sin duplicados. Persistente en `midimap.json`. Play/Inicio/Fade se habilitan en modo mapping para poder armarlos.
+### Plataformas por app (DECISIÓN)
+Se elige por **criticidad de timing**, no por abarcar (como Playback de MultiTracks / Prime de Loop Community, Apple-only a propósito).
+- **NeuralCharts** → **TODAS** (iPhone, iPad, macOS, Windows, Android) vía **PWA** (solo visor + ensayo, no crítico → barato y de alcance enorme).
+- **NeuralPlay** → **Mac + iPad** (motor en vivo, timing crítico).
+- **NeuralSync** → **Mac + Windows** (favor al músico que produce en su DAW sobre PC).
+- Costos (verificado 2026-08): Apple Developer $99/año; Google Play $25 único; JUCE Personal gratis / Indie ~$40/año al vender; firma Windows opcional ~$100-400/año. El costo real es TIEMPO + hardware de prueba.
 
-Pendientes, del más fácil:
-7. Pads ambientales (loop por tono + crossfade) — alto valor musical. **<- siguiente recomendado**.
-8. NeuralCharts (empaquetar panel del músico como app).
-9. SMPTE/LTC (arrancar por MTC vía MIDI).
-10. Control remoto a distancia de NeuralPlay (server embebido).
-11. NeuralPlay para Windows.
-12. Editar notas/cues MIDI (mini piano-roll).
-13. Automatización de faders (se cuelga del motor de 16/17).
-14. Crear/compartir arreglos + notificaciones.
-15. Asientos para músicos (licencias/cuentas).
-16. Transiciones entre canciones (crossfade/gapless/auto-advance) — motor nuevo.
-17. Editar arreglo + reordenar secciones (no-lineal) — mismo motor que 16.
-18. NeuralPlay para iPad/iPhone.
-19. Redundancia con PlayAUDIO 12 (sincronía real entre dos máquinas).
+### Hecho
+1-6 (arriba) + **#7 Pads ambientales** (servidor + NeuralPlay, completo — ver abajo). También: 32 salidas + Dante.
 
-Notas de arquitectura: 16+17 (+13) son el mismo motor multi-región con curvas — diseñarlo una vez. 5+6 van pegados. 8+14 comparten infra de cuentas/notificaciones.
+### Bloque a terminar (orden por esfuerzo)
+- **NeuralCharts como PWA** (todas las plataformas) — barato, alcance enorme.
+- **NeuralSync para Windows** (cambiar rumps por lib multiplataforma + PyInstaller).
+- **SMPTE / LTC** (arrancar por MTC vía MIDI).
+- **NeuralPlay para iPad** (rediseño touch).
+
+### Después (deferido)
+Transiciones entre canciones (motor nuevo; diseño en `docs/DISENO_16_17.md`); editar arreglo + reordenar secciones (no-lineal, mismo motor); control remoto a distancia; editar notas/cues MIDI; automatización de faders; crear/compartir arreglos + notificaciones; asientos/licencias; redundancia PlayAUDIO 12.
+
+## Pads ambientales — feature completa (2026-08-04)
+
+### Servidor (panel admin — EN PRODUCCIÓN y respaldado en el repo)
+- Biblioteca GLOBAL de pads por tono. Se sube UN pad base y el servidor genera los 12 tonos por pitch-shift (ffmpeg + rubberband), cacheados en `pads/<id>/pad_<idx>.wav` (~14 MB c/u, ~170 MB por pad). `pads/packs.json` indexa {id, nombre, artista, base_root, base_idx, ext, portada, portada_ts}.
+- Acceso: **Biblioteca** tiene pestañas **Canciones / Pads**; botón "＋ Nuevo Pad (Ambiente)". Ventana **"Ambient Pads"**: crear (nombre, artista, tono base, portada, audio base) con **barra de subida** (XHR + token `_csrf`), lista con progreso de generación, **editar** (icono 3 puntos → nombre/artista/tono/portada/reemplazar audio) y **pre-escucha por tono** (cifrado americano C/C#/D…).
+- Rutas admin: `/admin/pads` (+ `crear`, `<id>/eliminar`, `<id>/regenerar`, `<id>/estado`, `<id>/editar`, `<id>/audio/<idx>`). API NeuralPlay: `/api/live/pads` (incluye `portada` y `base_idx`) y `/api/live/pad/<id>/<idx>` (auth por token). Portadas en `static/portadas/pad_<id>.<ext>`.
+- `respaldar.sh` excluye `pads/`; `server/.gitignore` incluye `pads/`. Portadas también fuera del repo.
+
+### NeuralPlay (Mac, `Main.cpp`)
+- **Motor de audio del pad**: voz en loop (`AudioFormatReaderSource` looping + Buffering + Resampling) con crossfade ~3s; se mezcla SIEMPRE (aunque no haya canción o esté en pausa), a canales 0/1, `padGain` (fader con suavizado por muestra = anti-zipper) × master + soft-clip; lock aparte (`padLock`).
+- **Estado global** en `storage.json`: `padPack`, `padGainDb`, `padMode` (Auto/Manual), `padManual`. Catálogo desde `/api/live/pads` al arrancar; descarga/caché de tonos bajo demanda + precarga de los 12 con progreso.
+- **Botón cabecera "PAD"**: toggle; en Auto sigue la raíz del tono de la canción y se re-afina al cambiar.
+- **Vista de faders del Pad (faderView 3)**: barra de vidrio con portada (redondeada, dentro) + nombre → tap abre menú de pads del Admin (marca los no descargados); almohada **"Link"** (Auto) + **12 tonos** grandes; indicador **"Descargando N/12" / "12 tonos listos"**; **fader propio** (asignable por MIDI, `midimap.json` clave `padfader`).
+- **Pad Player por canción** (edición de la canción, junto a inicio/fin; `padplayer.json`): **"Pad al iniciar"** (entra ~3s y baja ~3s; si ya sonaba, solo baja) y **"Pad al finalizar"** (entra en los **últimos 3 compases** — con tempo/compás — y se **sostiene con latch** aunque la canción vuelva al inicio automáticamente). Solo dispara **reproduciendo**; volver a darle **Play** (flanco) corta el outro y ejecuta el intro; el **toggle manual** libera la automatización y ésta **se re-arma** al salir de la zona.
+- **Build**: `cmake --build build --target NeuralPlaySpike` (cmake vía pip). Artefacto: `build/NeuralPlaySpike_artefacts/Release/NeuralPlay.app`.
 
 ## Negocio
 Se ofrece como servicio (suscripción a iglesias, mercado worship en español). El valor real está en usuarios + ingresos + marca, no en el código (replicable). Meta: volverse el "Playback del mundo hispano de alabanza".

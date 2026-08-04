@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Editar pad — Admin</title>
+<style>
+  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;}
+  .wrap{max-width:620px;margin:0 auto;}
+  a.back{color:var(--muted);text-decoration:none;font-size:14px;}
+  h1{font-size:22px;margin:10px 0 16px;}
+  .flash{padding:11px 14px;border-radius:8px;margin-bottom:10px;font-size:14px;}
+  .flash.success{background:#14301a;color:#8fe0a0;border:1px solid #2a5a35;}
+  .flash.error{background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;}
+  .card{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:18px;}
+  label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.5px;}
+  input[type=text], select, input[type=file]{width:100%;background:#0f0f0f;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:10px 12px;font-size:14px;}
+  input[type=file]{padding:8px;}
+  .row{display:flex;gap:12px;} .row > div{flex:1;}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px;text-transform:none;letter-spacing:0;}
+  .cover{display:flex;align-items:center;gap:12px;margin-top:6px;}
+  .cover img{width:56px;height:56px;border-radius:8px;object-fit:cover;background:#0f0f0f;}
+  button.go{margin-top:18px;background:var(--gold);color:#0a0a0a;border:none;border-radius:999px;padding:10px 22px;font-weight:700;font-size:14px;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="{{ url_for('admin') }}#biblioteca">← Volver a la biblioteca</a>
+  <h1>Editar pad</h1>
+
+  {% with mensajes = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in mensajes %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  {% set es = {'C':'Do','C#':'Do#','D':'Re','D#':'Re#','E':'Mi','F':'Fa','F#':'Fa#','G':'Sol','G#':'Sol#','A':'La','A#':'La#','B':'Si'} %}
+
+  <div class="card">
+    <form id="padform" method="POST" action="{{ url_for('admin_pads_editar', pack_id=p.id) }}" enctype="multipart/form-data" onsubmit="return subirPad(this)">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <div class="row">
+        <div>
+          <label>Nombre del pad</label>
+          <input type="text" name="nombre" value="{{ p.nombre }}" required>
+        </div>
+        <div>
+          <label>Tono del pad base</label>
+          <select name="base_root" required>
+            {% for r in roots %}<option value="{{ r }}"{% if r == p.base_root %} selected{% endif %}>{{ r }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <label>Artista / creador</label>
+      <input type="text" name="artista" value="{{ p.artista or '' }}" placeholder="Ej. tu iglesia, o el autor del pad">
+
+      <label>Portada</label>
+      <div class="cover">
+        <img src="{% if p.portada %}{{ url_for('static', filename=p.portada) }}?v={{ p.portada_ts or 0 }}{% else %}{{ url_for('static', filename='logo.png') }}{% endif %}" alt="">
+        <input type="file" name="portada" accept=".png,.jpg,.jpeg,.webp">
+      </div>
+      <div class="hint">Dejalo vacío para conservar la portada actual.</div>
+
+      <label>Reemplazar audio base (opcional)</label>
+      <input type="file" name="pad" accept=".wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff">
+      <div class="hint">Solo si querés cambiar el sonido. Cambiar el audio o el tono base regenera los 12 tonos.</div>
+
+      <button class="go" type="submit">Guardar cambios</button>
+      <div id="padprog" style="display:none;margin-top:14px">
+        <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden"><div class="upf" style="height:100%;width:0;background:var(--gold);transition:width .15s"></div></div>
+        <div class="upp" style="text-align:right;font-size:12px;color:var(--muted);margin-top:4px">0%</div>
+      </div>
+    </form>
+  </div>
+  <div class="card" style="margin-top:18px">
+    <h2 style="font-size:15px;margin:0 0 12px">🎧 Pre-escuchar</h2>
+    <label>Tono</label>
+    <select id="prevtono">
+      {% for r in roots %}<option value="{{ loop.index0 }}"{% if loop.index0 == p.base_idx %} selected{% endif %}>{{ r }}</option>{% endfor %}
+    </select>
+    <audio id="prevaudio" controls style="width:100%;margin-top:12px"></audio>
+    <div id="prevmsg" class="hint" style="margin-top:6px"></div>
+  </div>
+  <script>
+  (function(){
+    var sel=document.getElementById('prevtono'),au=document.getElementById('prevaudio'),msg=document.getElementById('prevmsg');
+    var base='{{ url_for("admin_pads") }}/{{ p.id }}/audio/';
+    function load(play){var idx=sel.value;msg.textContent='';au.src=base+idx+'?v='+Date.now();au.load();if(play){au.play().catch(function(){});}}
+    sel.addEventListener('change',function(){load(true);});
+    au.addEventListener('error',function(){msg.textContent='Ese tono aún se está generando. Probá en unos segundos.';});
+    load(false);
+  })();
+  </script>
+</div>
+<script>
+function subirPad(form){
+  var padin=form.querySelector('input[name=pad]');
+  if(!padin||!padin.files.length){return true;}
+  var btn=form.querySelector('button[type=submit]');
+  var prog=document.getElementById('padprog');
+  var fill=prog.querySelector('.upf'),pct=prog.querySelector('.upp');
+  prog.style.display='block';
+  if(btn){btn.disabled=true;btn.textContent='Subiendo…';}
+  var fd=new FormData(form);
+  var xhr=new XMLHttpRequest();xhr.open('POST',form.action);
+  xhr.upload.onprogress=function(e){if(e.lengthComputable){var p=Math.round(e.loaded/e.total*100);fill.style.width=p+'%';pct.textContent=p+'%';}};
+  xhr.onload=function(){if(xhr.status>=200&&xhr.status<400){fill.style.width='100%';pct.textContent='✓ guardado';setTimeout(function(){location.href='{{ url_for("admin_pads") }}';},600);}else{pct.textContent='Error ('+xhr.status+')';fill.style.background='#e05555';if(btn){btn.disabled=false;btn.textContent='Guardar cambios';}}};
+  xhr.onerror=function(){pct.textContent='Error de red';fill.style.background='#e05555';if(btn){btn.disabled=false;btn.textContent='Guardar cambios';}};
+  xhr.send(fd);
+  return false;
+}
+</script>
+</body>
+</html>

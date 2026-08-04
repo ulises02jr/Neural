@@ -620,7 +620,12 @@
   <div class="card sec-card" id="biblioteca">
     <h2>Biblioteca</h2>
     <p class="help" style="margin:-4px 0 10px">{{ biblioteca|length }} canción(es) disponibles.</p>
-    <form method="POST" action="{{ url_for('admin_nueva_blanca') }}" style="margin-bottom:12px">
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button type="button" id="bibtab-canciones" onclick="bibTab('canciones')" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;background:var(--accent);color:#000;border:1px solid var(--accent)">Canciones <span style="opacity:.65">({{ biblioteca|length }})</span></button>
+      <button type="button" id="bibtab-pads" onclick="bibTab('pads')" style="flex:1;padding:12px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;background:var(--raised);color:var(--txt);border:1px solid var(--line)">Pads <span style="opacity:.65">({{ pads|length }})</span></button>
+    </div>
+    <div id="pane-canciones">
+    <form method="POST" action="{{ url_for('admin_nueva_blanca') }}" style="margin:0 0 12px">
 <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <button type="submit" class="primary" style="margin:0">＋ Nueva canción</button>
     </form>
@@ -643,6 +648,37 @@
         <div class="vacio">Sin canciones todavía. Subí JSONs desde la sección de arriba.</div>
       {% endif %}
     </div>
+    </div>
+    <div id="pane-pads" style="display:none">
+      <a href="{{ url_for('admin_pads') }}" style="display:inline-flex;align-items:center;font-family:inherit;font-size:13px;border:1px solid var(--accent);border-radius:8px;padding:10px 14px;cursor:pointer;background:var(--accent);color:#000;font-weight:600;text-decoration:none;margin:0 0 12px">＋ Nuevo Pad (Ambiente)</a>
+      <div class="lista">
+        {% if pads %}
+          {% for p in pads %}
+          <div class="item">
+            <img class="thumb" src="{% if p.portada %}{{ url_for('static', filename=p.portada) }}?v={{ p.portada_ts or 0 }}{% else %}{{ url_for('static', filename='logo.png') }}{% endif %}" alt="">
+            <div class="info">
+              <div class="nm">{{ p.nombre }} <span class="tono-tag">{{ p.base_root }}</span></div>
+              <div class="ar">{{ p.artista or '' }}</div>
+            </div>
+            <div class="actions">
+              <a class="icon-btn" href="{{ url_for('admin_pads_editar', pack_id=p.id) }}" title="Editar pad"><svg viewBox="0 0 24 24" fill="currentColor" style="width:15px;height:15px;vertical-align:middle"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></a>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="vacio">Sin pads todavía. Creá el primero con “＋ Nuevo Pad (Ambiente)”.</div>
+        {% endif %}
+      </div>
+    </div>
+    <script>
+    function bibTab(t){
+      var cs=document.getElementById('pane-canciones'),ps=document.getElementById('pane-pads');
+      var bc=document.getElementById('bibtab-canciones'),bp=document.getElementById('bibtab-pads');
+      function sty(b,on){b.style.background=on?'var(--accent)':'var(--raised)';b.style.color=on?'#000':'var(--txt)';b.style.border='1px solid '+(on?'var(--accent)':'var(--line)');}
+      var isp=(t==='pads');cs.style.display=isp?'none':'';ps.style.display=isp?'':'none';sty(bc,!isp);sty(bp,isp);
+    }
+    window.addEventListener('DOMContentLoaded',function(){if(location.hash==='#biblioteca'&&window.showSection){showSection('biblioteca');}});
+    </script>
   </div>
 
 </div>

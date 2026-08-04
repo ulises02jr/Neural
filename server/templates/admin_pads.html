@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambient Pads — Admin</title>
+<style>
+  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  a.back{color:var(--muted);text-decoration:none;font-size:14px;}
+  h1{font-size:22px;margin:10px 0 4px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px;line-height:1.5;}
+  .flash{padding:11px 14px;border-radius:8px;margin-bottom:10px;font-size:14px;}
+  .flash.success{background:#14301a;color:#8fe0a0;border:1px solid #2a5a35;}
+  .flash.error{background:#3a1414;color:#e08f8f;border:1px solid #5a2a2a;}
+  .card{background:var(--raised);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:22px;}
+  .card h2{font-size:15px;margin:0 0 14px;}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.5px;}
+  input[type=text], select, input[type=file]{width:100%;background:#0f0f0f;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:10px 12px;font-size:14px;}
+  input[type=file]{padding:8px;}
+  .row{display:flex;gap:12px;} .row > div{flex:1;}
+  button.go{margin-top:16px;background:var(--gold);color:#0a0a0a;border:none;border-radius:999px;padding:10px 22px;font-weight:700;font-size:14px;cursor:pointer;}
+  table{width:100%;border-collapse:collapse;font-size:14px;}
+  th,td{text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+  .thumb{width:42px;height:42px;border-radius:8px;object-fit:cover;background:#0f0f0f;vertical-align:middle;margin-right:10px;}
+  .tit{font-weight:600;} .root{color:var(--gold);font-weight:700;}
+  .estado{font-size:13px;color:var(--muted);}
+  .estado.listo{color:#8fe0a0;font-weight:700;}
+  .bar{height:6px;background:#0f0f0f;border-radius:99px;overflow:hidden;margin-top:5px;width:120px;}
+  .bar > i{display:block;height:100%;background:var(--gold);width:0;transition:width .3s;}
+  .acts{white-space:nowrap;text-align:right;}
+  .acts button{background:none;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;margin-left:6px;}
+  .acts button.del{border-color:#5a2a2a;color:#e08f8f;}
+  .empty{color:var(--muted);text-align:center;padding:26px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="{{ url_for('admin') }}#biblioteca">← Volver a la biblioteca</a>
+  <h1>🌊 Ambient Pads</h1>
+  <div class="sub">Cargá un pad base en cualquier tono y el motor genera automáticamente los 12 tonos con pitch-shift de alta calidad. Cada pad es una atmósfera sonora distinta que NeuralPlay selecciona al instante según la tonalidad de cada canción.</div>
+
+  {% with mensajes = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in mensajes %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+  {% endwith %}
+
+  {% set es = {'C':'Do','C#':'Do#','D':'Re','D#':'Re#','E':'Mi','F':'Fa','F#':'Fa#','G':'Sol','G#':'Sol#','A':'La','A#':'La#','B':'Si'} %}
+
+  <div class="card">
+    <h2>➕ Nuevo pad</h2>
+    <form id="padform" method="POST" action="{{ url_for('admin_pads_crear') }}" enctype="multipart/form-data" onsubmit="return subirPad(this)">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <div class="row">
+        <div>
+          <label>Nombre del pad</label>
+          <input type="text" name="nombre" placeholder="Ej. Warm, Cinematic, Analog" required>
+        </div>
+        <div>
+          <label>Tono del pad base</label>
+          <select name="base_root" required>
+            {% for r in roots %}<option value="{{ r }}"{% if r == 'C' %} selected{% endif %}>{{ r }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <label>Artista / creador (opcional)</label>
+      <input type="text" name="artista" placeholder="Ej. tu iglesia, o el autor del pad">
+      <label>Portada del pad (opcional — PNG, JPG o WEBP)</label>
+      <input type="file" name="portada" accept=".png,.jpg,.jpeg,.webp">
+      <label>Archivo del pad base (wav / mp3 / m4a / ogg / flac / aiff)</label>
+      <input type="file" name="pad" accept=".wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff" required>
+      <button class="go" type="submit">Crear y generar 12 tonos</button>
+      <div id="padprog" style="display:none;margin-top:14px">
+        <div style="height:8px;background:var(--line);border-radius:4px;overflow:hidden"><div class="upf" style="height:100%;width:0;background:var(--gold);transition:width .15s"></div></div>
+        <div class="upp" style="text-align:right;font-size:12px;color:var(--muted);margin-top:4px">0%</div>
+      </div>
+    </form>
+  </div>
+
+  {% if packs %}
+  <table>
+    <tr><th>Pad</th><th>Base</th><th>Estado</th><th></th></tr>
+    {% for p in packs %}
+    <tr data-id="{{ p.id }}">
+      <td class="tit"><img class="thumb" src="{% if p.portada %}{{ url_for('static', filename=p.portada) }}?v={{ p.portada_ts or 0 }}{% else %}{{ url_for('static', filename='logo.png') }}{% endif %}" alt=""><span style="display:inline-block;vertical-align:middle">{{ p.nombre }}{% if p.artista %}<br><span style="color:var(--muted);font-weight:400;font-size:12px">{{ p.artista }}</span>{% endif %}</span></td>
+      <td class="root">{{ p.base_root }}</td>
+      <td>
+        <span class="estado {% if p.listo %}listo{% endif %}">
+          {% if p.listo %}Listo ✓{% elif p.render %}Generando {{ p.hechos }}/{{ p.total }}…{% else %}{{ p.hechos }}/{{ p.total }} tonos{% endif %}
+        </span>
+        <div class="bar"><i style="width:{{ (p.hechos / p.total * 100) | round }}%"></i></div>
+      </td>
+      <td class="acts">
+        <a href="{{ url_for('admin_pads_editar', pack_id=p.id) }}" style="display:inline-block;background:none;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:6px 12px;font-size:12px;font-weight:600;text-decoration:none;margin-left:6px" title="Editar">⋮ Editar</a>
+        <form method="POST" action="{{ url_for('admin_pads_regenerar', pack_id=p.id) }}" style="display:inline">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button type="submit">↻ Regenerar</button>
+        </form>
+        <form method="POST" action="{{ url_for('admin_pads_eliminar', pack_id=p.id) }}" style="display:inline" onsubmit="return confirm('¿Eliminar el pad «{{ p.nombre }}»?');">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button type="submit" class="del">Eliminar</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">Todavía no hay pads. Creá el primero arriba.</div>
+  {% endif %}
+</div>
+
+<script>
+(function(){
+  var filas = Array.prototype.slice.call(document.querySelectorAll('tr[data-id]'));
+  function pend(){ return filas.filter(function(f){ return !f.querySelector('.estado').classList.contains('listo'); }); }
+  function tick(){
+    var p = pend();
+    if(!p.length) return;
+    p.forEach(function(f){
+      fetch('{{ url_for("admin_pads") }}/' + f.dataset.id + '/estado')
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          var e = f.querySelector('.estado'), bar = f.querySelector('.bar > i');
+          bar.style.width = Math.round(d.hechos / d.total * 100) + '%';
+          if(d.listo){ e.textContent = 'Listo ✓'; e.classList.add('listo'); }
+          else if(d.render){ e.textContent = 'Generando ' + d.hechos + '/' + d.total + '…'; }
+          else { e.textContent = d.hechos + '/' + d.total + ' tonos'; }
+        }).catch(function(){});
+    });
+    setTimeout(tick, 2000);
+  }
+  if(pend().length) setTimeout(tick, 2000);
+})();
+</script>
+<script>
+function subirPad(form){
+  var padin=form.querySelector('input[name=pad]');
+  if(!padin||!padin.files.length){return true;}
+  var btn=form.querySelector('button[type=submit]');
+  var prog=document.getElementById('padprog');
+  var fill=prog.querySelector('.upf'),pct=prog.querySelector('.upp');
+  prog.style.display='block';
+  if(btn){btn.disabled=true;btn.textContent='Subiendo…';}
+  var fd=new FormData(form);
+  var xhr=new XMLHttpRequest();xhr.open('POST',form.action);
+  xhr.upload.onprogress=function(e){if(e.lengthComputable){var p=Math.round(e.loaded/e.total*100);fill.style.width=p+'%';pct.textContent=p+'%';}};
+  xhr.onload=function(){if(xhr.status>=200&&xhr.status<400){fill.style.width='100%';pct.textContent='✓ subido, generando tonos…';setTimeout(function(){location.href='{{ url_for("admin_pads") }}';},600);}else{pct.textContent='Error ('+xhr.status+')';fill.style.background='#e05555';if(btn){btn.disabled=false;btn.textContent='Crear y generar 12 tonos';}}};
+  xhr.onerror=function(){pct.textContent='Error de red';fill.style.background='#e05555';if(btn){btn.disabled=false;btn.textContent='Crear y generar 12 tonos';}};
+  xhr.send(fd);
+  return false;
+}
+</script>
+</body>
+</html>

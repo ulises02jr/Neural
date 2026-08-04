@@ -1722,6 +1722,12 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     bool inOn = false, outOn = false;
     std::function<void (int, double, double)> onInOut;   // (songId, inicio|-1, fin|-1)
 
+    // Pad Player por canción (intro / outro)
+    juce::TextButton padIntroTgl, padOutroTgl;
+    bool padIn = false, padOut = false;
+    std::function<void (int, bool, bool)> onPadPlayer;   // (songId, intro, outro)
+    void pushPad() { if (onPadPlayer) onPadPlayer (songId, padIn, padOut); }
+
     static juce::String secsToMMSS (double s)
     {
         if (s < 0.0) s = 0.0;
@@ -1756,11 +1762,14 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         };
         styleTgl (inTgl, inOn);
         styleTgl (outTgl, outOn);
+        styleTgl (padIntroTgl, padIn);
+        styleTgl (padOutroTgl, padOut);
         inEdit.setEnabled (inOn);   outEdit.setEnabled (outOn);
         inEdit.setAlpha (inOn ? 1.0f : 0.4f);   outEdit.setAlpha (outOn ? 1.0f : 0.4f);
         const bool t = (mode == Tono);
         inTgl.setVisible (t);  outTgl.setVisible (t);
         inEdit.setVisible (t); outEdit.setVisible (t);
+        padIntroTgl.setVisible (t); padOutroTgl.setVisible (t);
     }
 
     RepEditPanel()
@@ -1795,6 +1804,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         setupTgl (inTgl);  setupTgl (outTgl);
         inTgl.onClick  = [this] { inOn  = ! inOn;  if (inOn  && inEdit.getText().trim().isEmpty())  inEdit.setText ("0:00", false); refreshInOut(); pushInOut(); };
         outTgl.onClick = [this] { outOn = ! outOn; if (outOn && outEdit.getText().trim().isEmpty()) outEdit.setText ("0:00", false); refreshInOut(); pushInOut(); };
+        setupTgl (padIntroTgl); setupTgl (padOutroTgl);
+        padIntroTgl.onClick = [this] { padIn  = ! padIn;  refreshInOut(); pushPad(); };
+        padOutroTgl.onClick = [this] { padOut = ! padOut; refreshInOut(); pushPad(); };
 
         auto setupEdit = [this] (juce::TextEditor& e)
         {
@@ -1833,9 +1845,11 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         for (auto& b : bib)    if (b.id == id) b.cover = img;
         repaint();
     }
-    void openTono (int id, juce::String title, bool add, juce::Array<Key> ks, double inSec = -1.0, double outSec = -1.0)
+    void openTono (int id, juce::String title, bool add, juce::Array<Key> ks, double inSec = -1.0, double outSec = -1.0,
+                   bool pIntro = false, bool pOutro = false)
     { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
       inOn = (inSec >= 0.0); outOn = (outSec >= 0.0);
+      padIn = pIntro; padOut = pOutro;
       inEdit.setText (secsToMMSS (inSec >= 0.0 ? inSec : 0.0), false);
       outEdit.setText (secsToMMSS (outSec >= 0.0 ? outSec : 0.0), false);
       refreshInOut();
@@ -1844,7 +1858,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     void showBiblioteca()   // volver del grid de tonos a la lista de canciones
     { mode = Biblioteca; searchBox.setVisible (true); refreshInOut(); renderingSem = 99; stopTimer(); resized(); repaint(); }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 592); }
+    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 636); }
 
     juce::Rectangle<int> keyRect (int i) const
     {
@@ -1868,6 +1882,21 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::Rectangle<int> ioTglRect (int row)   const { return ioRow (row).removeFromLeft (30).withSizeKeepingCentre (28, 28); }
     juce::Rectangle<int> ioLabelRect (int row) const { auto r = ioRow (row); r.removeFromLeft (38); return r.removeFromLeft (96); }
     juce::Rectangle<int> ioEditRect (int row)  const { auto r = ioRow (row); r.removeFromLeft (38 + 96); return r.removeFromLeft (90).withSizeKeepingCentre (90, 30); }
+    juce::Rectangle<int> padArea() const   // Pad Player, debajo de inicio/fin
+    {
+        auto p = panelBounds().reduced (22);
+        p.removeFromTop (58 + 3 * 55 + 20 + 108 + 14);
+        return p.removeFromTop (96);
+    }
+    juce::Rectangle<int> padRow (int row) const
+    {
+        auto a = padArea(); a.removeFromTop (30);
+        const int rh = 30, gap = 8;
+        a.removeFromTop (row * (rh + gap));
+        return a.removeFromTop (rh);
+    }
+    juce::Rectangle<int> padTglRect (int row)   const { return padRow (row).removeFromLeft (30).withSizeKeepingCentre (28, 28); }
+    juce::Rectangle<int> padLabelRect (int row) const { auto r = padRow (row); r.removeFromLeft (38); return r; }
     juce::Rectangle<int> bibListArea() const
     {
         auto p = panelBounds().reduced (18); p.removeFromTop (52 + 44);   // título + buscador
@@ -1971,6 +2000,14 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 g.drawText (juce::String::fromUTF8 ("Terminar en"), ioLabelRect (1), juce::Justification::centredLeft);
                 g.setColour (juce::Colour (0xff777777)); g.setFont (juce::Font (10.5f));
                 g.drawText ("min:seg", ioEditRect (0).translated (0, -18).withHeight (16), juce::Justification::centred);
+
+                // Pad Player (intro / outro)
+                auto pttl = padArea().removeFromTop (24);
+                g.setColour (juce::Colour (0xffcfcfcf)); g.setFont (juce::Font (13.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("Pad Player (autom\xc3\xa1tico)"), pttl, juce::Justification::centredLeft);
+                g.setColour (juce::Colour (0xffe8e8e8)); g.setFont (juce::Font (13.0f));
+                g.drawText (juce::String::fromUTF8 ("Pad al iniciar (se desvanece)"), padLabelRect (0), juce::Justification::centredLeft);
+                g.drawText (juce::String::fromUTF8 ("Pad al finalizar"),              padLabelRect (1), juce::Justification::centredLeft);
             }
         }
     }
@@ -1984,6 +2021,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
         inTgl.setBounds  (ioTglRect (0));  inEdit.setBounds  (ioEditRect (0));
         outTgl.setBounds (ioTglRect (1));  outEdit.setBounds (ioEditRect (1));
+        padIntroTgl.setBounds (padTglRect (0));
+        padOutroTgl.setBounds (padTglRect (1));
         refreshInOut();
     }
 
@@ -2324,6 +2363,164 @@ struct HttpLiveServer : private juce::Thread
     }
 };
 
+// ── Panel de la vista de faders del Pad (selector + Auto/12 tonos + fader + descarga) ──
+struct PadPanel : public juce::Component
+{
+    juce::String packName;
+    juce::Image  portada;
+    int   sel = 0;            // 0 = Auto, 1..12 = tono (sel-1)
+    int   playingIdx = -1;    // tono que suena ahora (resalta en Auto)
+    bool  enabled = false;
+    int   readyMask = 0;      // bits 0..11 de tonos descargados
+    bool  havePack = false;
+    bool  armMode = false;    // modo MIDI: el click sobre el fader lo arma
+    int   faderCc = 0;        // CC asignado (>0 = asignado)
+    bool  faderArmed = false; // armando el fader ahora
+
+    std::function<void()>    onOpenMenu, onFaderArm;
+    std::function<void(int)> onSel;    // -1 = Auto/Link ; 0..11 = tono
+
+    juce::Slider fader { juce::Slider::LinearVertical, juce::Slider::NoTextBox };
+
+    PadPanel()
+    {
+        fader.setRange (-60.0, 0.0, 0.1);
+        fader.setValue (0.0, juce::dontSendNotification);
+        addAndMakeVisible (fader);
+    }
+    void setArmMode (bool on) { armMode = on; fader.setInterceptsMouseClicks (! on, ! on); repaint(); }
+
+    juce::Rectangle<int> rLink, rPort, rName, rStatus, rFader, rFaderLbl;
+    juce::Rectangle<int> rCell[12];
+
+    static const char* noteName (int i)
+    {
+        static const char* N[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+        return (i >= 0 && i < 12) ? N[i] : "";
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (14);
+        auto fcol = r.removeFromRight (74);
+        rFaderLbl = fcol.removeFromBottom (20);
+        rFader = fcol.reduced (10, 8);
+        fader.setBounds (rFader);
+        r.removeFromRight (12);
+
+        auto top = r.removeFromTop (60);
+        rLink = top.removeFromLeft (58).reduced (0, 8);
+        top.removeFromLeft (10);
+        rName = top.reduced (0, 6);                    // la barra de vidrio ocupa el resto
+        { auto inner = rName.reduced (6); rPort = inner.removeFromLeft (inner.getHeight()); }   // portada cuadrada DENTRO de la barra
+        r.removeFromTop (8);
+        rStatus = r.removeFromTop (18);
+        r.removeFromTop (10);
+
+        const int cols = 3, rows = 4, gap = 10;
+        const int cw  = (r.getWidth()  - (cols - 1) * gap) / cols;
+        const int chh = (r.getHeight() - (rows - 1) * gap) / rows;
+        for (int i = 0; i < 12; ++i)
+        {
+            const int cx = i % cols, cy = i / cols;
+            rCell[i] = juce::Rectangle<int> (r.getX() + cx * (cw + gap),
+                                             r.getY() + cy * (chh + gap), cw, chh);
+        }
+    }
+
+    void drawCell (juce::Graphics& g, juce::Rectangle<int> b, const juce::String& txt,
+                   bool active, bool playing, bool ready)
+    {
+        auto rf = b.toFloat();
+        juce::Colour bg = active ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff232323);
+        if (! ready) bg = bg.withAlpha (0.30f);
+        g.setColour (bg);
+        g.fillRoundedRectangle (rf, 12.0f);
+        if (playing && ! active) { g.setColour (juce::Colour (0xff2E8BFF)); g.drawRoundedRectangle (rf.reduced (1.5f), 12.0f, 2.5f); }
+        g.setColour (active ? juce::Colours::black : juce::Colour (0xfff2f2f2));
+        g.setFont (juce::Font (24.0f, juce::Font::bold));
+        g.drawText (txt, ready ? b : b.withTrimmedBottom (14), juce::Justification::centred);
+        if (! ready)
+        {
+            g.setColour (juce::Colour (0xffb0b0b0));
+            g.setFont (juce::Font (10.0f));
+            g.drawText ("bajando...", b.removeFromBottom (14), juce::Justification::centred);
+        }
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xff0f0f0f));
+        // Link (Auto: sigue la canción)
+        {
+            const bool on = (sel == 0);
+            g.setColour (on ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff232323));
+            g.fillRoundedRectangle (rLink.toFloat(), 9.0f);
+            g.setColour (on ? juce::Colours::black : juce::Colour (0xfff2f2f2));
+            g.setFont (juce::Font (13.0f, juce::Font::bold));
+            g.drawText ("Link", rLink, juce::Justification::centred);
+        }
+        // barra de vidrio templado con la portada DENTRO + nombre (tap -> lista de pads)
+        {
+            auto rf = rName.toFloat();
+            g.setColour (juce::Colour (0x22ffffff)); g.fillRoundedRectangle (rf, 10.0f);
+            g.setColour (juce::Colour (0x18ffffff)); g.fillRoundedRectangle (rf.withHeight (rf.getHeight() * 0.5f), 10.0f);
+            g.setColour (juce::Colour (0x40ffffff)); g.drawRoundedRectangle (rf.reduced (0.5f), 10.0f, 1.0f);
+            // portada con esquinas redondeadas, dentro de la cajita
+            auto pf = rPort.toFloat();
+            g.setColour (juce::Colour (0xff181818)); g.fillRoundedRectangle (pf, 7.0f);
+            if (portada.isValid())
+            {
+                juce::Graphics::ScopedSaveState ss (g);
+                juce::Path clip; clip.addRoundedRectangle (pf, 7.0f);
+                g.reduceClipRegion (clip);
+                g.drawImage (portada, pf, juce::RectanglePlacement::centred | juce::RectanglePlacement::fillDestination);
+            }
+            g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (pf.reduced (0.5f), 7.0f, 1.0f);
+            // nombre + chevron
+            juce::Rectangle<int> txt (rPort.getRight() + 12, rName.getY(),
+                                      juce::jmax (10, rName.getRight() - 24 - (rPort.getRight() + 12)), rName.getHeight());
+            g.setColour (juce::Colour (0xfff2f2f2));
+            g.setFont (juce::Font (16.0f, juce::Font::bold));
+            g.drawText (havePack ? packName : juce::String ("Elegir pad"), txt, juce::Justification::centredLeft);
+            g.setFont (juce::Font (13.0f));
+            g.drawText (juce::String::fromUTF8 ("\xe2\x96\xbe"), rName.reduced (10, 0).removeFromRight (18), juce::Justification::centredRight);
+        }
+        // estado de descarga
+        int done = 0; for (int i = 0; i < 12; ++i) if (readyMask & (1 << i)) ++done;
+        g.setColour (done >= 12 ? juce::Colour (0xff8fe0a0) : juce::Colour (0xffb0b0b0));
+        g.setFont (juce::Font (12.0f));
+        g.drawText (done >= 12 ? juce::String ("12 tonos listos") : ("Descargando " + juce::String (done) + "/12..."),
+                    rStatus, juce::Justification::centredLeft);
+        // 12 tonos
+        for (int i = 0; i < 12; ++i)
+            drawCell (g, rCell[i], noteName (i), sel == i + 1, (sel == 0 && playingIdx == i), (readyMask & (1 << i)) != 0);
+        // fader
+        g.setColour (juce::Colour (0xffb0b0b0));
+        g.setFont (juce::Font (11.0f));
+        g.drawText ("PAD", rFaderLbl, juce::Justification::centred);
+        if (armMode)
+        {
+            auto bb = juce::Rectangle<int> (rFader.getX() - 1, rFader.getY() - 20, rFader.getWidth() + 2, 18);
+            g.setColour (faderArmed ? juce::Colour (0xffB84BE6) : juce::Colour (0x99B84BE6));
+            g.fillRoundedRectangle (bb.toFloat(), 5.0f);
+            g.setColour (juce::Colours::white);
+            g.setFont (juce::Font (9.5f, juce::Font::bold));
+            g.drawText (faderArmed ? juce::String ("...") : (faderCc > 0 ? juce::String ("MIDI") : juce::String ("asignar")), bb, juce::Justification::centred);
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        auto p = e.getPosition();
+        if (armMode && rFader.contains (p)) { if (onFaderArm) onFaderArm(); return; }
+        if (rLink.contains (p)) { if (onSel)      onSel (-1); return; }
+        if (rName.contains (p)) { if (onOpenMenu) onOpenMenu(); return; }
+        for (int i = 0; i < 12; ++i)
+            if (rCell[i].contains (p)) { if ((readyMask & (1 << i)) && onSel) onSel (i); return; }
+    }
+};
+
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer,
                       private juce::ChangeListener,
@@ -2389,6 +2586,7 @@ public:
 
         loadStorageCfg();
         loadInOut();
+        loadPadPlayer();
         loadKeyMap();
         loadMidiMap();
         openMidiInputs();
@@ -2489,11 +2687,23 @@ public:
                 if (! playing.load() && inS > 0.0) seekSeconds (inS);
             }
         };
+        repEdit.onPadPlayer = [this] (int sid, bool intro, bool outro)   // Pad Player por canción
+        {
+            if (! intro && ! outro) songPad.erase (sid);
+            else                    songPad[sid] = { intro, outro };
+            savePadPlayer();
+            if (currentSong >= 0 && currentSong < repertoire.size()
+                && repertoire.getReference (currentSong).id == sid)
+            {
+                curPadIntro.store (intro);
+                curPadOutro.store (outro);
+            }
+        };
         addChildComponent (repEdit);
         padBtn.setButtonText ("PAD");
         padBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         padBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
-        padBtn.onClick = [this] { if (clickOrArm (kaPad)) return; /* acción del PAD (pendiente) */ };
+        padBtn.onClick = [this] { if (clickOrArm (kaPad)) return; padManualToggle(); };
         addAndMakeVisible (padBtn);
 
         connStatus.setJustificationType (juce::Justification::centred);
@@ -2566,7 +2776,7 @@ public:
             tb->setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
             addAndMakeVisible (tb);
         }
-        padPlayerBtn.onClick = [this] { if (clickOrArm (kaPadPlayer)) return; /* acción Pad Player (pendiente) */ };
+        padPlayerBtn.onClick = [this] { if (clickOrArm (kaPadPlayer)) return; setFaderView (3); };
         faderViewBtn.kind = 0; repeatBtn.kind = 1; infiniteBtn.kind = 2;
         faderViewBtn.active = true;
         addAndMakeVisible (faderViewBtn);
@@ -2590,6 +2800,29 @@ public:
         midiPanel.setVisible (false);
         midiPanel.loadCfg (npAppDir().getChildFile ("midi.json"));
         midiPanel.onChanged = [this] { rebuildMidiOuts(); repaint (mapBounds); };
+
+        addAndMakeVisible (padPanel);
+        padPanel.setVisible (false);
+        padPanel.fader.setLookAndFeel (&faderLnf);
+        padPanel.onOpenMenu = [this] { showPadPackMenu(); };
+        padPanel.onFaderArm = [this] { armPadFader(); };
+        padPanel.onSel    = [this] (int t)
+        {
+            if (padAutoActive || padOutroLatched) padUserOverride = true;   // el usuario toma el control
+            padAutoActive = false; padOutroLatched = false; padAutoFadeOutStarted = false;
+            if (t < 0) padMode = 0;                        // Auto (sigue la canción)
+            else       { padMode = 1; padManualIdx = t; }  // tono fijo
+            saveStorageCfg();
+            if (! padEnabled.load()) setPadEnabled (true);
+            else                     padApplyTone();
+            updatePadUi();
+        };
+        padPanel.fader.onValueChange = [this]
+        {
+            padGainDb = padPanel.fader.getValue();
+            padGain.store (dbToGain ((float) padGainDb));
+            saveStorageCfg();
+        };
         rebuildMidiOuts();
         midiClock.tick = [this] { fireMidiRT(); };
         midiClock.startTimer (1);   // ~1 ms: minima latencia MIDI, hilo dedicado
@@ -2640,10 +2873,21 @@ public:
         if (mixBuilder) mixBuilder->stopThread (2000);
         for (auto* s : trackSliders) s->setLookAndFeel (nullptr);
         masterSlider.setLookAndFeel (nullptr);
+        padPanel.fader.setLookAndFeel (nullptr);
         setLookAndFeel (nullptr);
         thumb.removeChangeListener (this);
         shutdownAudio();
     }
+
+    struct PadVoice {
+        std::unique_ptr<juce::AudioFormatReaderSource> src;
+        std::unique_ptr<juce::BufferingAudioSource>    buf;
+        std::unique_ptr<juce::ResamplingAudioSource>   res;
+        double fileRate = 44100.0;
+        float  gain = 0.0f, target = 0.0f;   // envolvente de crossfade
+        int    idx = -1;
+    };
+    struct PadPack { juce::String id, nombre, portada; int baseIdx = 0; bool listo = false; };
 
     void prepareToPlay (int spb, double sampleRate) override
     {
@@ -2656,14 +2900,244 @@ public:
             resamplers[i]->setResamplingRatio (fileRates[i] / sampleRate);
             resamplers[i]->prepareToPlay (spb, sampleRate);
         }
+        {
+            const juce::ScopedLock pl (padLock);
+            padTemp.setSize (2, spb + 8);
+            for (auto* pv : padVoices) if (pv->res) { pv->res->setResamplingRatio (pv->fileRate / sampleRate); pv->res->prepareToPlay (spb, sampleRate); }
+        }
         prepared.store (true);
     }
     void releaseResources() override
     {
         prepared.store (false);
         for (auto* r : resamplers) r->releaseResources();
+        { const juce::ScopedLock pl (padLock); for (auto* pv : padVoices) if (pv->res) pv->res->releaseResources(); }
     }
+
     void getNextAudioBlock (const juce::AudioSourceChannelInfo& info) override
+    {
+        renderTracks (info);   // mezcla de la canción (puede salir temprano y dejar el buffer en silencio)
+        mixPad (info);         // el pad SIEMPRE se mezcla encima (suena aunque no haya canción o esté en pausa)
+    }
+
+    void mixPad (const juce::AudioSourceChannelInfo& info)
+    {
+        const juce::ScopedTryLock pl (padLock);
+        if (! pl.isLocked() || padVoices.isEmpty()) return;
+        const int nn = info.numSamples;
+        if (padTemp.getNumSamples() < nn) padTemp.setSize (2, nn + 8, false, false, true);
+        auto* b = info.buffer;
+        if (b->getNumChannels() < 1) return;
+        float* oL = b->getWritePointer (0, info.startSample);
+        float* oR = b->getNumChannels() > 1 ? b->getWritePointer (1, info.startSample) : nullptr;
+        const float mg = masterGain.load();
+        const float pg0 = padGainCur;                 // ganancia del fader al inicio del bloque
+        const float pg1 = padGain.load();             // objetivo (se interpola => sin zipper)
+        const float step = (float) (nn / juce::jmax (1.0, deviceSampleRate * padXfadeSec));
+        float dbgPeak = 0.0f;
+        for (int v = padVoices.size(); --v >= 0;)
+        {
+            auto* pv = padVoices.getUnchecked (v);
+            if (pv->res == nullptr) { padVoices.remove (v); continue; }
+            padTemp.clear();
+            juce::AudioSourceChannelInfo pi (&padTemp, 0, nn);
+            pv->res->getNextAudioBlock (pi);
+            const float* sL = padTemp.getReadPointer (0);
+            const float* sR = padTemp.getNumChannels() > 1 ? padTemp.getReadPointer (1) : sL;
+            const float g0 = pv->gain;
+            float g1 = pv->gain;
+            if      (pv->gain < pv->target) g1 = juce::jmin (pv->target, pv->gain + step);
+            else if (pv->gain > pv->target) g1 = juce::jmax (pv->target, pv->gain - step);
+            pv->gain = g1;
+            for (int n = 0; n < nn; ++n)
+            {
+                const float f  = (nn > 1) ? (float) n / (float) (nn - 1) : 1.0f;
+                const float gg = (g0 + (g1 - g0) * f) * (pg0 + (pg1 - pg0) * f) * mg;
+                const float s  = sL[n] * gg;
+                oL[n] += s;
+                if (oR) oR[n] += sR[n] * gg;
+                const float aa = std::abs (s); if (aa > dbgPeak) dbgPeak = aa;
+            }
+            if (pv->target <= 0.0f && pv->gain <= 0.0002f) padVoices.remove (v);
+        }
+        padGainCur = pg1;
+        padDbgVoices.store (padVoices.size());
+        padDbgMg.store (mg);
+        padDbgAbs.store (dbgPeak);
+        for (int n = 0; n < nn; ++n) { oL[n] = softClip (oL[n]); if (oR) oR[n] = softClip (oR[n]); }
+    }
+
+    // ── Control del pad (hilo de mensajes / fondo) ───────────────────
+    static int rootIndexOf (const juce::String& key)
+    {
+        auto s = key.trim();
+        if (s.isEmpty()) return -1;
+        int base;
+        switch (s[0]) { case 'C': base = 0; break; case 'D': base = 2; break; case 'E': base = 4; break;
+                        case 'F': base = 5; break; case 'G': base = 7; break; case 'A': base = 9; break;
+                        case 'B': base = 11; break; default: return -1; }
+        if (s.length() > 1) { if (s[1] == '#') base += 1; else if (s[1] == 'b') base -= 1; }
+        return ((base % 12) + 12) % 12;
+    }
+    int padSongRootIdx() const
+    {
+        if (currentSong < 0 || currentSong >= repertoire.size()) return -1;
+        return rootIndexOf (repertoire.getReference (currentSong).tonoNombre);
+    }
+    juce::File padCacheFile (const juce::String& pack, int idx) const
+    {
+        return npAppDir().getChildFile ("pads").getChildFile (pack)
+                         .getChildFile ("tono_" + juce::String (idx) + ".wav");
+    }
+    void buildPadVoice (const juce::File& f, int idx, int gen, bool instant = false)
+    {
+        auto* reader = formatManager.createReaderFor (f);
+        if (reader == nullptr) return;
+        auto voice = std::make_unique<PadVoice>();
+        voice->fileRate = reader->sampleRate > 0 ? reader->sampleRate : 44100.0;
+        voice->idx = idx;
+        voice->gain = instant ? 1.0f : 0.0f;              // instant = a full (sin fade-in)
+        auto* rs = new juce::AudioFormatReaderSource (reader, true);
+        rs->setLooping (true);
+        voice->src.reset (rs);
+        voice->buf.reset (new juce::BufferingAudioSource (rs, readThread, false, 88200, 2));
+        voice->res.reset (new juce::ResamplingAudioSource (voice->buf.get(), false, 2));
+        const double sr = deviceSampleRate; const int bs = juce::jmax (256, currentBlockSize);
+        voice->res->setResamplingRatio (voice->fileRate / sr);
+        voice->res->prepareToPlay (bs, sr);
+        voice->target = 1.0f;
+        const juce::ScopedLock pl (padLock);
+        if (padJobGen.load() != gen) return;              // hubo otro cambio: descartar
+        for (auto* pv : padVoices) pv->target = 0.0f;     // fade-out de los anteriores
+        padVoices.add (voice.release());
+    }
+    void requestPadTone (int idx, bool instant = false)    // 0-11 · instant = arranca a full (sin swell)
+    {
+        if (padPackId.isEmpty() || idx < 0 || idx > 11) return;
+        padPlayingIdx.store (idx);
+        const int gen = padJobGen.fetch_add (1) + 1;
+        const juce::String url = serverUrl + "/api/live/pad/" + padPackId + "/" + juce::String (idx);
+        const juce::String tok = serverToken;
+        const juce::File dest = padCacheFile (padPackId, idx);
+        juce::Thread::launch ([this, gen, url, tok, dest, idx, instant]
+        {
+            if (! dest.existsAsFile())
+            {
+                dest.getParentDirectory().createDirectory();
+                httpDownload (url, tok, dest);
+            }
+            if (padJobGen.load() != gen || ! dest.existsAsFile()) return;
+            buildPadVoice (dest, idx, gen, instant);
+        });
+    }
+    // Aplica el tono según el modo (Auto = raíz de la canción, Manual = elegido)
+    void padApplyTone()
+    {
+        int idx = (padMode == 0) ? padSongRootIdx() : padManualIdx;
+        if (idx < 0) idx = padPackBaseIdx;                 // sin canción: usa el tono base
+        requestPadTone (idx);
+    }
+    void setPadEnabled (bool on)
+    {
+        padEnabled.store (on);
+        if (on) { padApplyTone(); }
+        else    { padJobGen.fetch_add (1); padPlayingIdx.store (-1);
+                  const juce::ScopedLock pl (padLock); for (auto* pv : padVoices) pv->target = 0.0f; }
+    }
+    void padManualToggle()   // toggle manual: el usuario toma el control y libera la automatización de la zona
+    {
+        if (padAutoActive || padOutroLatched) padUserOverride = true;
+        padAutoActive = false;
+        padOutroLatched = false;
+        padAutoFadeOutStarted = false;
+        setPadEnabled (! padEnabled.load());
+        updatePadUi();
+    }
+
+    // ── Pad Player: automatización intro/outro por canción ───────────
+    // Todo se hace con la propia voz del pad (fade natural ~3s): sin capa extra => sin glitches.
+    void endPadAuto()
+    {
+        if (! padAutoActive && ! padOutroLatched) return;
+        padAutoActive = false;
+        padAutoTurnedOn = false;
+        padAutoFadeOutStarted = false;
+        padOutroLatched = false;
+        if (padEnabled.load()) { setPadEnabled (false); updatePadUi(); }   // se apaga con el fade de la voz
+    }
+    void updatePadAutomation()
+    {
+        const bool intro = curPadIntro.load();
+        const bool outro = curPadOutro.load();
+        const bool wasPlaying = padPrevPlaying;
+        padPrevPlaying = playing.load();
+        if ((! intro && ! outro) || currentSong < 0) { endPadAuto(); padUserOverride = false; return; }
+
+        const double p      = positionSeconds();
+        const double startS = juce::jmax (0.0, songInSec.load());
+        const double total  = totalSeconds();
+        const double endRef = (songOutSec.load() > 0.0) ? songOutSec.load() : total;   // final efectivo
+        const double barSec = (bpm > 0.0) ? (juce::jmax (1, beatsPerBar) * 60.0 / bpm) : 0.0;
+        const double outroStart = (barSec > 0.0) ? (endRef - 3.0 * barSec) : (endRef - 8.0);
+
+        const bool nearStart     = (p >= startS - 0.05 && p < startS + padIntroInSec + padIntroOutSec);
+        const bool inOutroWin    = outro && playing.load() && endRef > 0.0 && outroStart > startS && p >= outroStart - 0.02;
+        const bool playStartEdge = playing.load() && ! wasPlaying;   // se le acaba de dar Play
+
+        if (! nearStart && ! inOutroWin) padUserOverride = false;    // re-armar al salir de las zonas
+
+        // INTRO: se dispara SOLO al ARRANCAR la reproducción cerca del inicio
+        // (no en el loop automático, que debe sostener el outro).
+        if (playStartEdge && nearStart && ! padUserOverride)
+        {
+            if (intro)
+            {
+                padOutroLatched = false;                 // volver a darle Play corta el outro sostenido
+                padAutoActive = true;
+                padAutoTurnedOn = ! padEnabled.load();
+                padAutoFadeOutStarted = false;
+                if (padAutoTurnedOn) { padMode = 0; setPadEnabled (true); updatePadUi(); }
+            }
+            else if (padOutroLatched) { endPadAuto(); }  // sin intro: el replay corta el outro
+        }
+
+        // INTRO en curso: entra (~3s) y baja (~3s), con el fade natural de la voz.
+        if (intro && padAutoActive && ! padOutroLatched && nearStart && playing.load())
+        {
+            const double t = p - startS;
+            const double fadeOutAt = padAutoTurnedOn ? padIntroInSec : 0.0;   // bed: baja de una
+            if (t >= fadeOutAt && ! padAutoFadeOutStarted && padEnabled.load())
+            {
+                padAutoFadeOutStarted = true;
+                setPadEnabled (false);
+                updatePadUi();
+            }
+            return;
+        }
+
+        // OUTRO enganchado: se mantiene aunque la canción vuelva al inicio automáticamente.
+        if (padOutroLatched)
+        {
+            if (padUserOverride) { padOutroLatched = false; padAutoActive = false; }
+            else return;
+        }
+
+        // OUTRO: se activa en los ÚLTIMOS 3 COMPASES (solo reproduciendo) y se engancha.
+        if (inOutroWin && ! padUserOverride)
+        {
+            if (! padAutoActive)
+            {
+                padAutoActive = true;
+                padAutoTurnedOn = ! padEnabled.load();
+                if (padAutoTurnedOn) { padMode = 0; setPadEnabled (true); updatePadUi(); }
+            }
+            padOutroLatched = true;
+            return;
+        }
+        endPadAuto();
+    }
+
+    void renderTracks (const juce::AudioSourceChannelInfo& info)
     {
         info.clearActiveBufferRegion();
         const juce::ScopedTryLock sl (graphLock);
@@ -3434,6 +3908,7 @@ public:
         // Los tracks (solo esos) van en el viewport desplazable
         faderViewport.setBounds (area);
         midiPanel.setBounds (area);
+        padPanel.setBounds (area);
         layoutFaderStrip();
 
         auto fx = fixed.reduced (0, 14);
@@ -3558,6 +4033,167 @@ private:
         auto v = juce::JSON::parse (f.loadFileAsString());
         serverUrl   = v.getProperty ("serverUrl", "").toString();
         serverToken = v.getProperty ("token", "").toString();
+        fetchPadPacks();
+    }
+
+    // ── Pads: catálogo del servidor + selección ──────────────────────
+    void fetchPadPacks()
+    {
+        if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
+        const juce::String url = serverUrl + "/api/live/pads";
+        const juce::String tok = serverToken;
+        juce::Thread::launch ([this, url, tok]
+        {
+            auto v = juce::JSON::parse (httpGet (url, tok));
+            juce::Array<PadPack> packs;
+            if (auto* arr = v.getArray())
+                for (auto& e : *arr)
+                {
+                    PadPack pp;
+                    pp.id      = e.getProperty ("id", "").toString();
+                    pp.nombre  = e.getProperty ("nombre", "").toString();
+                    pp.portada = e.getProperty ("portada", "").toString();
+                    pp.baseIdx = (int) e.getProperty ("base_idx", 0);
+                    pp.listo   = (bool) e.getProperty ("listo", false);
+                    if (pp.id.isNotEmpty()) packs.add (pp);
+                }
+            juce::MessageManager::callAsync ([this, packs] { applyPadPacks (packs); });
+        });
+    }
+    void applyPadPacks (const juce::Array<PadPack>& packs)
+    {
+        padPacks = packs;
+        int sel = -1;
+        for (int i = 0; i < padPacks.size(); ++i) if (padPacks[i].id == padPackId) { sel = i; break; }
+        if (sel < 0 && ! padPacks.isEmpty()) sel = 0;
+        if (sel >= 0) selectPadPack (padPacks.getReference (sel).id, false);
+        updatePadUi();
+    }
+    void selectPadPack (const juce::String& id, bool userAction)
+    {
+        int idx = -1;
+        for (int i = 0; i < padPacks.size(); ++i) if (padPacks[i].id == id) { idx = i; break; }
+        if (idx < 0) return;
+        const auto& pk = padPacks.getReference (idx);
+        padPackId          = pk.id;
+        padPackName        = pk.nombre;
+        padPackBaseIdx     = pk.baseIdx;
+        padPackPortadaRel  = pk.portada;
+        padPortadaImg      = juce::Image();
+        if (padPackPortadaRel.isNotEmpty())
+        {
+            const juce::String url = serverUrl + "/static/" + padPackPortadaRel;
+            const juce::String tok = serverToken;
+            const juce::File dest = npAppDir().getChildFile ("pads").getChildFile (padPackId)
+                                        .getChildFile ("portada" + padPackPortadaRel.fromLastOccurrenceOf (".", true, false));
+            juce::Thread::launch ([this, url, tok, dest]
+            {
+                if (! dest.existsAsFile()) { dest.getParentDirectory().createDirectory(); httpDownload (url, tok, dest); }
+                auto img = juce::ImageFileFormat::loadFrom (dest);
+                juce::MessageManager::callAsync ([this, img] { padPortadaImg = img; updatePadUi(); });
+            });
+        }
+        computePadReadyMask();
+        prefetchPadTones();      // baja los 12 tonos en segundo plano (para que el usuario vea el progreso)
+        if (userAction)
+        {
+            saveStorageCfg();
+            if (padEnabled.load()) padApplyTone();   // cambiar de pad re-suena el tono actual con el nuevo timbre
+        }
+        updatePadUi();
+    }
+    void updatePadUi()
+    {
+        const bool on = padEnabled.load();
+        padBtn.setColour (juce::TextButton::buttonColourId, on ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
+        padBtn.repaint();
+        refreshPadPanel();
+    }
+    void refreshPadPanel()
+    {
+        padPanel.havePack   = ! padPackId.isEmpty();
+        padPanel.packName   = padPackName;
+        padPanel.portada    = padPortadaImg;
+        padPanel.enabled    = padEnabled.load();
+        padPanel.sel        = (padMode == 0) ? 0 : (padManualIdx + 1);
+        padPanel.playingIdx = padPlayingIdx.load();
+        padPanel.readyMask  = padReadyMask.load();
+        padPanel.faderCc    = midiPadFader;
+        padPanel.faderArmed = (armFader && armFaderIdx == -3);
+        padPanel.fader.setValue (padGainDb, juce::dontSendNotification);
+        padPanel.repaint();
+    }
+    void showPadPackMenu()
+    {
+        juce::PopupMenu menu;
+        if (padPacks.isEmpty())
+            menu.addItem (1, "(sin pads en Admin)", false, false);
+        else
+            for (int i = 0; i < padPacks.size(); ++i)
+            {
+                const auto& pk = padPacks.getReference (i);
+                bool cached = true;
+                for (int t = 0; t < 12; ++t) if (! padCacheFile (pk.id, t).existsAsFile()) { cached = false; break; }
+                juce::String label = pk.nombre;
+                if (! cached) label += "   (descargar)";
+                menu.addItem (i + 1, label, true, pk.id == padPackId);
+            }
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&padPanel),
+            [this] (int r)
+            {
+                if (r > 0 && r <= padPacks.size())
+                    selectPadPack (padPacks.getReference (r - 1).id, true);   // selecciona y dispara la descarga
+            });
+    }
+    void armPadFader()
+    {
+        if (! midiMapMode) return;
+        clearArm();
+        armFader = true;
+        armFaderIdx = -3;              // -3 = fader del pad
+        refreshPadPanel();
+        repaint();
+    }
+    void cyclePadPack (int dir)
+    {
+        if (padPacks.isEmpty()) return;
+        int idx = 0;
+        for (int i = 0; i < padPacks.size(); ++i) if (padPacks[i].id == padPackId) { idx = i; break; }
+        idx = (idx + dir + padPacks.size()) % padPacks.size();
+        selectPadPack (padPacks.getReference (idx).id, true);
+    }
+    void computePadReadyMask()
+    {
+        int m = 0;
+        if (! padPackId.isEmpty())
+            for (int i = 0; i < 12; ++i) if (padCacheFile (padPackId, i).existsAsFile()) m |= (1 << i);
+        padReadyMask.store (m);
+    }
+    void prefetchPadTones()
+    {
+        if (padPackId.isEmpty()) return;
+        const int gen = padPrefetchGen.fetch_add (1) + 1;
+        const juce::String pack = padPackId;
+        const juce::String tok  = serverToken;
+        const juce::String base = serverUrl + "/api/live/pad/" + pack + "/";
+        juce::Thread::launch ([this, gen, pack, tok, base]
+        {
+            for (int i = 0; i < 12; ++i)
+            {
+                if (padPrefetchGen.load() != gen) return;
+                auto dest = padCacheFile (pack, i);
+                if (! dest.existsAsFile())
+                {
+                    dest.getParentDirectory().createDirectory();
+                    httpDownload (base + juce::String (i), tok, dest);
+                }
+                if (padPrefetchGen.load() != gen) return;
+                juce::MessageManager::callAsync ([this, pack]
+                {
+                    if (padPackId == pack) { computePadReadyMask(); refreshPadPanel(); }
+                });
+            }
+        });
     }
 
     void startLoad()
@@ -4246,7 +4882,10 @@ private:
                 double i2 = -1.0, o2 = -1.0;
                 auto it = sp->songInOut.find (songId);
                 if (it != sp->songInOut.end()) { i2 = it->second.first; o2 = it->second.second; }
-                sp->repEdit.openTono (songId, title, addFlow, ks, i2, o2);
+                bool pIntro = false, pOutro = false;
+                auto ip = sp->songPad.find (songId);
+                if (ip != sp->songPad.end()) { pIntro = ip->second.first; pOutro = ip->second.second; }
+                sp->repEdit.openTono (songId, title, addFlow, ks, i2, o2, pIntro, pOutro);
                 sp->repEdit.setVisible (true); sp->repEdit.toFront (true);
             });
         });
@@ -4269,6 +4908,11 @@ private:
             for (auto& e : *gm) globalMuted.insert (e.toString());
         if (auto* gf = v.getProperty ("globalMutedFam", juce::var()).getArray())
             for (auto& e : *gf) globalMutedFamilies.insert (e.toString());
+        padPackId    = v.getProperty ("padPack", "").toString();
+        padGainDb    = (double) v.getProperty ("padGainDb", 0.0);
+        padGain.store (dbToGain ((float) padGainDb));
+        padMode      = juce::jlimit (0, 1, (int) v.getProperty ("padMode", 0));
+        padManualIdx = juce::jlimit (0, 11, (int) v.getProperty ("padManual", 0));
     }
     void saveStorageCfg()
     {
@@ -4286,6 +4930,10 @@ private:
         o->setProperty ("globalMuted", juce::var (gm));
         juce::Array<juce::var> gf; for (auto& n : globalMutedFamilies) gf.add (n);
         o->setProperty ("globalMutedFam", juce::var (gf));
+        o->setProperty ("padPack", padPackId);
+        o->setProperty ("padGainDb", padGainDb);
+        o->setProperty ("padMode", padMode);
+        o->setProperty ("padManual", padManualIdx);
         npAppDir().getChildFile ("storage.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
     }
 
@@ -4316,6 +4964,32 @@ private:
         }
         npAppDir().getChildFile ("inout.json").replaceWithText (juce::JSON::toString (juce::var (a)));
     }
+    void loadPadPlayer()
+    {
+        songPad.clear();
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("padplayer.json"));
+        if (auto* a = v.getArray())
+            for (auto& e : *a)
+            {
+                const int id = (int) e.getProperty ("id", 0);
+                if (id <= 0) continue;
+                songPad[id] = { (bool) e.getProperty ("intro", false), (bool) e.getProperty ("outro", false) };
+            }
+    }
+    void savePadPlayer()
+    {
+        juce::Array<juce::var> a;
+        for (auto& kv : songPad)
+        {
+            if (! kv.second.first && ! kv.second.second) continue;
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("id", kv.first);
+            o->setProperty ("intro", kv.second.first);
+            o->setProperty ("outro", kv.second.second);
+            a.add (juce::var (o.get()));
+        }
+        npAppDir().getChildFile ("padplayer.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+    }
     void aplicarInOut (int songId)   // establece los atomics del reproductor para la canción actual
     {
         double inS = -1.0, outS = -1.0;
@@ -4323,6 +4997,13 @@ private:
         if (it != songInOut.end()) { inS = it->second.first; outS = it->second.second; }
         songInSec.store (inS);
         songOutSec.store (outS);
+        bool pi = false, po = false;
+        auto ip = songPad.find (songId);
+        if (ip != songPad.end()) { pi = ip->second.first; po = ip->second.second; }
+        curPadIntro.store (pi);
+        curPadOutro.store (po);
+        padUserOverride = false;
+        endPadAuto();     // reinicia la automatización al cambiar de canción
     }
     juce::Array<juce::File> cacheFolders() const
     {
@@ -4765,6 +5446,7 @@ private:
         if (index < songReady.size() && ! songReady[index]) return;   // audio aún no descargado
         snapshotCurrentMix();   // recuerda la mezcla de la canción anterior
         currentSong = index;
+        if (padEnabled.load() && padMode == 0) { padApplyTone(); updatePadUi(); }   // pad en Auto: re-afina a la tonalidad de la canción
         const auto& sng = repertoire.getReference (index);
 
         if (mixBuilder) { mixBuilder->stopThread (2000); mixBuilder = nullptr; }
@@ -5046,8 +5728,10 @@ private:
         const bool tracks = (faderView == 0);
         const bool buses  = (faderView == 1);
         const bool midi   = (faderView == 2);
-        faderViewport.setVisible (! midi);
+        const bool pad    = (faderView == 3);
+        faderViewport.setVisible (! midi && ! pad);
         midiPanel.setVisible (midi);
+        padPanel.setVisible (pad);
         for (auto* s : trackSliders) s->setVisible (tracks);
         for (auto* l : trackLabels)  l->setVisible (tracks);
         for (auto* d : soloDots)     d->setVisible (tracks);
@@ -5058,15 +5742,17 @@ private:
 
     void setFaderView (int v)
     {
-        faderView = juce::jlimit (0, 2, v);
+        faderView = juce::jlimit (0, 3, v);
         faderViewBtn.active   = (faderView == 0);
-        busesBtn.setColour    (juce::TextButton::buttonColourId, faderView == 1 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
-        muteMidiBtn.setColour (juce::TextButton::buttonColourId, faderView == 2 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
-        faderViewBtn.repaint(); busesBtn.repaint(); muteMidiBtn.repaint();
+        busesBtn.setColour     (juce::TextButton::buttonColourId, faderView == 1 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
+        padPlayerBtn.setColour (juce::TextButton::buttonColourId, faderView == 3 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
+        muteMidiBtn.setColour  (juce::TextButton::buttonColourId, faderView == 2 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
+        faderViewBtn.repaint(); busesBtn.repaint(); padPlayerBtn.repaint(); muteMidiBtn.repaint();
         if (faderView == 1) refreshBusStates();
         if (faderView == 2) midiPanel.refreshPorts();
+        if (faderView == 3) refreshPadPanel();
         updateFaderVisibility();
-        if (faderView != 2) layoutFaderStrip();
+        if (faderView == 0 || faderView == 1) layoutFaderStrip();
     }
 
     void rebuildMidiOuts()
@@ -5317,6 +6003,7 @@ private:
     void timerCallback() override
     {
         if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 1600) { splashOn = false; splash.setVisible (false); }
+        updatePadAutomation();   // Pad Player: intro/outro por canción
 
         if (syncEnabled)   // puente: sección en vivo + heartbeat 30s + estado 5s
         {
@@ -5688,12 +6375,14 @@ private:
             for (auto& kv : *mp) if (kv.second == code) kv.second = 0;
         for (auto& kv : midiSong) if (kv.second == code) kv.second = 0;
         if (midiMasterFader == code) midiMasterFader = 0;
+        if (midiPadFader == code) midiPadFader = 0;
     }
     void setFadersArmable (bool on)   // en modo MIDI, los faders no se arrastran: el click los arma
     {
         for (auto* s : trackSliders) s->setInterceptsMouseClicks (! on, ! on);
         for (auto* s : busSliders)   s->setInterceptsMouseClicks (! on, ! on);
         masterSlider.setInterceptsMouseClicks (! on, ! on);
+        padPanel.setArmMode (on);
     }
     void toggleMidiMapMode()
     {
@@ -5717,7 +6406,7 @@ private:
     {
         for (auto& v : actMidi) v = 0;
         midiTrackMute.clear(); midiTrackSolo.clear(); midiBusMute.clear(); midiBusSolo.clear();
-        midiSong.clear(); midiTrackFader.clear(); midiBusFader.clear(); midiMasterFader = 0;
+        midiSong.clear(); midiTrackFader.clear(); midiBusFader.clear(); midiMasterFader = 0; midiPadFader = 0;
         auto v = juce::JSON::parse (npAppDir().getChildFile ("midimap.json"));
         if (auto* o = v.getDynamicObject())
         {
@@ -5730,6 +6419,7 @@ private:
             if (auto* d = o->getProperty ("songs").getDynamicObject())
                 for (auto& pr : d->getProperties()) midiSong[pr.name.toString().getIntValue()] = (int) pr.value;
             midiMasterFader = (int) o->getProperty ("master");
+            midiPadFader = (int) o->getProperty ("padfader");
         }
     }
     void saveMidiMap()
@@ -5745,6 +6435,7 @@ private:
         for (auto& kv : midiSong) if (kv.second != 0) sg->setProperty (juce::String (kv.first), kv.second);
         o->setProperty ("songs", juce::var (sg.get()));
         o->setProperty ("master", midiMasterFader);
+        o->setProperty ("padfader", midiPadFader);
         npAppDir().getChildFile ("midimap.json").replaceWithText (juce::JSON::toString (juce::var (o.get())));
     }
     static double ccToDb (int value) { return -60.0 + juce::jlimit (0, 127, value) / 127.0 * 60.0; }
@@ -5758,17 +6449,19 @@ private:
                 const int cc = midiCcCode (m);
                 if (cc == 0) return;            // ignorar notas para faders
                 const bool same = (armFaderIdx == -1 && midiMasterFader == cc)
+                               || (armFaderIdx == -3 && midiPadFader == cc)
                                || (armFaderIdx == -2 && midiBusFader.count (armTrack) && midiBusFader[armTrack] == cc)
                                || (armFaderIdx >= 0  && armFaderIdx < trackNames.size() && midiTrackFader.count (trackNames[armFaderIdx]) && midiTrackFader[trackNames[armFaderIdx]] == cc);
-                if (same) { if (armFaderIdx == -1) midiMasterFader = 0; else if (armFaderIdx == -2) midiBusFader[armTrack] = 0; else midiTrackFader[trackNames[armFaderIdx]] = 0; }
+                if (same) { if (armFaderIdx == -1) midiMasterFader = 0; else if (armFaderIdx == -3) midiPadFader = 0; else if (armFaderIdx == -2) midiBusFader[armTrack] = 0; else midiTrackFader[trackNames[armFaderIdx]] = 0; }
                 else
                 {
                     clearAllForMidi (cc);
                     if (armFaderIdx == -1) midiMasterFader = cc;
+                    else if (armFaderIdx == -3) midiPadFader = cc;
                     else if (armFaderIdx == -2) midiBusFader[armTrack] = cc;
                     else midiTrackFader[trackNames[armFaderIdx]] = cc;
                 }
-                clearArm(); saveMidiMap(); repaint(); return;
+                clearArm(); saveMidiMap(); refreshPadPanel(); repaint(); return;
             }
             if (armKind == 0) return;
             const int code = midiTrigCode (m);
@@ -5808,6 +6501,7 @@ private:
             const int cc = midiCcCode (m);
             const double db = ccToDb (m.getControllerValue());
             if (midiMasterFader == cc) { masterSlider.setValue (db, juce::sendNotificationSync); return; }
+            if (midiPadFader == cc)    { padPanel.fader.setValue (db, juce::sendNotificationSync); return; }
             for (auto& kv : midiBusFader)
                 if (kv.second == cc) { const int f = familyNames.indexOf (kv.first); if (f >= 0 && f < busSliders.size()) busSliders[f]->setValue (db, juce::sendNotificationSync); return; }
             for (auto& kv : midiTrackFader)
@@ -5937,6 +6631,46 @@ private:
     double preferredSampleRate = 0.0;   // 0 = automático (seguir la frecuencia del dispositivo)
     int currentBlockSize = 0;
     juce::CriticalSection graphLock;
+
+    // ── Pads ambientales (structs PadVoice/PadPack declaradas más arriba) ──
+    juce::CriticalSection padLock;                 // protege padVoices (aparte de graphLock)
+    juce::OwnedArray<PadVoice> padVoices;          // 1-2 voces (crossfade al cambiar de tono)
+    juce::AudioBuffer<float> padTemp;
+    std::atomic<bool>  padEnabled { false };
+    std::atomic<float> padGain { 1.0f };           // fader del pad (0 dB por defecto)
+    std::atomic<int>   padPlayingIdx { -1 };       // tono objetivo que suena (0-11), -1 = ninguno
+    std::atomic<int>   padJobGen { 0 };            // generación: descarta descargas viejas
+    double padXfadeSec = 3.0;                       // duración del fade/crossfade (s)
+    float  padGainCur = 1.0f;                        // ganancia suavizada del fader (anti-zipper)
+    int    padMode = 0;                             // 0 = Auto (sigue la canción), 1 = Manual
+    int    padManualIdx = 0;                        // tono elegido a mano (0-11)
+    double padGainDb = 0.0;
+    std::atomic<int>   padDbgVoices { 0 };   // diagnóstico temporal
+    std::atomic<float> padDbgMg { 0.0f };
+    std::atomic<float> padDbgAbs { 0.0f };
+    juce::String padPackId, padPackName, padPackPortadaRel;
+    int    padPackBaseIdx = 0;
+    juce::Array<PadPack> padPacks;                  // catálogo del servidor
+    juce::Image padPortadaImg;
+    PadPanel padPanel;                              // vista de faders del pad (faderView 3)
+    std::atomic<int> padReadyMask { 0 };            // bits de tonos ya descargados
+    std::atomic<int> padPrefetchGen { 0 };          // generación de la precarga de los 12 tonos
+    int midiPadFader = 0;                            // CC MIDI asignado al fader del pad (0 = ninguno)
+    // Pad Player por canción (intro / outro automáticos)
+    std::map<int, std::pair<bool,bool>> songPad;    // songId -> {intro, outro}
+    std::atomic<bool>  curPadIntro { false };        // flags de la canción actual
+    std::atomic<bool>  curPadOutro { false };
+    std::atomic<float> padAutoGain { 1.0f };         // ganancia de automatización (intro/outro)
+    float  padAutoCur = 1.0f;                        // suavizado de padAutoGain
+    bool   padAutoActive = false;                    // la automatización controla el pad ahora
+    bool   padAutoTurnedOn = false;                  // la automatización fue quien encendió el pad
+    bool   padAutoFadeOutStarted = false;            // ya se disparó el fade-out del intro
+    bool   padOutroLatched = false;                  // outro enganchado: se mantiene aunque vuelva al inicio
+    bool   padUserOverride = false;                   // el usuario tomó el control manual (suspende la automatización en la zona)
+    bool   padPrevPlaying = false;                     // para detectar el flanco de arranque de reproducción
+    double padIntroInSec  = 3.0;                     // fade-in del pad al iniciar
+    double padIntroOutSec = 3.0;                     // fade-out del pad al iniciar
+    double padOutroFadeSec = 6.0;                    // fade-in del pad de outro
 
     bool browsing = false, isDragging = false, dragSeeks = false;
     bool lastPlaying = false;
