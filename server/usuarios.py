@@ -78,6 +78,10 @@ def init_db():
             conn.execute("ALTER TABLE usuarios ADD COLUMN acento TEXT")
         except Exception:
             pass  # ya existe
+        try:
+            conn.execute("ALTER TABLE usuarios ADD COLUMN prefs TEXT")
+        except Exception:
+            pass  # ya existe
 
 
 def hash_password(password):
@@ -204,6 +208,50 @@ def guardar_acento(user_id, color):
     try:
         with _conexion() as conn:
             conn.execute("UPDATE usuarios SET acento = ? WHERE id = ?", (val, user_id))
+        return True
+    except Exception:
+        return False
+
+
+def obtener_prefs(user_id):
+    """Preferencias de vista del visor (JSON string) del usuario, o '{}'."""
+    if not user_id:
+        return "{}"
+    try:
+        with _conexion() as conn:
+            row = conn.execute("SELECT prefs FROM usuarios WHERE id = ?", (user_id,)).fetchone()
+            v = (row["prefs"] if row else None)
+            return v if v else "{}"
+    except Exception:
+        return "{}"
+
+
+def guardar_prefs(user_id, data):
+    """Guarda preferencias de vista del visor (dict) con whitelist + validacion."""
+    if not user_id or not isinstance(data, dict):
+        return False
+    import json as _json, re as _re
+    out = {}
+    tema = str(data.get("tema", "")).strip()
+    if tema in ("oscuro", "claro"):
+        out["tema"] = tema
+    modo = str(data.get("modo", "")).strip()
+    if modo in ("ambos", "acordes", "letra"):
+        out["modo"] = modo
+    grosor = str(data.get("grosor", "")).strip()
+    if grosor in ("fino", "normal", "grueso"):
+        out["grosor"] = grosor
+    tam = str(data.get("tam", "")).strip()
+    if tam in ("xs", "s", "m", "l", "xl"):
+        out["tam"] = tam
+    color = str(data.get("color", "")).strip()
+    if color == "":
+        out["color"] = ""
+    elif _re.match(r"^#[0-9a-fA-F]{6}$", color):
+        out["color"] = color.upper()
+    try:
+        with _conexion() as conn:
+            conn.execute("UPDATE usuarios SET prefs = ? WHERE id = ?", (_json.dumps(out), user_id))
         return True
     except Exception:
         return False

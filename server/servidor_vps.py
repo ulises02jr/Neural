@@ -227,6 +227,30 @@ def api_perfil_acento():
     return jsonify({"ok": True, "acento": usuarios.obtener_acento(uid) or ""})
 
 
+@app.context_processor
+def inject_prefs():
+    """Preferencias de vista del visor por usuario (global por cuenta)."""
+    try:
+        uid = session.get("user_id")
+        pr = usuarios.obtener_prefs(uid) if uid else "{}"
+    except Exception:
+        pr = "{}"
+    return {"mi_prefs": pr or "{}"}
+
+
+@app.route("/api/perfil/prefs", methods=["GET", "POST"])
+def api_perfil_prefs():
+    """Lee o guarda las preferencias de vista del visor del usuario logueado."""
+    uid = session.get("user_id")
+    if not uid:
+        return jsonify({"ok": False, "error": "no_session"}), 401
+    if request.method == "POST":
+        data = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+        ok = usuarios.guardar_prefs(uid, data or {})
+        return jsonify({"ok": bool(ok)})
+    return jsonify({"ok": True, "prefs": usuarios.obtener_prefs(uid)})
+
+
 def get_config():
     """Lee config.json del disco en cada llamada.
     Esto garantiza que múltiples workers vean los cambios."""

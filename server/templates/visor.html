@@ -157,6 +157,7 @@
 </style>
   <link rel="stylesheet" href="/static/ensayo.css">
 <script>/*mw-acento*/(function(){try{var s="{{ mi_acento }}";var c=s||localStorage.getItem('mw_acento');if(s){try{localStorage.setItem('mw_acento',s);}catch(_){}}if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');d.setProperty('--gold-ink',(0.299*parseInt(h.substr(0,2),16)+0.587*parseInt(h.substr(2,2),16)+0.114*parseInt(h.substr(4,2),16))>145?'#000':'#fff');}}catch(e){}})();</script>
+<script>/*mw-prefs*/(function(){try{var P=JSON.parse({{ mi_prefs|tojson }}||'{}');if(P&&typeof P==='object'){var m={tema:'charts_tema',modo:'charts_modo',color:'charts_color',grosor:'charts_grosor',tam:'charts_tam'};for(var k in m){if(P[k]!==undefined&&P[k]!==null){try{localStorage.setItem(m[k],String(P[k]));}catch(_){}}}}}catch(e){}})();</script>
 </head>
 <body>
 <div class="wrap" id="app"></div>
@@ -283,8 +284,8 @@ const NIVELES = ["xs","s","m","l","xl"];
 let nivelTamano = NIVELES.indexOf(localStorage.getItem("charts_tam") || "m");
 if(nivelTamano < 0) nivelTamano = 2;
 function aplicarTamano(){ document.body.dataset.size = NIVELES[nivelTamano]; localStorage.setItem("charts_tam", NIVELES[nivelTamano]); refrescarTam(); }
-function tamanoMenos(){ if(nivelTamano>0){ nivelTamano--; aplicarTamano(); } }
-function tamanoMas(){ if(nivelTamano<NIVELES.length-1){ nivelTamano++; aplicarTamano(); } }
+function tamanoMenos(){ if(nivelTamano>0){ nivelTamano--; aplicarTamano(); guardarPrefsNube(); } }
+function tamanoMas(){ if(nivelTamano<NIVELES.length-1){ nivelTamano++; aplicarTamano(); guardarPrefsNube(); } }
 function refrescarTam(){
   const lb=document.getElementById("size-label"); if(lb) lb.textContent=NIVELES[nivelTamano].toUpperCase();
   const bm=document.getElementById("size-minus"); if(bm) bm.disabled=(nivelTamano===0);
@@ -319,7 +320,8 @@ function aplicarVista(){
   marcarV('seg-grosor', VISTA.grosor);
 }
 function marcarV(id,val){ const s=document.getElementById(id); if(!s) return; s.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.val===val)); }
-function setVista(clave,val){ VISTA[clave]=val; try{ localStorage.setItem('charts_'+clave, val); }catch(e){} aplicarVista(); }
+function guardarPrefsNube(){ try{ var p={tema:localStorage.getItem('charts_tema')||'',modo:localStorage.getItem('charts_modo')||'',color:localStorage.getItem('charts_color')||'',grosor:localStorage.getItem('charts_grosor')||'',tam:localStorage.getItem('charts_tam')||''}; fetch('/api/perfil/prefs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}); }catch(e){} }
+function setVista(clave,val){ VISTA[clave]=val; try{ localStorage.setItem('charts_'+clave, val); }catch(e){} aplicarVista(); guardarPrefsNube(); }
 cargarVista();
 function hexRgbaV(hex,a){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return 'rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+','+a+')'; }
 function inkFor(hex){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16); return (0.299*r+0.587*g+0.114*b)>145?'#000':'#fff'; }
