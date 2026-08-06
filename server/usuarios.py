@@ -275,6 +275,24 @@ def listar_usuarios(estado=None):
         return [dict(r) for r in rows]
 
 
+def listar_perfiles():
+    """Perfiles (id, nombre, acento, prefs) de usuarios activos, para el visor local de NeuralPlay."""
+    try:
+        with _conexion() as conn:
+            rows = conn.execute(
+                "SELECT id, nombre, apellido, acento, prefs FROM usuarios WHERE estado = 'activo' ORDER BY nombre COLLATE NOCASE"
+            ).fetchall()
+        out = []
+        for r in rows:
+            nom = (r["nombre"] or "").strip()
+            ap = (r["apellido"] or "").strip()
+            full = (nom + " " + ap).strip() or nom or ("usuario " + str(r["id"]))
+            out.append({"id": r["id"], "nombre": full, "acento": r["acento"] or "", "prefs": r["prefs"] or "{}"})
+        return out
+    except Exception:
+        return []
+
+
 def aprobar_usuario(user_id):
     with _conexion() as conn:
         cur = conn.execute(

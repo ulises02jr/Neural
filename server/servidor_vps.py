@@ -2105,6 +2105,14 @@ def admin_pads_audio(pack_id, idx):
 
 
 # ---- API NeuralPlay: pads ----
+@app.route("/api/live/perfiles")
+def api_live_perfiles():
+    """NeuralPlay: roster de perfiles (nombre + acento + prefs) para el visor local. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    return jsonify(usuarios.listar_perfiles())
+
+
 @app.route("/api/live/pads")
 def api_live_pads():
     """NeuralPlay: lista de packs de pads con su estado. Token."""
