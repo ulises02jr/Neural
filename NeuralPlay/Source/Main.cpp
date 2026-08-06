@@ -2222,7 +2222,16 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
   <button data-val="#FFFFFF" onclick="setAcento('#FFFFFF')" title="Blanco" style="background:#FFFFFF"></button>
   <input type="color" id="acento-custom-v" title="Color personalizado" onchange="setAcento(this.value)">
  </div>
+ <div style="margin-top:16px;text-align:center"><button onclick="cambiarMusico()" style="background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:underline">Cambiar de músico</button></div>
 </div>
+
+<div id="who-bg" style="position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:50;display:none"></div>
+<div id="who" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:51;background:#141414;border:1px solid #2a2a2a;border-radius:16px;padding:22px;width:min(90vw,420px);max-height:80vh;overflow:auto;display:none">
+ <div style="font-size:20px;font-weight:700;color:#fff;margin-bottom:4px">&#191;Qui&#233;n sos?</div>
+ <div style="font-size:13px;color:#a3a3a3;margin-bottom:16px">Eleg&#237; tu nombre para ver los charts con tu configuraci&#243;n.</div>
+ <div id="who-list" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
 <script>
 var song=null, ver=-1, idx=-1;
 var NIVELES=['xs','s','m','l','xl'], nivel=2;
@@ -2249,6 +2258,15 @@ function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}c
 function setAcento(val){ try{ if(val)localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} aplicarAcento(); }
 function abrirAjustes(){ document.getElementById('bg-ajustes').classList.add('open'); document.getElementById('sheet-ajustes').classList.add('open'); }
 function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
+// ── Identidad del músico (Solución A: elegí tu nombre una vez; aplica tu config de la cuenta MiWorship) ──
+var PERFILES=[];
+function cargarPerfiles(cb){ try{ fetch('/perfiles',{cache:'no-store'}).then(function(r){return r.json();}).then(function(a){ PERFILES=Array.isArray(a)?a:[]; if(cb)cb(); }).catch(function(){ if(cb)cb(); }); }catch(e){ if(cb)cb(); } }
+function aplicarPerfil(p){ try{ if(p.acento){localStorage.setItem('mw_acento',p.acento);}else{localStorage.removeItem('mw_acento');} var pr={}; try{pr=JSON.parse(p.prefs||'{}')||{};}catch(e){} if(pr.tema)localStorage.setItem('charts_tema',pr.tema); if(pr.modo)localStorage.setItem('charts_modo',pr.modo); if(pr.color!==undefined&&pr.color!==null)localStorage.setItem('charts_color',pr.color); if(pr.grosor)localStorage.setItem('charts_grosor',pr.grosor); if(pr.tam){localStorage.setItem('np_tam',pr.tam); var ni=NIVELES.indexOf(pr.tam); if(ni>=0)nivel=ni;} }catch(e){} cargarVista(); aplicarAcento(); aplicarTam(); }
+function elegirMusico(id){ try{localStorage.setItem('np_musico_id',String(id));}catch(e){} var p=PERFILES.filter(function(x){return String(x.id)===String(id);})[0]; if(p)aplicarPerfil(p); cerrarWho(); }
+function mostrarWho(){ var l=document.getElementById('who-list'); l.innerHTML=PERFILES.length?PERFILES.map(function(p){return '<button onclick="elegirMusico('+p.id+')" style="text-align:left;padding:14px 16px;border-radius:10px;border:1px solid #2a2a2a;background:#1f1f1f;color:#fff;font-size:16px;font-weight:600;cursor:pointer;font-family:inherit">'+esc(p.nombre)+'</button>';}).join(''):'<div style="color:#888;padding:12px;text-align:center">No hay perfiles disponibles.<br>Conect&#225; NeuralPlay a internet una vez para bajar la lista.</div>'; document.getElementById('who-bg').style.display='block'; document.getElementById('who').style.display='block'; }
+function cerrarWho(){ document.getElementById('who-bg').style.display='none'; document.getElementById('who').style.display='none'; }
+function cambiarMusico(){ cerrarAjustes(); cargarPerfiles(mostrarWho); }
+function initIdentidad(){ cargarPerfiles(function(){ var id=null; try{id=localStorage.getItem('np_musico_id');}catch(e){} var p=id?PERFILES.filter(function(x){return String(x.id)===String(id);})[0]:null; if(p){ aplicarPerfil(p); } else { mostrarWho(); } }); }
 // ── Chart ──
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function renderLines(lines){return '<div class="lyrics">'+(lines||[]).map(function(line){line=line||[];var solo=line.length>0&&line.every(function(t){return !((t[1]||'').trim());});if(solo){return '<div class="line inst-line">'+line.filter(function(t){return (t[0]||'').trim();}).map(function(t){return '<span class="chip">'+esc(t[0])+'</span>';}).join('')+'</div>';}return '<div class="line">'+line.map(function(t){return '<div class="tok"><span class="chord">'+esc(t[0])+'</span><span class="lyric">'+esc((t[1]==null||t[1]==='')?' ':t[1])+'</span></div>';}).join('')+'</div>';}).join('')+'</div>';}
@@ -2284,6 +2302,7 @@ async function tick(){
  }
 }
 aplicarTam(); cargarVista(); aplicarAcento();
+initIdentidad();
 setInterval(tick,400); tick();
 </script></body></html>)HTMLPAGE";
 
@@ -2294,7 +2313,7 @@ struct HttpLiveServer : private juce::Thread
     ~HttpLiveServer() override { stop(); }
 
     int port = 5050;
-    std::function<juce::String()> getPage, getSong, getState;
+    std::function<juce::String()> getPage, getSong, getState, getPerfiles;
     juce::StreamingSocket listener;
 
     void start() { if (! isThreadRunning()) startThread(); }
@@ -2341,6 +2360,7 @@ struct HttpLiveServer : private juce::Thread
         if (path == "/" || path == "/index.html")            body = getPage  ? getPage()  : juce::String();
         else if (path == "/song")  { ctype = "application/json; charset=utf-8"; nostore = true; body = getSong  ? getSong()  : juce::String ("{}"); }
         else if (path == "/state") { ctype = "application/json; charset=utf-8"; nostore = true; body = getState ? getState() : juce::String ("{}"); }
+        else if (path == "/perfiles") { ctype = "application/json; charset=utf-8"; nostore = true; body = getPerfiles ? getPerfiles() : juce::String ("[]"); }
         else { writeResp (s, "404 Not Found", "text/plain; charset=utf-8", "no encontrado", false); return; }
         writeResp (s, "200 OK", ctype, body, nostore);
     }
@@ -2617,6 +2637,7 @@ public:
 
         liveServer.getPage  = [] { return juce::String (juce::CharPointer_UTF8 (kMusicianPage)); };
         liveServer.getSong  = [this] { const juce::ScopedLock l (chartLock); return currentChartJson; };
+        liveServer.getPerfiles = [this] { const juce::ScopedLock l (chartLock); return perfilesJson; };
         liveServer.getState = [this]
         {
             juce::String j;
@@ -4034,6 +4055,30 @@ private:
         serverUrl   = v.getProperty ("serverUrl", "").toString();
         serverToken = v.getProperty ("token", "").toString();
         fetchPadPacks();
+        loadCachedPerfiles();
+        fetchPerfiles();
+    }
+    void loadCachedPerfiles()   // roster de perfiles cacheado (offline)
+    {
+        auto f = npAppDir().getChildFile ("perfiles.json");
+        if (! f.existsAsFile()) return;
+        auto txt = f.loadFileAsString().trim();
+        if (txt.startsWithChar ('[')) { const juce::ScopedLock l (chartLock); perfilesJson = txt; }
+    }
+    void fetchPerfiles()   // baja el roster (nombre + acento + prefs) cuando hay internet
+    {
+        if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
+        const juce::String url = serverUrl + "/api/live/perfiles";
+        const juce::String tok = serverToken;
+        juce::Thread::launch ([this, url, tok]
+        {
+            auto txt = httpGet (url, tok).trim();
+            if (txt.startsWithChar ('['))
+            {
+                { const juce::ScopedLock l (chartLock); perfilesJson = txt; }
+                npAppDir().getChildFile ("perfiles.json").replaceWithText (txt);
+            }
+        });
     }
 
     // ── Pads: catálogo del servidor + selección ──────────────────────
@@ -6798,6 +6843,7 @@ private:
     int syncPingCtr = 0, syncPollCtr = 0;
     HttpLiveServer liveServer;
     juce::String currentChartJson { "{}" };
+    juce::String perfilesJson { "[]" };            // roster de perfiles (cache) para el visor local
     juce::CriticalSection chartLock;
     std::atomic<int> liveSectionIdx { 0 };
     std::atomic<int> liveSongVer { 0 };
