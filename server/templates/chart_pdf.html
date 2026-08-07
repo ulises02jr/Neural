@@ -1,0 +1,69 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@page { size: letter; margin: 1.3cm 1.3cm 1.5cm 1.3cm;
+  @top-right { content: "P\00e1gina " counter(page) " / " counter(pages); font-size: 8pt; color:#9aa0a6; } }
+* { box-sizing: border-box; }
+body { font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; font-size:10.5pt; margin:0; }
+.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e3e3e6; padding-bottom:8px; margin-bottom:10px; }
+.hd .ttl { font-size:17pt; font-weight:800; line-height:1.12; }
+.hd .art { font-size:10pt; color:#6b7280; margin-top:2px; }
+.hd .meta { text-align:right; font-size:9pt; color:#6b7280; white-space:nowrap; padding-left:14px; }
+.hd .meta b { color:#1a1a1a; }
+.map { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+.badge { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 4px; border-radius:11px; border:2px solid #999; font-size:8pt; font-weight:700; }
+.cols { column-count:2; column-gap:14px; }
+.box { break-inside:avoid; border:1px solid #e0e0e4; border-radius:9px; padding:9px 12px 11px; margin-bottom:10px; }
+.box-h { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+.box-h .b { min-width:20px; height:20px; padding:0 3px; border-radius:10px; border:2px solid #999; display:inline-flex; align-items:center; justify-content:center; font-size:7.5pt; font-weight:700; flex:0 0 auto; }
+.box-h .nm { font-size:10pt; font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
+.box-h .rule { flex:1; height:1px; background:#ececef; }
+.note { font-size:8.5pt; color:#9aa0a6; font-style:italic; text-align:right; margin:0 0 6px; }
+.chips { display:flex; flex-wrap:wrap; gap:12px; }
+.chip { font-weight:700; font-size:10.5pt; }
+.chip sup { font-size:64%; }
+.ln { margin-bottom:5px; line-height:1.05; }
+.tok { display:inline-block; vertical-align:bottom; white-space:pre; }
+.tok .ch { display:block; font-weight:700; color:#111; font-size:10pt; height:12pt; }
+.tok .ch sup { font-size:64%; }
+.tok .ly { display:block; font-size:10pt; }
+.ln.solo .tok .ly { display:none; }
+.ln.solo .tok { margin-right:12px; }
+.ln.solo .tok .ch { height:auto; }
+.foot { margin-top:14px; border-top:1px solid #e3e3e6; padding-top:8px; font-size:8pt; color:#9aa0a6; }
+.foot b { color:#6b7280; }
+</style></head>
+<body>
+  <div class="hd">
+    <div>
+      <div class="ttl">{{ c.titulo }}</div>
+      {% if c.artista %}<div class="art">{{ c.artista }}</div>{% endif %}
+    </div>
+    <div class="meta"><b>Tono:</b> {{ tono }} &nbsp; <b>Tempo:</b> {{ c.tempo or "—" }} &nbsp; <b>Compás:</b> {{ c.compas or "—" }}</div>
+  </div>
+  <div class="map">
+    {% for m in mapa %}<span class="badge" style="border-color:{{ m.color }};color:{{ m.color }}">{{ m.abbr }}</span>{% endfor %}
+  </div>
+  <div class="cols">
+    {% for s in secs %}
+    <div class="box">
+      <div class="box-h">
+        <span class="b" style="border-color:{{ s.color }};color:{{ s.color }}">{{ s.abbr }}</span>
+        <span class="nm">{{ s.nombre }}</span>
+        <span class="rule"></span>
+      </div>
+      {% if s.nota %}<div class="note">{{ s.nota }}</div>{% endif %}
+      {% if s.inst %}
+        <div class="chips">{% for ch in s.prog %}<span class="chip">{{ ch | acorde }}</span>{% endfor %}</div>
+      {% else %}
+        <div class="lyr">
+          {% for ln in s.lineas %}
+            <div class="ln{% if ln.solo %} solo{% endif %}">{% for tok in ln.toks %}<span class="tok"><span class="ch">{{ tok[0] | acorde }}</span><span class="ly">{{ tok[1] if tok[1] else " " }}</span></span>{% endfor %}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="foot"><b>{{ c.titulo }}</b>{% if c.artista %} — {{ c.artista }}{% endif %} · Tono {{ tono }}<br>Generado con <b>MiWorship</b> · Mi Iglesia Internacional</div>
+</body></html>

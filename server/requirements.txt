@@ -4,3 +4,4 @@ gunicorn>=21.0
 python-pptx
 reportlab
 numpy
+weasyprint>=69

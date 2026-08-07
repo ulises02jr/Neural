@@ -3039,6 +3039,125 @@ def admin_editar(numero):
                            n_secciones=len(_leer_secciones(numero)))
 
 
+# ───────── Exportar cifrado a PDF (estilo chart) ─────────
+import re as _re_pdf
+import html as _htmlmod
+from transposicion import PATRON_ACORDE as _PAT_ACORDE
+
+_ABBR_SECCION = [
+    (("pre-coro", "pre coro", "precoro", "pre-cor"), "Pr", "#C08A2E"),
+    (("post-coro", "post coro", "postcoro", "post-cor"), "Pc", "#C08A2E"),
+    (("intro",), "I", "#2E9E8F"),
+    (("interludio",), "It", "#7A5AA6"),
+    (("instrumental",), "Is", "#2E9E8F"),
+    (("verso",), "V", "#3B6FB5"),
+    (("coro",), "C", "#B23B4E"),
+    (("puente",), "P", "#7A5AA6"),
+    (("refra", "refrain"), "Rf", "#2E8B57"),
+    (("vamp",), "Vp", "#556070"),
+    (("solo",), "So", "#556070"),
+    (("tag",), "Tg", "#556070"),
+    (("outro",), "O", "#B23B4E"),
+    (("final",), "F", "#556070"),
+    (("baja",), "Bj", "#556070"),
+    (("canales",), "Cn", "#556070"),
+    (("exhort",), "Ex", "#556070"),
+    (("rap",), "Ra", "#556070"),
+    (("acape", "a cape"), "Ac", "#556070"),
+    (("pad",), "Pd", "#556070"),
+    (("clic", "click"), "Cl", "#556070"),
+    (("repet",), "Rp", "#556070"),
+]
+
+def _badge_seccion(tipo):
+    t = (tipo or "").strip().lower()
+    m = _re_pdf.search(r"(\d+)\s*$", t)
+    num = m.group(1) if m else ""
+    for claves, abbr, color in _ABBR_SECCION:
+        if any(t.startswith(k) for k in claves):
+            return (abbr + num, color, (tipo or "").strip().upper())
+    base = (t[:2] or "S").capitalize()
+    return (base + num, "#6b7280", (tipo or "Seccion").strip().upper())
+
+def _acorde_html(ch):
+    ch = (ch or "").strip()
+    if not ch:
+        return ""
+    if " " in ch:
+        return " ".join(_acorde_html(x) for x in ch.split(" ") if x.strip())
+    m = _PAT_ACORDE.match(ch)
+    if not m:
+        return _htmlmod.escape(ch)
+    raiz, modif, bajo = m.groups()
+    out = _htmlmod.escape(raiz)
+    if modif:
+        if modif.startswith("m") and not modif.startswith("maj"):
+            out += "m"
+            resto = modif[1:]
+            if resto:
+                out += "<sup>" + _htmlmod.escape(resto) + "</sup>"
+        else:
+            out += "<sup>" + _htmlmod.escape(modif) + "</sup>"
+    if bajo:
+        out += "/" + _htmlmod.escape(bajo)
+    return out
+
+@app.template_filter("acorde")
+def _jinja_acorde(ch):
+    from markupsafe import Markup
+    return Markup(_acorde_html(ch))
+
+@app.route("/admin/pistas/<int:numero>/pdf")
+@login_required("admin")
+def admin_cancion_pdf(numero):
+    from flask import send_file
+    import copy as _copy
+    import io as _io
+    biblioteca = cargar_biblioteca()
+    cancion = biblioteca.get(numero)
+    if not cancion:
+        flash("Cancion no encontrada", "error")
+        return redirect(url_for("admin_pistas"))
+    cancion = _copy.deepcopy(cancion)
+    tono_orig = cancion.get("tono", "C")
+    tono_pedido = (request.args.get("tono") or "").strip()
+    if tono_pedido and tono_pedido != tono_orig:
+        from transposicion import NOTA_A_INDICE as _NAI
+        mo = _re_pdf.match(r"^([A-G][#b]?)", tono_orig or "")
+        md = _re_pdf.match(r"^([A-G][#b]?)", tono_pedido or "")
+        ro = mo.group(1) if mo else None
+        rd = md.group(1) if md else None
+        if ro and rd and ro in _NAI and rd in _NAI:
+            sem = (_NAI[rd] - _NAI[ro]) % 12
+            if sem:
+                cancion = transponer_cancion(cancion, sem)
+    secs, mapa = [], []
+    for sec in cancion.get("secciones", []):
+        abbr, color, nombre = _badge_seccion(sec.get("tipo", ""))
+        mapa.append({"abbr": abbr, "color": color})
+        lineas = []
+        for line in (sec.get("lines") or []):
+            toks = [((tk[0] if len(tk) > 0 else ""), (tk[1] if len(tk) > 1 else "")) for tk in line]
+            solo = (any((c or "").strip() for c, l in toks) and not any((l or "").strip() for c, l in toks))
+            lineas.append({"solo": solo, "toks": toks})
+        secs.append({"abbr": abbr, "color": color, "nombre": nombre,
+                     "nota": sec.get("nota", "") or "",
+                     "inst": bool(sec.get("inst")),
+                     "prog": sec.get("prog", []) or [],
+                     "lineas": lineas})
+    html_doc = render_template("chart_pdf.html", c=cancion, secs=secs, mapa=mapa,
+                               tono=cancion.get("tono", tono_orig))
+    from weasyprint import HTML as _WEASY_HTML
+    pdf_bytes = _WEASY_HTML(string=html_doc).write_pdf()
+    titulo = cancion.get("titulo", "cancion")
+    artista = cancion.get("artista", "")
+    tono_f = cancion.get("tono", tono_orig)
+    nombre_arch = titulo + ((" - " + artista) if artista else "") + " (" + str(tono_f) + ").pdf"
+    return send_file(_io.BytesIO(pdf_bytes), mimetype="application/pdf",
+                     as_attachment=True, download_name=nombre_arch)
+# ───────── fin exportar PDF ─────────
+
+
 @app.route("/admin/pistas/<int:numero>/familias", methods=["POST"])
 @login_required("admin")
 def admin_familias(numero):
