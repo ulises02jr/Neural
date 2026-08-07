@@ -63,7 +63,7 @@
   .icon-btn:hover{background:var(--surface);color:var(--txt);border-color:var(--txt3)}
   .icon-btn.danger{color:var(--danger);border-color:rgba(220,98,98,0.3)}
   .icon-btn.danger:hover{background:rgba(220,98,98,0.1)}
-  .item.en-set{background:#161616;border-color:#3d3422}
+  .item.en-set{background:var(--gold-soft);border-color:var(--line)}
   .item.en-set .num{color:var(--gold)}
   .vacio{padding:18px;color:var(--txt3);font-size:12px;text-align:center;font-style:italic;
     border:1px dashed var(--line);border-radius:8px}
@@ -168,7 +168,7 @@
   .seg.colores input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
   .seg.colores input[type=color]::-moz-color-swatch{border:none;border-radius:50%}
 </style>
-<script>/*mw-acento*/(function(){try{var s="{{ mi_acento }}";var c=s||localStorage.getItem('mw_acento');if(s){try{localStorage.setItem('mw_acento',s);}catch(_){}}if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');}}catch(e){}})();</script>
+<script>/*mw-acento*/(function(){try{var s="{{ mi_acento }}";var c=s||localStorage.getItem('mw_acento');if(s){try{localStorage.setItem('mw_acento',s);}catch(_){}}if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--accent',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');}}catch(e){}})();</script>
 </head>
 <body>
 <div class="wrap">
@@ -723,8 +723,8 @@ function aplicarPrefs(){
   document.body.dataset.iconsize = PREFS.iconsize;
   document.body.classList.toggle('tema-claro', PREFS.tema === 'claro');
   document.body.classList.toggle('nav-barras', PREFS.nav === 'barras');
-  if(PREFS.acento){ document.body.style.setProperty('--gold', PREFS.acento); document.body.style.setProperty('--gold-soft', hexRgba(PREFS.acento, 0.16)); }
-  else { document.body.style.removeProperty('--gold'); document.body.style.removeProperty('--gold-soft'); }
+  if(PREFS.acento){ document.body.style.setProperty('--gold', PREFS.acento); document.body.style.setProperty('--gold-soft', hexRgba(PREFS.acento, 0.16)); document.body.style.setProperty('--accent', PREFS.acento); }
+  else { document.body.style.removeProperty('--gold'); document.body.style.removeProperty('--gold-soft'); document.body.style.removeProperty('--accent'); }
   marcarSeg('seg-iconsize', PREFS.iconsize);
   marcarSeg('seg-tema', PREFS.tema);
   marcarSeg('seg-nav', PREFS.nav);
