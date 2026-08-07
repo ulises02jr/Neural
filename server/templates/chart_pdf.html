@@ -2,7 +2,7 @@
 <html><head><meta charset="utf-8">
 <style>
 @page { size: letter; margin: 1.3cm 1.3cm 1.5cm 1.3cm;
-  @top-right { content: "P\00e1gina " counter(page) " / " counter(pages); font-size: 8pt; color:#9aa0a6; } }
+  @top-right { content: "P\00e1gina " counter(page) " / " counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color:#9aa0a6; letter-spacing:.3px; } }
 * { box-sizing: border-box; }
 body { font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; font-size:10.5pt; margin:0; }
 .hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e3e3e6; padding-bottom:8px; margin-bottom:10px; }
@@ -11,11 +11,11 @@ body { font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; font-size:10.5p
 .hd .meta { text-align:right; font-size:9pt; color:#6b7280; white-space:nowrap; padding-left:14px; }
 .hd .meta b { color:#1a1a1a; }
 .map { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
-.badge { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; border:1.5px solid #999; font-size:7pt; font-weight:700; }
+.badge { display:inline-block; width:20px; height:20px; line-height:17px; text-align:center; border-radius:50%; border:1.5px solid #999; font-size:6.5pt; font-weight:700; vertical-align:middle; }
 .cols { column-count:2; column-gap:14px; }
 .box { break-inside:avoid; border:1px solid #e0e0e4; border-radius:9px; padding:9px 12px 11px; margin-bottom:10px; }
 .box-h { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
-.box-h .b { width:21px; height:21px; border-radius:50%; border:1.5px solid #999; display:inline-flex; align-items:center; justify-content:center; font-size:7pt; font-weight:700; flex:0 0 auto; }
+.box-h .b { display:inline-block; width:20px; height:20px; line-height:17px; text-align:center; border-radius:50%; border:1.5px solid #999; font-size:6.5pt; font-weight:700; flex:0 0 auto; }
 .box-h .nm { font-size:10pt; font-weight:800; letter-spacing:.4px; text-transform:uppercase; }
 .box-h .rule { flex:1; height:1px; background:#ececef; }
 .note { font-size:8.5pt; color:#9aa0a6; font-style:italic; text-align:right; margin:0 0 6px; }
