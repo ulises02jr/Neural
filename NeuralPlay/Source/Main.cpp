@@ -1371,9 +1371,45 @@ struct StoragePanel : public juce::Component
     { if (! panelBounds().contains (e.getPosition())) setVisible (false); }
 };
 
+// LookAndFeel para filas tipo interruptor (nombre a la izquierda, switch a la derecha)
+struct SwitchLNF : public juce::LookAndFeel_V4
+{
+    void drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&,
+                               bool over, bool down) override
+    {
+        auto r = b.getLocalBounds().toFloat();
+        g.setColour (juce::Colour (down ? 0xff2a2a2a : (over ? 0xff242424 : 0xff1f1f1f)));
+        g.fillRoundedRectangle (r, 10.0f);
+        const bool on = b.getToggleState();
+        const float sw = 44.0f, sh = 26.0f, pad = 16.0f;
+        juce::Rectangle<float> tr (r.getRight() - sw - pad, r.getCentreY() - sh * 0.5f, sw, sh);
+        g.setColour (on ? juce::Colour (0xff2FBF5B) : juce::Colour (0xff4a4a4a));
+        g.fillRoundedRectangle (tr, sh * 0.5f);
+        const float kd = sh - 6.0f;
+        const float kx = on ? (tr.getRight() - kd - 3.0f) : (tr.getX() + 3.0f);
+        juce::Rectangle<float> knob (kx, tr.getCentreY() - kd * 0.5f, kd, kd);
+        g.setColour (juce::Colours::white);
+        g.fillEllipse (knob);
+    }
+    void drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool) override
+    {
+        g.setColour (juce::Colour (0xfff2f2f2));
+        g.setFont (juce::Font (14.5f, juce::Font::bold));
+        auto r = b.getLocalBounds().reduced (18, 0);
+        r.removeFromRight (44 + 16 + 10);   // deja el hueco del switch
+        g.drawText (b.getButtonText(), r, juce::Justification::centredLeft, true);
+    }
+};
+
 struct SettingsPanel : public juce::Component
 {
     juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn;
+    SwitchLNF switchLnf;
+    ~SettingsPanel() override
+    {
+        for (auto* b : { &syncBtn, &countInBtn, &masterPSBtn, &mixPSBtn })
+            b->setLookAndFeel (nullptr);
+    }
     bool syncOn = false, linked = false, countInOn = false, masterPSOn = true, mixPSOn = true;
     juce::Rectangle<int> statusBounds;
     std::function<void (bool)> onSync;
@@ -1425,6 +1461,8 @@ struct SettingsPanel : public juce::Component
         closeBtn.onClick = [this] { setVisible (false); };
         addAndMakeVisible (closeBtn);
 
+        for (auto* b : { &syncBtn, &countInBtn, &masterPSBtn, &mixPSBtn }) b->setLookAndFeel (&switchLnf);
+
         setAlwaysOnTop (true);
         refresh();
     }
@@ -1436,28 +1474,17 @@ struct SettingsPanel : public juce::Component
 
     void refresh()
     {
-        syncBtn.setButtonText (syncOn ? juce::String::fromUTF8 ("NeuralSync \xe2\x9c\x93") : "NeuralSync");
-        syncBtn.setColour (juce::TextButton::buttonColourId,
-                           syncOn ? juce::Colour (0xff17361f) : juce::Colour (0xff1f1f1f));
-        syncBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        syncBtn.setButtonText ("NeuralSync");
+        syncBtn.setToggleState (syncOn, juce::dontSendNotification);
 
-        countInBtn.setButtonText (countInOn ? juce::String::fromUTF8 ("Pre-roll por secci\xc3\xb3n \xe2\x9c\x93")
-                                            : juce::String::fromUTF8 ("Pre-roll por secci\xc3\xb3n"));
-        countInBtn.setColour (juce::TextButton::buttonColourId,
-                              countInOn ? juce::Colour (0xff17361f) : juce::Colour (0xff1f1f1f));
-        countInBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        countInBtn.setButtonText (juce::String::fromUTF8 ("Pre-roll por secci\xc3\xb3n"));
+        countInBtn.setToggleState (countInOn, juce::dontSendNotification);
 
-        masterPSBtn.setButtonText (masterPSOn ? juce::String::fromUTF8 ("Master por canci\xc3\xb3n \xe2\x9c\x93")
-                                              : juce::String::fromUTF8 ("Master general (setlist)"));
-        masterPSBtn.setColour (juce::TextButton::buttonColourId,
-                               masterPSOn ? juce::Colour (0xff17361f) : juce::Colour (0xff2a2410));
-        masterPSBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        masterPSBtn.setButtonText (juce::String::fromUTF8 ("Master por canci\xc3\xb3n"));
+        masterPSBtn.setToggleState (masterPSOn, juce::dontSendNotification);
 
-        mixPSBtn.setButtonText (mixPSOn ? juce::String::fromUTF8 ("Buses y mute por canci\xc3\xb3n \xe2\x9c\x93")
-                                        : juce::String::fromUTF8 ("Buses y mute generales"));
-        mixPSBtn.setColour (juce::TextButton::buttonColourId,
-                            mixPSOn ? juce::Colour (0xff17361f) : juce::Colour (0xff2a2410));
-        mixPSBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        mixPSBtn.setButtonText (juce::String::fromUTF8 ("Buses y mute por canci\xc3\xb3n"));
+        mixPSBtn.setToggleState (mixPSOn, juce::dontSendNotification);
         repaint();
     }
 
@@ -1506,10 +1533,10 @@ struct SettingsPanel : public juce::Component
         auto b = p.reduced (24); b.removeFromTop (44);
         const int bh = 46, gap = 12;
         syncBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
-        cfgBtn.setBounds      (b.removeFromTop (bh)); b.removeFromTop (gap);
         countInBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
         masterPSBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
         mixPSBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
+        cfgBtn.setBounds      (b.removeFromTop (bh)); b.removeFromTop (gap);
         storeBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
         refreshBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
         statusBounds = b.removeFromTop (22);
@@ -2750,8 +2777,8 @@ public:
         }
         barPrevBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25C0));   // ◀
         barNextBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25B6));   // ▶
-        barPrevBtn.onClick = [this] { if (clickOrArm (kaPrevBar)) return; seekBar (-1); };
-        barNextBtn.onClick = [this] { if (clickOrArm (kaNextBar)) return; seekBar (+1); };
+        barPrevBtn.onClick = [this] { if (clickOrArm (kaPrevBar)) return; seekSection (-1); };
+        barNextBtn.onClick = [this] { if (clickOrArm (kaNextBar)) return; seekSection (+1); };
 
         fadeButton.onClick = [this] { if (clickOrArm (kaFade)) return; toggleFade(); };
         addAndMakeVisible (fadeButton);
@@ -5918,6 +5945,27 @@ private:
             seekSeconds (juce::jmax (0.0, positionSeconds() + dir * secPerBar));
         }
     }
+    void seekSection (int dir)   // saltar al inicio de la sección anterior/siguiente
+    {
+        if (sectionTimes.isEmpty()) { seekBar (dir); return; }   // respaldo: por compás
+        juce::Array<double> anchors;
+        if (sectionTimes[0] > 0.4) anchors.add (0.0);            // bloque "Conteo"
+        for (auto s : sectionTimes) anchors.add (s);
+        const double t = positionSeconds();
+        const double eps = 0.25;
+        double target;
+        if (dir > 0)
+        {
+            target = anchors[anchors.size() - 1];
+            for (auto a : anchors) if (a > t + eps) { target = a; break; }
+        }
+        else
+        {
+            target = 0.0;
+            for (int i = anchors.size() - 1; i >= 0; --i) if (anchors[i] < t - eps) { target = anchors[i]; break; }
+        }
+        seekSeconds (juce::jlimit (0.0, totalSeconds(), target));
+    }
     double pulsesAt (double t) const   // pulsos de MIDI clock (24 PPQN) acumulados hasta t
     {
         const auto& g = currentBeatGrid;
@@ -6257,8 +6305,8 @@ private:
         {
             case kaPlay:      togglePlay();        break;
             case kaReturn:    seekSeconds (0.0);   break;
-            case kaPrevBar:   seekBar (-1);        break;
-            case kaNextBar:   seekBar (+1);        break;
+            case kaPrevBar:   seekSection (-1);    break;
+            case kaNextBar:   seekSection (+1);    break;
             case kaFade:      toggleFade();        break;
             case kaLoop:      toggleLoopInfinite(); break;
             case kaRepeat:    toggleRepeatOnce();  break;
