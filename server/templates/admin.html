@@ -249,14 +249,6 @@
       {% else %}
       <span style="display:inline-flex;align-items:center;gap:9px;padding:12px 20px;background:var(--raised);color:var(--txt3);border:1px solid var(--line);border-radius:8px;font-weight:600;font-size:14px;opacity:.75">Mac · disponible pronto</span>
       {% endif %}
-      {% if desc_np_win %}
-      <a href="{{ url_for('admin_descargar', plataforma='windows') }}?app=neuralplay" style="display:inline-flex;align-items:center;gap:9px;padding:12px 20px;background:var(--gold);color:#1a1a1a;border-radius:8px;font-weight:700;text-decoration:none;font-size:14px">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.4 10.2 4.4v6.9H3V5.4zm0 13.2 7.2 1v-6.85H3v5.85zM11.1 4.25 21 3v8.3h-9.9V4.25zm0 15.5L21 21v-8.4h-9.9v7.15z"/></svg>
-        Descargar para Windows
-      </a>
-      {% else %}
-      <span style="display:inline-flex;align-items:center;gap:9px;padding:12px 20px;background:var(--raised);color:var(--txt3);border:1px solid var(--line);border-radius:8px;font-weight:600;font-size:14px;opacity:.75">Windows · disponible pronto</span>
-      {% endif %}
     </div>
   </div>
 
