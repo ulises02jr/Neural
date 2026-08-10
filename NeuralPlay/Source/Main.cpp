@@ -2934,6 +2934,7 @@ public:
         double fileRate = 44100.0;
         float  gain = 0.0f, target = 0.0f;   // envolvente de crossfade
         int    idx = -1;
+        bool   dead = false;                 // marcada en el hilo de audio; se libera en el timer (fuera del audio)
     };
     struct PadPack { juce::String id, nombre, portada; int baseIdx = 0; bool listo = false; };
 
@@ -2942,7 +2943,7 @@ public:
         const juce::ScopedLock sl (graphLock);
         deviceSampleRate = sampleRate;
         currentBlockSize = spb;
-        temp.setSize (2, spb + 8);
+        temp.setSize (2, juce::jmax (spb, 2048) + 8);
         for (int i = 0; i < resamplers.size(); ++i)
         {
             resamplers[i]->setResamplingRatio (fileRates[i] / sampleRate);
@@ -2950,7 +2951,7 @@ public:
         }
         {
             const juce::ScopedLock pl (padLock);
-            padTemp.setSize (2, spb + 8);
+            padTemp.setSize (2, juce::jmax (spb, 2048) + 8);
             for (auto* pv : padVoices) if (pv->res) { pv->res->setResamplingRatio (pv->fileRate / sampleRate); pv->res->prepareToPlay (spb, sampleRate); }
         }
         prepared.store (true);
@@ -2973,7 +2974,7 @@ public:
         const juce::ScopedTryLock pl (padLock);
         if (! pl.isLocked() || padVoices.isEmpty()) return;
         const int nn = info.numSamples;
-        if (padTemp.getNumSamples() < nn) padTemp.setSize (2, nn + 8, false, false, true);
+        if (padTemp.getNumSamples() < nn) return;   // no asignar en el hilo de audio (ya dimensionado en prepareToPlay)
         auto* b = info.buffer;
         if (b->getNumChannels() < 1) return;
         float* oL = b->getWritePointer (0, info.startSample);
@@ -2986,7 +2987,7 @@ public:
         for (int v = padVoices.size(); --v >= 0;)
         {
             auto* pv = padVoices.getUnchecked (v);
-            if (pv->res == nullptr) { padVoices.remove (v); continue; }
+            if (pv->dead || pv->res == nullptr) { pv->dead = true; continue; }   // muerta: no mezclar ni borrar aquí
             padTemp.clear();
             juce::AudioSourceChannelInfo pi (&padTemp, 0, nn);
             pv->res->getNextAudioBlock (pi);
@@ -3006,13 +3007,22 @@ public:
                 if (oR) oR[n] += sR[n] * gg;
                 const float aa = std::abs (s); if (aa > dbgPeak) dbgPeak = aa;
             }
-            if (pv->target <= 0.0f && pv->gain <= 0.0002f) padVoices.remove (v);
+            if (pv->target <= 0.0f && pv->gain <= 0.0002f) pv->dead = true;   // se libera en el timer (fuera del audio)
         }
         padGainCur = pg1;
         padDbgVoices.store (padVoices.size());
         padDbgMg.store (mg);
         padDbgAbs.store (dbgPeak);
         for (int n = 0; n < nn; ++n) { oL[n] = softClip (oL[n]); if (oR) oR[n] = softClip (oR[n]); }
+    }
+
+    // Limpia (fuera del hilo de audio) las voces marcadas 'dead' en mixPad. Se llama desde timerCallback (hilo de mensajes).
+    void reapDeadPadVoices()
+    {
+        const juce::ScopedLock pl (padLock);
+        for (int v = padVoices.size(); --v >= 0;)
+            if (padVoices.getUnchecked (v)->dead)
+                padVoices.remove (v);   // aquí SÍ se libera memoria: message thread, seguro
     }
 
     // ── Control del pad (hilo de mensajes / fondo) ───────────────────
@@ -6097,6 +6107,7 @@ private:
     {
         if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 1600) { splashOn = false; splash.setVisible (false); }
         updatePadAutomation();   // Pad Player: intro/outro por canción
+        reapDeadPadVoices();     // libera voces de pad marcadas en mixPad (fuera del hilo de audio)
 
         if (syncEnabled)   // puente: sección en vivo + heartbeat 30s + estado 5s
         {
