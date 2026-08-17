@@ -29,7 +29,7 @@ rsync -a \
   --exclude='pads' \
   --exclude='descargas' \
   --exclude='backups_canciones' \
-  --exclude='canciones/*.json' \
+  --exclude='canciones' \
   --exclude='static/portadas' \
   --exclude='README.md' \
   "$PROD_DIR"/ "$REPO_DIR"/server/
