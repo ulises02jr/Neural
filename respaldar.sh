@@ -20,8 +20,9 @@ rsync -a \
   --exclude='.git' \
   --exclude='venv' \
   --exclude='__pycache__' \
-  --exclude='config.json' \
-  --exclude='secrets.json' \
+  --exclude='config.json*' \
+  --exclude='secrets.json*' \
+  --exclude='*.roto*' \
   --exclude='usuarios.db' \
   --exclude='*.db' \
   --exclude='*.bak' --exclude='*.bak-*' --exclude='*.bak*' \
