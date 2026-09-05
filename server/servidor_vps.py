@@ -303,10 +303,11 @@ def get_config(org=None):
 
 
 # ───────────────────────── Helpers ─────────────────────────
-def cargar_biblioteca():
-    """Lee todos los JSONs de canciones/ y devuelve dict numero → datos."""
+def cargar_biblioteca(org=None):
+    """Lee todos los JSONs de canciones/ (de la organización) → dict numero → datos."""
+    org = _org_req(org)
     biblioteca = {}
-    for archivo in CARPETA_CANCIONES.glob("*.json"):
+    for archivo in dir_canciones(org).glob("*.json"):
         try:
             with open(archivo, "r", encoding="utf-8") as f:
                 datos = json.load(f)
@@ -373,6 +374,28 @@ def org_actual():
     except Exception:
         pass
     return 1
+
+
+_org_ctx = threading.local()
+
+
+def _set_org_ctx(org):
+    """Fija la organización 'ambiente' del hilo actual (para hilos de render)."""
+    try:
+        _org_ctx.value = int(org)
+    except Exception:
+        _org_ctx.value = 1
+
+
+def _cur_org():
+    """Organización ambiente: thread-local (hilo de render) o la de la request."""
+    v = getattr(_org_ctx, "value", None)
+    return v if v else org_actual()
+
+
+def _org_req(org=None):
+    """Resuelve la organización: si se pasa explícita, la usa; si no, la ambiente."""
+    return org if org is not None else _cur_org()
 
 
 # ───────────────────────── Rutas públicas (login) ─────────────────────────
@@ -908,7 +931,7 @@ def api_live_render(numero, t):
         return jsonify({"listo": False, "error": "sin pistas"})
     d = _carpeta_tono(numero, n)
     if not (d.exists() and (d / ".lock").exists()):
-        threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
+        threading.Thread(target=_render_tono, args=(numero, n, org_actual()), daemon=True).start()
     return jsonify({"listo": False, "estado": "procesando"})
 
 
@@ -1044,7 +1067,7 @@ def api_live_tonos(numero):
     base = cargar_biblioteca().get(numero, {})
     rendered = []
     if _stems_originales(numero): rendered.append(0)
-    d = CARPETA_PISTAS / str(numero)
+    d = dir_pistas(_cur_org()) / str(numero)
     if d.is_dir():
         for sub in d.iterdir():
             if sub.is_dir() and sub.name.startswith("tono_"):
@@ -1074,7 +1097,7 @@ def api_live_tonos(numero):
 @app.route("/api/live/mix/<int:numero>", methods=["GET"])
 def api_live_mix_get(numero):
     if not _token_ok(): return jsonify({"ok": False}), 403
-    f = CARPETA_PISTAS / str(numero) / "mix.json"
+    f = dir_pistas(_cur_org()) / str(numero) / "mix.json"
     if f.is_file():
         try:
             return jsonify({"ok": True, "mix": json.loads(f.read_text())})
@@ -1090,7 +1113,7 @@ def api_live_mix_save(numero):
         mix = json.loads(request.values.get("data", ""))
     except Exception:
         return jsonify({"ok": False, "error": "json"}), 400
-    d = CARPETA_PISTAS / str(numero)
+    d = dir_pistas(_cur_org()) / str(numero)
     d.mkdir(parents=True, exist_ok=True)
     (d / "mix.json").write_text(json.dumps(mix, ensure_ascii=False))
     return jsonify({"ok": True})
@@ -1270,7 +1293,7 @@ def admin_subir():
         flash("Archivo no es JSON válido", "error")
         return redirect(url_for("admin"))
     nombre_seguro = secure_filename(archivo.filename)
-    destino = CARPETA_CANCIONES / nombre_seguro
+    destino = dir_canciones(org_actual()) / nombre_seguro
     with open(destino, "wb") as f:
         f.write(contenido)
     flash(f"✓ Canción '{datos['titulo']}' (#{datos['numero']}) subida correctamente", "success")
@@ -1284,13 +1307,13 @@ def admin_eliminar(numero):
     if numero not in biblioteca:
         flash("Canción no encontrada", "error")
         return redirect(url_for("admin"))
-    for archivo in CARPETA_CANCIONES.glob("*.json"):
+    for archivo in dir_canciones(org_actual()).glob("*.json"):
         try:
             with open(archivo, "r", encoding="utf-8") as f:
                 datos = json.load(f)
             if datos.get("numero") == numero:
                 archivo.unlink()
-                carpeta_p = CARPETA_PISTAS / str(numero)
+                carpeta_p = dir_pistas(_cur_org()) / str(numero)
                 if carpeta_p.is_dir():
                     try:
                         shutil.rmtree(str(carpeta_p))
@@ -1714,12 +1737,12 @@ FAMILIAS_FIJAS = {"Batería", "Percusión", "Guía", "Click"}
 
 def _carpeta_tono(numero, n):
     if n == 0:
-        return CARPETA_PISTAS / str(numero)
-    return CARPETA_PISTAS / str(numero) / ("tono_" + str(n))
+        return dir_pistas(_cur_org()) / str(numero)
+    return dir_pistas(_cur_org()) / str(numero) / ("tono_" + str(n))
 
 
 def _stems_originales(numero):
-    d = CARPETA_PISTAS / str(numero)
+    d = dir_pistas(_cur_org()) / str(numero)
     if not d.is_dir():
         return []
     return sorted([f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO])
@@ -1741,7 +1764,7 @@ def _tono_listo(numero, n):
 def _carpeta_stems(numero, n):
     """Carpeta con los stems: originales (pistas/N/) si n==0, si no la del tono."""
     if n == 0:
-        return CARPETA_PISTAS / str(numero)
+        return dir_pistas(_cur_org()) / str(numero)
     return _carpeta_tono(numero, n)
 
 
@@ -1762,7 +1785,7 @@ def _nombre_base_export(cancion, numero):
 
 def _invalidar_tonos(numero):
     """Borra los caches de tonos transpuestos: quedan inconsistentes al cambiar los stems."""
-    base = CARPETA_PISTAS / str(numero)
+    base = dir_pistas(_cur_org()) / str(numero)
     if not base.is_dir():
         return
     for d in base.glob("tono_*"):
@@ -1779,8 +1802,10 @@ def _invalidar_tonos(numero):
             pass
 
 
-def _asegurar_web(numero, n):
+def _asegurar_web(numero, n, org=None):
     """Genera los proxys MP3 128k (modo ensayo) que falten para el tono n."""
+    if org is not None:
+        _set_org_ctx(org)
     d = _carpeta_tono(numero, n)
     web = d / "web"
     web.mkdir(parents=True, exist_ok=True)
@@ -1827,7 +1852,9 @@ def _web_listo(numero, n):
     return all((web / (s + ".mp3")).exists() for s in reales)
 
 
-def _render_tono(numero, n):
+def _render_tono(numero, n, org=None):
+    if org is not None:
+        _set_org_ctx(org)
     d = _carpeta_tono(numero, n)
     d.mkdir(parents=True, exist_ok=True)
     lock = d / ".lock"
@@ -1838,7 +1865,7 @@ def _render_tono(numero, n):
         hechos = 0
         fam_map = _leer_familias(numero)
         for nombre in orig:
-            entrada = CARPETA_PISTAS / str(numero) / nombre
+            entrada = dir_pistas(_cur_org()) / str(numero) / nombre
             salida = d / nombre
             if not salida.exists():
                 fam = fam_map.get(nombre) or _familia_auto(Path(nombre).stem)
@@ -2241,7 +2268,7 @@ def api_pistas(numero):
     elif _tono_listo(numero, n):
         web = _carpeta_tono(numero, n) / "web"
         if not (web.exists() and (web / ".lock").exists()):
-            threading.Thread(target=_asegurar_web, args=(numero, n), daemon=True).start()
+            threading.Thread(target=_asegurar_web, args=(numero, n, org_actual()), daemon=True).start()
     return jsonify({"numero": numero, "tono": n, "listo": listo,
                     "hay_pistas": len(_stems_originales(numero)) > 0,
                     "stems": stems, "secciones": _leer_secciones(numero)})
@@ -2261,11 +2288,11 @@ def api_render(numero, n):
     if _tono_listo(numero, n):
         web = _carpeta_tono(numero, n) / "web"
         if not (web.exists() and (web / ".lock").exists()):
-            threading.Thread(target=_asegurar_web, args=(numero, n), daemon=True).start()
+            threading.Thread(target=_asegurar_web, args=(numero, n, org_actual()), daemon=True).start()
     else:
         d = _carpeta_tono(numero, n)
         if not (d.exists() and (d / ".lock").exists()):
-            threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
+            threading.Thread(target=_render_tono, args=(numero, n, org_actual()), daemon=True).start()
     return jsonify({"listo": False, "estado": "procesando"})
 
 
@@ -2314,7 +2341,7 @@ def admin_pistas():
     songs = []
     for numero in sorted(biblioteca.keys()):
         c = biblioteca[numero]
-        carpeta = CARPETA_PISTAS / str(numero)
+        carpeta = dir_pistas(_cur_org()) / str(numero)
         n = 0
         if carpeta.is_dir():
             n = sum(1 for f in carpeta.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO)
@@ -2330,7 +2357,7 @@ def admin_pistas_subir():
         flash("Elegi una cancion valida", "error")
         return redirect(url_for("admin_pistas"))
     archivos = request.files.getlist("pistas")
-    carpeta = CARPETA_PISTAS / numero
+    carpeta = dir_pistas(_cur_org()) / numero
     carpeta.mkdir(exist_ok=True)
     guardadas = 0
     for a in archivos:
@@ -2346,7 +2373,7 @@ def admin_pistas_subir():
         guardadas += 1
     if guardadas:
         _invalidar_tonos(int(numero))
-        threading.Thread(target=_asegurar_web, args=(int(numero), 0), daemon=True).start()
+        threading.Thread(target=_asegurar_web, args=(int(numero), 0, org_actual()), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s) a la cancion #" + numero, "success")
     else:
         flash("No se subio ninguna pista (revisa el formato: mp3/m4a/ogg/wav)", "error")
@@ -2356,7 +2383,7 @@ def admin_pistas_subir():
 @app.route("/admin/pistas/eliminar/<int:numero>", methods=["POST"])
 @login_required("admin")
 def admin_pistas_eliminar(numero):
-    carpeta = CARPETA_PISTAS / str(numero)
+    carpeta = dir_pistas(_cur_org()) / str(numero)
     borradas = 0
     if carpeta.is_dir():
         for f in list(carpeta.iterdir()):
@@ -2377,7 +2404,7 @@ def admin_pistas_eliminar(numero):
 
 # ---- Mapa de secciones (etapa 2) ----
 def _archivo_secciones(numero):
-    return CARPETA_PISTAS / str(numero) / "secciones.json"
+    return dir_pistas(_cur_org()) / str(numero) / "secciones.json"
 
 
 def _leer_secciones(numero):
@@ -2415,7 +2442,7 @@ def _fmt_tiempo(secs):
 
 
 def _hallar_stem_familia(numero, familia):
-    base = CARPETA_PISTAS / str(numero)
+    base = dir_pistas(_cur_org()) / str(numero)
     if not base.is_dir():
         return None
     fam = _leer_familias(numero)
@@ -2428,14 +2455,14 @@ def _hallar_stem_familia(numero, familia):
 
 
 def _admin_audio_dir(numero):
-    d = CARPETA_PISTAS / str(numero) / "_admin"
+    d = dir_pistas(_cur_org()) / str(numero) / "_admin"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _stems_para_mezcla(numero):
     """Todos los stems menos Click y Guia (los instrumentos, para la mezcla de preview)."""
-    base = CARPETA_PISTAS / str(numero)
+    base = dir_pistas(_cur_org()) / str(numero)
     if not base.is_dir():
         return []
     fam = _leer_familias(numero)
@@ -2448,8 +2475,10 @@ def _stems_para_mezcla(numero):
     return outs
 
 
-def _asegurar_audio_admin(numero, tipo):
+def _asegurar_audio_admin(numero, tipo, org=None):
     """Genera (si falta) el mp3 de 'guia' o 'mezcla' para el editor de secciones."""
+    if org is not None:
+        _set_org_ctx(org)
     d = _admin_audio_dir(numero)
     out = d / (tipo + ".mp3")
     lock = d / (tipo + ".lock")
@@ -2522,7 +2551,7 @@ def admin_audio_prep(numero, tipo):
         return jsonify({"ok": True, "ready": True})
     lock = _admin_audio_dir(numero) / (tipo + ".lock")
     if not lock.exists():
-        threading.Thread(target=_asegurar_audio_admin, args=(numero, tipo), daemon=True).start()
+        threading.Thread(target=_asegurar_audio_admin, args=(numero, tipo, org_actual()), daemon=True).start()
     return jsonify({"ok": True, "ready": False, "generando": True})
 
 
@@ -2539,7 +2568,7 @@ def admin_audio(numero, tipo):
 
 def _hallar_stem_click(numero):
     """Devuelve el archivo del stem de Click (familia 'Click'), o None."""
-    base = CARPETA_PISTAS / str(numero)
+    base = dir_pistas(_cur_org()) / str(numero)
     if not base.is_dir():
         return None
     fam = _leer_familias(numero)
@@ -2653,7 +2682,7 @@ def admin_secciones(numero):
         return redirect(url_for("admin_pistas"))
     secs_chart = cancion.get("secciones", [])
     if request.method == "POST":
-        carpeta = CARPETA_PISTAS / str(numero)
+        carpeta = dir_pistas(_cur_org()) / str(numero)
         carpeta.mkdir(exist_ok=True)
         sj = request.form.get("secciones_json")
         if sj is not None:
@@ -2749,7 +2778,7 @@ def admin_nueva_blanca():
     nuevo = (max(bib.keys()) + 1) if bib else 1
     datos = {"numero": nuevo, "titulo": "Nueva cancion", "artista": "",
              "tono": "", "tempo": 120, "compas": "4/4", "secciones": []}
-    destino = CARPETA_CANCIONES / ("cancion_%03d_nueva.json" % nuevo)
+    destino = dir_canciones(org_actual()) / ("cancion_%03d_nueva.json" % nuevo)
     destino.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
     flash("Cancion nueva creada. Completa su informacion.", "success")
     return redirect(url_for("admin_editar", numero=nuevo) + "?tab=info")
@@ -2775,7 +2804,7 @@ def admin_nueva():
         except Exception:
             flash("Archivo no es JSON valido", "error")
             return redirect(url_for("admin_nueva"))
-        (CARPETA_CANCIONES / secure_filename(archivo.filename)).write_bytes(contenido)
+        (dir_canciones(org_actual()) / secure_filename(archivo.filename)).write_bytes(contenido)
         flash("Chart cargado: " + str(datos["titulo"]), "success")
         return redirect(url_for("admin_nueva_pistas", numero=int(datos["numero"])))
     return render_template("admin_nueva.html")
@@ -2788,7 +2817,7 @@ def admin_nueva_pistas(numero):
     cancion = biblioteca.get(numero)
     titulo = cancion.get("titulo", "Cancion #" + str(numero)) if cancion else "Cancion #" + str(numero)
     if request.method == "POST":
-        carpeta = CARPETA_PISTAS / str(numero)
+        carpeta = dir_pistas(_cur_org()) / str(numero)
         carpeta.mkdir(exist_ok=True)
         guardadas = 0
         for a in request.files.getlist("pistas"):
@@ -2803,7 +2832,7 @@ def admin_nueva_pistas(numero):
             guardadas += 1
         if guardadas:
             _invalidar_tonos(numero)
-            threading.Thread(target=_asegurar_web, args=(numero, 0), daemon=True).start()
+            threading.Thread(target=_asegurar_web, args=(numero, 0, org_actual()), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s)", "success")
         return redirect(url_for("admin_secciones", numero=numero, wizard=1))
     return render_template("admin_nueva_pistas.html", numero=numero, titulo=titulo)
@@ -2815,7 +2844,7 @@ FAMILIAS = ["Voces", "AG", "GE", "Piano", "Teclados", "Pad",
 
 
 def _archivo_midi(numero):
-    return CARPETA_PISTAS / str(numero) / "midi.json"
+    return dir_pistas(_cur_org()) / str(numero) / "midi.json"
 
 
 MIDI_CAJAS = [
@@ -3020,7 +3049,7 @@ def _cifrado_para_editor(cancion):
 
 
 def _archivo_cancion(numero):
-    for f in CARPETA_CANCIONES.glob("*.json"):
+    for f in dir_canciones(org_actual()).glob("*.json"):
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
             if int(d.get("numero", -1)) == int(numero):
@@ -3068,7 +3097,7 @@ def _familia_auto(nombre):
 
 
 def _leer_familias(numero):
-    f = CARPETA_PISTAS / str(numero) / "familias.json"
+    f = dir_pistas(_cur_org()) / str(numero) / "familias.json"
     if f.is_file():
         try:
             return json.loads(f.read_text(encoding="utf-8"))
@@ -3244,7 +3273,7 @@ def admin_familias(numero):
         v = request.form.get("fam_" + f, "").strip()
         if v:
             fam[f] = v
-    (CARPETA_PISTAS / str(numero) / "familias.json").write_text(
+    (dir_pistas(_cur_org()) / str(numero) / "familias.json").write_text(
         json.dumps(fam, ensure_ascii=False, indent=2), encoding="utf-8")
     flash("Familias guardadas", "success")
     return redirect(url_for("admin_editar", numero=numero))
@@ -3253,7 +3282,7 @@ def admin_familias(numero):
 @app.route("/admin/pistas/<int:numero>/agregar", methods=["POST"])
 @login_required("admin")
 def admin_editar_subir(numero):
-    carpeta = CARPETA_PISTAS / str(numero)
+    carpeta = dir_pistas(_cur_org()) / str(numero)
     carpeta.mkdir(exist_ok=True)
     guardadas = 0
     for a in request.files.getlist("pistas"):
@@ -3268,7 +3297,7 @@ def admin_editar_subir(numero):
         guardadas += 1
     if guardadas:
         _invalidar_tonos(numero)
-        threading.Thread(target=_asegurar_web, args=(numero, 0), daemon=True).start()
+        threading.Thread(target=_asegurar_web, args=(numero, 0, org_actual()), daemon=True).start()
     flash("OK: " + str(guardadas) + " pista(s) agregada(s)", "success")
     return redirect(url_for("admin_editar", numero=numero))
 
@@ -3284,7 +3313,7 @@ def admin_editar_subir_uno(numero):
     nombre = secure_filename(a.filename)
     if not nombre:
         return jsonify({"ok": False, "error": "nombre"}), 400
-    carpeta = CARPETA_PISTAS / str(numero)
+    carpeta = dir_pistas(_cur_org()) / str(numero)
     carpeta.mkdir(exist_ok=True)
     a.save(str(carpeta / nombre))
     return jsonify({"ok": True, "name": nombre})
@@ -3294,7 +3323,7 @@ def admin_editar_subir_uno(numero):
 @login_required("admin")
 def admin_editar_subir_fin(numero):
     _invalidar_tonos(numero)
-    threading.Thread(target=_asegurar_web, args=(numero, 0), daemon=True).start()
+    threading.Thread(target=_asegurar_web, args=(numero, 0, org_actual()), daemon=True).start()
     return jsonify({"ok": True})
 
 
@@ -3304,7 +3333,7 @@ def admin_pista_borrar_una(numero):
     archivo = secure_filename(request.form.get("archivo", ""))
     if archivo:
         stem = os.path.splitext(archivo)[0]
-        base = CARPETA_PISTAS / str(numero)
+        base = dir_pistas(_cur_org()) / str(numero)
         objetivos = [base / archivo, base / "web" / (stem + ".mp3")]
         for d in base.glob("tono_*"):
             if d.is_dir():
@@ -3539,7 +3568,7 @@ def admin_midi(numero):
         canal = max(1, min(16, canal))
         salida["cajas"][cid] = {"canal": canal, "notas": _limpiar_notas(c.get("notas"))}
 
-    carpeta = CARPETA_PISTAS / str(numero)
+    carpeta = dir_pistas(_cur_org()) / str(numero)
     carpeta.mkdir(exist_ok=True)
     _archivo_midi(numero).write_text(json.dumps(salida, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -3713,7 +3742,7 @@ def admin_pregenerar(numero):
     else:
         d = _carpeta_tono(numero, n)
         if not (d.exists() and (d / ".lock").exists()):
-            threading.Thread(target=_render_tono, args=(numero, n), daemon=True).start()
+            threading.Thread(target=_render_tono, args=(numero, n, org_actual()), daemon=True).start()
         flash("Generando el tono " + ("+" if n > 0 else "") + str(n) +
               " en segundo plano. Puede tardar unos minutos; refresca para ver cuando este listo.", "success")
     return redirect(url_for("admin_editar", numero=numero))
