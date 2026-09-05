@@ -1884,6 +1884,44 @@ def aceptar_invitacion(token):
     return render_template("invitacion.html", inv=inv, org=org)
 
 
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    """Login para NeuralPlay / NeuralSync: email + contraseña → token de la organización.
+    La app guarda el token y lo usa para bajar SOLO la biblioteca de esa organización."""
+    data = request.get_json(silent=True) or request.form
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    ip = _client_ip()
+    if usuarios.login_bloqueado(ip):
+        return jsonify({"ok": False, "error": "bloqueado",
+                        "mensaje": "Demasiados intentos. Esperá unos minutos."}), 429
+    u = usuarios.autenticar(email, password)
+    if not u:
+        usuarios.registrar_intento(ip)
+        ex = usuarios.buscar_por_email(email)
+        if ex and ex.get("estado") == "pendiente":
+            return jsonify({"ok": False, "error": "pendiente",
+                            "mensaje": "Tu cuenta está pendiente de aprobación por el administrador."}), 403
+        return jsonify({"ok": False, "error": "credenciales",
+                        "mensaje": "Email o contraseña incorrectos."}), 401
+    usuarios.limpiar_intentos(ip)
+    org = usuarios.obtener_organizacion(u.get("org_id") or 1)
+    if not org:
+        return jsonify({"ok": False, "error": "sin_org",
+                        "mensaje": "Tu cuenta no está asociada a una organización."}), 403
+    return jsonify({
+        "ok": True,
+        "token": org["token"],
+        "org_id": org["id"],
+        "org_nombre": org["nombre"],
+        "paquete": org.get("paquete"),
+        "user_id": u["id"],
+        "nombre": u.get("nombre", ""),
+        "apellido": u.get("apellido", ""),
+        "rol": u["rol"],
+    })
+
+
 # ───────────────────────── Main ─────────────────────────
 # ---- Reproductor de practica (stems / modo ensayo) ----
 CARPETA_PISTAS = BASE_DIR / "pistas"
