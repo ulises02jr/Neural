@@ -1334,6 +1334,7 @@ def admin():
         usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo", org_id=org_actual()) if u.get("rol") != "admin"],
         org_info=usuarios.obtener_organizacion(org_actual()),
         musicos_activos_n=usuarios.contar_musicos_activos(org_actual()),
+        invitaciones_pendientes=usuarios.listar_invitaciones(org_actual(), "pendiente"),
         usuario_actual=get_usuario_actual(),
         email_configurado=emails_module.email_configurado(),
         desc_mac=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA["mac"])),
@@ -1806,6 +1807,81 @@ def admin_crear_admin():
     else:
         flash(f"Error: {resultado}", "error")
     return redirect(url_for("admin"))
+
+
+@app.route("/admin/invitar", methods=["POST"])
+@login_required("admin")
+def admin_invitar():
+    """El admin invita a un músico por email. Le llega un link para entrar directo."""
+    org = org_actual()
+    email = request.form.get("email", "").strip().lower()
+    if not email:
+        flash("Ingresá un email", "error")
+        return redirect(url_for("admin"))
+    org_obj = usuarios.obtener_organizacion(org)
+    if org_obj and usuarios.contar_musicos_activos(org) >= int(org_obj.get("max_musicos") or 0):
+        flash("Alcanzaste el límite de asientos de tu paquete. Ampliá el plan para invitar a más músicos.", "error")
+        return redirect(url_for("admin"))
+    ok, res = usuarios.crear_invitacion(org, email)
+    if not ok:
+        flash(res, "error")
+        return redirect(url_for("admin"))
+    link = url_for("aceptar_invitacion", token=res, _external=True)
+    org_nombre = (org_obj or {}).get("nombre", "tu organización")
+    okmail, _ = emails_module.enviar_email_invitacion(email, org_nombre, link)
+    if okmail:
+        flash("✓ Invitación enviada a %s" % email, "success")
+    else:
+        flash("Invitación creada, pero no se pudo enviar el correo. Enlace: %s" % link, "error")
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/invitacion/<int:inv_id>/cancelar", methods=["POST"])
+@login_required("admin")
+def admin_invitacion_cancelar(inv_id):
+    usuarios.eliminar_invitacion(inv_id, org_actual())
+    flash("Invitación cancelada", "success")
+    return redirect(url_for("admin"))
+
+
+@app.route("/invitacion/<token>", methods=["GET", "POST"])
+def aceptar_invitacion(token):
+    """El músico invitado crea su cuenta (queda ACTIVA al instante) y entra."""
+    inv = usuarios.obtener_invitacion(token)
+    if not inv:
+        flash("La invitación no es válida o ya venció.", "error")
+        return redirect(url_for("login"))
+    org = usuarios.obtener_organizacion(inv["org_id"])
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip()
+        apellido = request.form.get("apellido", "").strip()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        prev = dict(nombre=nombre, apellido=apellido)
+        if not nombre or not apellido or not password:
+            flash("Completá todos los campos", "error")
+            return render_template("invitacion.html", inv=inv, org=org, **prev)
+        if password != password2:
+            flash("Las contraseñas no coinciden", "error")
+            return render_template("invitacion.html", inv=inv, org=org, **prev)
+        if org and usuarios.contar_musicos_activos(inv["org_id"]) >= int(org.get("max_musicos") or 0):
+            flash("La organización alcanzó su límite de asientos. Pedile al administrador que amplíe el plan.", "error")
+            return render_template("invitacion.html", inv=inv, org=org, **prev)
+        ok, res = usuarios.crear_usuario(nombre, apellido, inv["email"], password,
+                                         rol="musico", estado="activo", org_id=inv["org_id"])
+        if not ok:
+            flash(res, "error")
+            return render_template("invitacion.html", inv=inv, org=org, **prev)
+        usuarios.marcar_invitacion_usada(token)
+        session.permanent = True
+        session.clear()
+        session["user_id"] = res
+        session["rol"] = "musico"
+        session["nombre"] = nombre
+        session["org_id"] = inv["org_id"]
+        flash("✓ ¡Bienvenido a %s!" % (org["nombre"] if org else "NeuralWorship"), "success")
+        return redirect(url_for("principal"))
+    return render_template("invitacion.html", inv=inv, org=org)
 
 
 # ───────────────────────── Main ─────────────────────────

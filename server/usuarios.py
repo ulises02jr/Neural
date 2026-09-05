@@ -99,6 +99,18 @@ def init_db():
                 creado_en TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_org_token ON organizations(token);
+
+            CREATE TABLE IF NOT EXISTS invitaciones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                org_id INTEGER NOT NULL,
+                email TEXT NOT NULL,
+                token TEXT UNIQUE NOT NULL,
+                estado TEXT NOT NULL DEFAULT 'pendiente',
+                creado_en TEXT NOT NULL,
+                expira_en TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_invit_token ON invitaciones(token);
+            CREATE INDEX IF NOT EXISTS idx_invit_org ON invitaciones(org_id);
         """)
         try:
             conn.execute("ALTER TABLE usuarios ADD COLUMN acento TEXT")
@@ -647,6 +659,75 @@ def crear_org_con_dueno(org_nombre, nombre, apellido, email, password,
     org = obtener_organizacion(org_id)
     return True, {"org_id": org_id, "user_id": user_id,
                   "token": org["token"], "nombre_org": org_nombre}
+
+
+# ---------------------------------------------------------------------------
+# Invitaciones de músicos (por correo)
+# ---------------------------------------------------------------------------
+
+def crear_invitacion(org_id, email, dias=7):
+    """Crea una invitación de músico para un email. Devuelve (ok, token | error)."""
+    email = (email or "").strip().lower()
+    if not email or "@" not in email or "." not in email:
+        return False, "Email inválido"
+    if buscar_por_email(email):
+        return False, "Ya existe una cuenta con ese email"
+    token = secrets.token_urlsafe(24)
+    expira = (datetime.utcnow() + timedelta(days=int(dias))).isoformat(timespec="seconds")
+    try:
+        with _conexion() as conn:
+            conn.execute(
+                "UPDATE invitaciones SET estado='cancelada' WHERE org_id=? AND email=? AND estado='pendiente'",
+                (org_id, email),
+            )
+            conn.execute(
+                "INSERT INTO invitaciones (org_id, email, token, estado, creado_en, expira_en) "
+                "VALUES (?, ?, ?, 'pendiente', ?, ?)",
+                (org_id, email, token, _ahora_iso(), expira),
+            )
+        return True, token
+    except Exception as e:
+        return False, f"Error: {e}"
+
+
+def obtener_invitacion(token):
+    """Devuelve la invitación pendiente y vigente por token, o None."""
+    if not token:
+        return None
+    with _conexion() as conn:
+        row = conn.execute(
+            "SELECT * FROM invitaciones WHERE token = ? AND estado = 'pendiente'", (token,)
+        ).fetchone()
+    if not row:
+        return None
+    inv = dict(row)
+    if inv.get("expira_en"):
+        try:
+            if datetime.utcnow() > datetime.fromisoformat(inv["expira_en"]):
+                return None
+        except Exception:
+            pass
+    return inv
+
+
+def marcar_invitacion_usada(token):
+    with _conexion() as conn:
+        conn.execute("UPDATE invitaciones SET estado = 'usada' WHERE token = ?", (token,))
+
+
+def listar_invitaciones(org_id, estado="pendiente"):
+    with _conexion() as conn:
+        rows = conn.execute(
+            "SELECT * FROM invitaciones WHERE org_id = ? AND estado = ? ORDER BY creado_en DESC",
+            (org_id, estado),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def eliminar_invitacion(inv_id, org_id):
+    with _conexion() as conn:
+        cur = conn.execute("DELETE FROM invitaciones WHERE id = ? AND org_id = ?", (inv_id, org_id))
+        return cur.rowcount > 0
 
 
 if __name__ == "__main__":

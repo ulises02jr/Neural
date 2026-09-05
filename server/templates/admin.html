@@ -274,6 +274,36 @@
     </div>
     {% endif %}
 
+    <!-- Invitar por correo -->
+    <div style="margin-bottom:20px;padding-top:14px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>✉️ Invitar músico por correo</span></div>
+      <form method="POST" action="{{ url_for('admin_invitar') }}" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="email" name="email" placeholder="email@musico.com" required style="flex:1;min-width:200px">
+        <button type="submit" class="primary">Enviar invitación</button>
+      </form>
+      <p class="help" style="margin-top:8px">Le llega un enlace para entrar directo (sin esperar aprobación).</p>
+      {% if invitaciones_pendientes %}
+      <div class="lista" style="margin-top:10px">
+        {% for inv in invitaciones_pendientes %}
+        <div class="item">
+          <div class="info">
+            <div class="nm">{{ inv.email }}</div>
+            <div class="ar">Invitación pendiente · enviada {{ inv.creado_en[:10] }}</div>
+          </div>
+          <div class="actions">
+            <form method="POST" action="{{ url_for('admin_invitacion_cancelar', inv_id=inv.id) }}" style="display:inline"
+                  onsubmit="return confirm('¿Cancelar esta invitación?')">
+              <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+              <button type="submit" class="icon-btn danger" title="Cancelar invitación">×</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+
     <!-- Usuarios pendientes -->
     {% if usuarios_pendientes %}
     <div style="margin-bottom:20px">

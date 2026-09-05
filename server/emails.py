@@ -180,6 +180,36 @@ def enviar_email_bienvenida(destino, nombre, en_background=True):
     return enviar_email(destino, asunto, html)
 
 
+def enviar_email_invitacion(destino, org_nombre, link, en_background=True):
+    """Email con el link de invitación para unirse a una organización."""
+    asunto = f"Te invitaron a {org_nombre} — NeuralWorship"
+    contenido = f"""
+        <h2 style="margin:0 0 16px;color:#222">¡Te invitaron a {org_nombre}!</h2>
+        <p style="color:#444;line-height:1.6">Fuiste invitado a unirte al equipo de música de
+           <strong>{org_nombre}</strong> en NeuralWorship.</p>
+        <p style="color:#444;line-height:1.6">Hacé clic en el botón para crear tu cuenta (queda lista al instante):</p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="{link}"
+             style="display:inline-block;background:{ACENTO};color:#000;padding:14px 32px;
+                    border-radius:8px;text-decoration:none;font-weight:700">
+            Aceptar invitación
+          </a>
+        </div>
+        <p style="color:#888;font-size:13px;line-height:1.5">
+          Si el botón no funciona, copiá este enlace:<br>
+          <a href="{link}" style="color:{ACENTO};word-break:break-all">{link}</a>
+        </p>
+        <p style="color:#888;font-size:12px;line-height:1.5">
+          Este enlace vence en 7 días. Si no esperabas esta invitación, podés ignorar este mensaje.
+        </p>
+    """
+    html = _envoltura("INVITACIÓN", contenido)
+    if en_background:
+        _enviar_email_background(destino, asunto, html)
+        return True, "Email programado en background"
+    return enviar_email(destino, asunto, html)
+
+
 if __name__ == "__main__":
     # Test rápido: python emails.py <email-destino>
     import sys
