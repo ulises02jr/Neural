@@ -73,6 +73,19 @@ def init_db():
                 ts TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_login_intentos ON login_intentos(ip, ts);
+
+            CREATE TABLE IF NOT EXISTS organizations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                owner_user_id INTEGER,
+                token TEXT UNIQUE,
+                paquete TEXT NOT NULL DEFAULT 'basico',
+                max_musicos INTEGER NOT NULL DEFAULT 3,
+                almacen_gb INTEGER NOT NULL DEFAULT 20,
+                estado_suscripcion TEXT NOT NULL DEFAULT 'activa',
+                creado_en TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_org_token ON organizations(token);
         """)
         try:
             conn.execute("ALTER TABLE usuarios ADD COLUMN acento TEXT")
@@ -82,6 +95,15 @@ def init_db():
             conn.execute("ALTER TABLE usuarios ADD COLUMN prefs TEXT")
         except Exception:
             pass  # ya existe
+        # Multi-tenant: cada usuario pertenece a una organización.
+        try:
+            conn.execute("ALTER TABLE usuarios ADD COLUMN org_id INTEGER")
+        except Exception:
+            pass  # ya existe
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usuarios_org ON usuarios(org_id)")
+        except Exception:
+            pass
 
 
 def hash_password(password):
@@ -423,6 +445,102 @@ def contar_admins_activos():
             "SELECT COUNT(*) AS n FROM usuarios WHERE rol = 'admin' AND estado = 'activo'"
         ).fetchone()
         return row["n"]
+
+
+# ---------------------------------------------------------------------------
+# Multi-tenant: organizaciones
+# ---------------------------------------------------------------------------
+
+def crear_organizacion(nombre, owner_user_id=None, token=None, paquete="basico",
+                       max_musicos=3, almacen_gb=20, estado="activa"):
+    """Crea una organización. Devuelve (ok, org_id_o_error).
+    Si no se pasa token, se genera uno seguro."""
+    nombre = (nombre or "").strip() or "Organización"
+    if not token:
+        token = secrets.token_hex(16)
+    try:
+        with _conexion() as conn:
+            cur = conn.execute(
+                "INSERT INTO organizations (nombre, owner_user_id, token, paquete, max_musicos, almacen_gb, estado_suscripcion, creado_en) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (nombre, owner_user_id, token, paquete, int(max_musicos), int(almacen_gb), estado, _ahora_iso()),
+            )
+            return True, cur.lastrowid
+    except sqlite3.IntegrityError as e:
+        return False, f"Token duplicado o error de integridad: {e}"
+    except Exception as e:
+        return False, f"Error: {e}"
+
+
+def obtener_organizacion(org_id):
+    """Devuelve dict de la organización o None."""
+    if not org_id:
+        return None
+    with _conexion() as conn:
+        row = conn.execute("SELECT * FROM organizations WHERE id = ?", (org_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def obtener_org_por_token(token):
+    """Devuelve la organización dueña de ese token, o None."""
+    if not token:
+        return None
+    with _conexion() as conn:
+        row = conn.execute("SELECT * FROM organizations WHERE token = ?", (token,)).fetchone()
+        return dict(row) if row else None
+
+
+def org_de_usuario(user_id):
+    """Devuelve el org_id del usuario (o None)."""
+    if not user_id:
+        return None
+    try:
+        with _conexion() as conn:
+            row = conn.execute("SELECT org_id FROM usuarios WHERE id = ?", (user_id,)).fetchone()
+            return (row["org_id"] if row else None)
+    except Exception:
+        return None
+
+
+def listar_organizaciones():
+    with _conexion() as conn:
+        rows = conn.execute("SELECT * FROM organizations ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+
+def asignar_org(user_id, org_id):
+    """Asigna un usuario a una organización."""
+    with _conexion() as conn:
+        cur = conn.execute("UPDATE usuarios SET org_id = ? WHERE id = ?", (org_id, user_id))
+        return cur.rowcount > 0
+
+
+def asegurar_org_inicial(nombre="Neural Worship", token=None, paquete="ministerio",
+                         max_musicos=10, almacen_gb=100):
+    """Migración one-time (idempotente): si NO existe ninguna organización, crea la #1
+    con el admin activo más antiguo como dueño y asigna org_id a todos los usuarios sin org.
+    Si ya hay organizaciones, no hace nada.
+    Devuelve (creada: bool, org_id_o_None, msg)."""
+    with _conexion() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM organizations").fetchone()[0]
+    if n > 0:
+        return False, None, "Ya existen organizaciones; no se hace nada."
+    # Dueño = primer admin activo (por id más bajo)
+    with _conexion() as conn:
+        row = conn.execute(
+            "SELECT id FROM usuarios WHERE rol='admin' AND estado='activo' ORDER BY id LIMIT 1"
+        ).fetchone()
+    owner_id = row["id"] if row else None
+    ok, res = crear_organizacion(nombre, owner_user_id=owner_id, token=token,
+                                 paquete=paquete, max_musicos=max_musicos,
+                                 almacen_gb=almacen_gb, estado="activa")
+    if not ok:
+        return False, None, f"No se pudo crear la organización: {res}"
+    org_id = res
+    with _conexion() as conn:
+        cur = conn.execute("UPDATE usuarios SET org_id = ? WHERE org_id IS NULL", (org_id,))
+        migrados = cur.rowcount
+    return True, org_id, f"Organización #{org_id} '{nombre}' creada (dueño user_id={owner_id}); {migrados} usuario(s) migrado(s)."
 
 
 if __name__ == "__main__":
