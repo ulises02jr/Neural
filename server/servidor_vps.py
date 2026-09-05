@@ -307,6 +307,29 @@ def get_usuario_actual():
     return None
 
 
+def org_actual():
+    """Organización de la request actual.
+    - Web: por la sesión (org_id guardado al iniciar sesión).
+    - API/NeuralPlay: por el token (live_token → organización dueña).
+    - Fallback: organización #1 (legado / instalación original).
+    NOTA: solo llamar dentro de un contexto de request; los hilos de render
+    reciben el org_id explícitamente, no usan este helper.
+    """
+    oid = session.get("org_id")
+    if oid:
+        return oid
+    try:
+        auth = request.headers.get("Authorization", "")
+        token = auth[7:].strip() if auth[:7].lower() == "bearer " else request.args.get("token", "")
+        if token:
+            o = usuarios.obtener_org_por_token(token)
+            if o:
+                return o["id"]
+    except Exception:
+        pass
+    return 1
+
+
 # ───────────────────────── Rutas públicas (login) ─────────────────────────
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -333,6 +356,7 @@ def login():
             session["user_id"] = u["id"]
             session["rol"] = u["rol"]
             session["nombre"] = u["nombre"]
+            session["org_id"] = u.get("org_id") or 1
             return redirect(url_for("principal"))
         # Verificar si el usuario existe pero está pendiente
         existente = usuarios.buscar_por_email(email)
@@ -393,6 +417,7 @@ def admin_login():
                 session.clear()
                 session["rol"] = "admin"
                 session["nombre"] = "Admin (Emergencia)"
+                session["org_id"] = 1
                 flash("⚠️ Entraste con password de emergencia. Iniciá sesión con tu cuenta personal cuando puedas.", "success")
                 return redirect(url_for("admin"))
             usuarios.registrar_intento(ip)
@@ -408,6 +433,7 @@ def admin_login():
             session["user_id"] = u["id"]
             session["rol"] = "admin"
             session["nombre"] = u["nombre"]
+            session["org_id"] = u.get("org_id") or 1
             return redirect(url_for("admin"))
         usuarios.registrar_intento(ip)
         flash("Email o contraseña incorrectos (o no sos admin)", "error")
