@@ -326,30 +326,6 @@
   <div class="card sec-card" id="organizacion">
     <h2>Información de Organización</h2>
 
-    <div style="margin-bottom:18px">
-      <div class="col-h"><span>Nombre de la organización</span></div>
-      <form method="POST" action="{{ url_for('admin_org_nombre') }}">
-<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <div class="pw-row">
-          <input type="text" name="org_nombre" value="{{ org_nombre }}" maxlength="80" required>
-          <button type="submit" class="primary">Guardar</button>
-        </div>
-      </form>
-    </div>
-
-    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
-      <div class="col-h"><span>Logo / foto de perfil</span></div>
-      <div style="display:flex;align-items:center;gap:14px">
-        <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="" style="width:56px;height:56px;border-radius:50%;background:#fff;padding:2px;object-fit:contain;flex-shrink:0">
-        <form method="POST" action="{{ url_for('admin_org_logo') }}" enctype="multipart/form-data" style="flex:1">
-<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-          <input type="file" name="logo" accept="image/png,image/jpeg,image/webp" required style="margin-bottom:10px">
-          <button type="submit" class="primary">Subir logo</button>
-        </form>
-      </div>
-      <p class="help" style="margin-top:8px">PNG, JPG o WEBP. Se recomienda una imagen cuadrada.</p>
-    </div>
-
     <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
       <div class="col-h"><span>Mi perfil de administrador</span></div>
       {% if usuario_actual %}
