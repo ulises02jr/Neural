@@ -246,3 +246,23 @@ Infra ~$135 + comisiones ~$100-150 + marketing ~$100-300 (o casi $0 orgánico) +
 - Fallos catastróficos casi imposibles: el domingo en vivo corre del caché local (no depende del server/internet); Spaces no pierde archivos; base administrada con respaldos; aislamiento por org.
 - Prácticas: respaldo antes de tocar producción, verificación de sintaxis, despliegue por etapas.
 - Bugs chiquitos = normales al inicio; se arreglan rápido. Prueba de 7 días + buen onboarding dan confianza mientras el producto se pule.
+
+---
+
+## Estado de implementación (checkpoint 2026-09-05)
+**Hecho y en producción (verificado):**
+- **Correo** (Resend + Cloudflare Email Routing): envío `noreply@` + recepción `soporte@` → Gmail. Reset de contraseña conectado.
+- **Fase 1**: tabla `organizations` + `org_id` en `usuarios`; org #1 = "Neural Worship" (token existente, dueño = admin id1, ministerio).
+- **Fase 2 (aislamiento de almacenamiento)**:
+  - Contexto de org: `org_actual()` (sesión o token) + `_cur_org()` (thread-local para hilos de render).
+  - `config`/`setlists` por org (`archivo_config(org)`; org#1 → `config.json` legado).
+  - `canciones` por org (`dir_canciones(org)`), `pistas` por org (`dir_pistas(_cur_org())`, 27 sitios), hilos `_render_tono`/`_asegurar_web`/`_asegurar_audio_admin` reciben `org` explícito.
+  - Org #1 usa carpetas legado (sin mover 19 GB); orgs nuevas → `orgs/<id>/`.
+  - **Aislamiento probado** con una org #2 de prueba (vio todo vacío; org #1 intacta). Org de prueba eliminada.
+  - **Pads**: siguen **globales/compartidos** por ahora (sonidos genéricos) — decisión para reducir riesgo; aislar después si se decide.
+
+**Pendiente (Fase 3 — onboarding, próximo):**
+- Flujo "crear organización" (registro admin con nombre de org) que **cree el `orgs/<id>/config.json` con `live_token = organizations.token`** (evita el mismatch visto en la prueba).
+- Cambiar `/api/sync/biblioteca` para usar `_token_ok()` (org-aware) en vez de comparar contra `config.live_token`.
+- Invitaciones por correo (ya hay correo) + auto-registro con ID + aprobación + cerrar registro abierto.
+- Login NeuralPlay/NeuralSync → token de la org. Suscripción/cobro + súper-admin.
