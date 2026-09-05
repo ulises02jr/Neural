@@ -85,3 +85,39 @@ usuarios y token. Ninguna organización ve datos de otra. Marca fija = NeuralWor
 - ¿Prueba antes de pagar, o pago obligatorio desde el registro?
 - Tarifas/paquetes concretos (límites de músicos y almacenamiento por paquete).
 - Detalles de la pasarela de pago (Stripe/PayPal) y el panel de súper-admin.
+
+---
+
+## Actualización (decisiones nuevas)
+- Botón admin→visor se llamará **"Modo Músico"** (ícono en la cuadrícula del panel admin).
+- Dueño/admin es músico y **no consume asiento** (los asientos quedan libres para invitados) — confirmado.
+- **Prueba gratis: 7 días** (máximo).
+- **Correo (noreply@neuralworship.com) = PRIMERA tarea de implementación** (dependencia de invitaciones + reset de contraseña; se experimentará bastante).
+
+## 12. Paquetes / Precios (BORRADOR de discusión)
+Cobro por organización. Gating de features de NeuralPlay según paquete (la app consulta el paquete de la org al iniciar sesión y habilita/deshabilita).
+
+### Ejes de diferenciación
+- **NeuralPlay Básico**: salida estéreo (2 canales), sin ruteo por familia, sin MIDI (ni mapping ni OUT).
+- **NeuralPlay Premium**: 32 salidas + ruteo por familia + MIDI IN + mapping + MIDI OUT (ProPresenter/luces).
+- **NeuralSync** (puente DAW/Logic): solo Premium+.
+- Asientos de músico, almacenamiento, soporte.
+
+### Borrador de 3 paquetes (precios de arranque, ajustables)
+| Paquete | NeuralPlay | NeuralSync | Asientos | Almacen. | Precio aprox |
+|---|---|---|---|---|---|
+| **Básico** | Básico (estéreo, sin MIDI) | No | 5 | 5 GB | ~$9/mes · ~$90/año |
+| **Premium** | Premium (32 salidas + MIDI in/out/mapping) | Sí | 15 | 25 GB | ~$25/mes · ~$250/año |
+| **Ministerio** | Premium | Sí | 30+ | 100 GB | ~$49/mes · ~$490/año |
+
+- Todos incluyen el núcleo en la nube: visor, charts, setlists, pads, exportar PDF.
+- Prueba de 7 días en cualquier paquete. Anual ≈ 2 meses gratis (mejora flujo de caja y retención).
+- Referencia de mercado: MultiTracks Playback ≈ $15/mes (solo playback); Planning Center ≈ $14+/mes. NeuralWorship queda competitivo/mejor.
+
+### Nota técnica de gating
+El paquete de la org se guarda en `organizations`. Al iniciar sesión NeuralPlay/NeuralSync, el servidor devuelve el tier → la app **habilita/deshabilita** salidas y MIDI. Debe validarse en la app (no solo ocultar en UI).
+
+### Pendiente de decidir (precios)
+- Precios finales y moneda (mercado Latam vs internacional).
+- Límites exactos por paquete (asientos, GB, ¿tope de canciones?).
+- ¿Mensual, anual, o ambos con foco en anual?
