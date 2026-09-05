@@ -458,25 +458,39 @@ def login():
 
 @app.route("/registro", methods=["GET", "POST"])
 def registro():
+    # Registro abierto cerrado: los músicos se unen a una organización con su código.
+    return redirect(url_for("unirse"))
+
+
+@app.route("/unirse", methods=["GET", "POST"])
+def unirse():
+    """Un músico se une a una organización con su código. Queda PENDIENTE de aprobación."""
     if request.method == "POST":
+        codigo = request.form.get("codigo", "").strip().upper()
         nombre = request.form.get("nombre", "").strip()
         apellido = request.form.get("apellido", "").strip()
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
+        prev = dict(codigo=codigo, nombre=nombre, apellido=apellido, email=email)
+        if not codigo or not nombre or not apellido or not email or not password:
+            flash("Completá todos los campos", "error")
+            return render_template("unirse.html", **prev)
         if password != password2:
             flash("Las contraseñas no coinciden", "error")
-            return render_template("registro.html",
-                                   nombre=nombre, apellido=apellido, email=email)
-        ok, resultado = usuarios.crear_usuario(nombre, apellido, email, password, rol="musico")
-        if ok:
-            flash("✓ Cuenta creada. Esperá la aprobación del administrador para poder ingresar.", "success")
-            return redirect(url_for("login"))
-        else:
-            flash(resultado, "error")
-            return render_template("registro.html",
-                                   nombre=nombre, apellido=apellido, email=email)
-    return render_template("registro.html")
+            return render_template("unirse.html", **prev)
+        org = usuarios.buscar_org_por_codigo(codigo)
+        if not org:
+            flash("Código de organización inválido", "error")
+            return render_template("unirse.html", **prev)
+        ok, res = usuarios.crear_usuario(nombre, apellido, email, password,
+                                         rol="musico", estado="pendiente", org_id=org["id"])
+        if not ok:
+            flash(res, "error")
+            return render_template("unirse.html", **prev)
+        flash("✓ Cuenta creada en «%s». Esperá la aprobación del administrador para ingresar." % org["nombre"], "success")
+        return redirect(url_for("login"))
+    return render_template("unirse.html", codigo=request.args.get("codigo", "").strip().upper())
 
 
 @app.route("/crear-organizacion", methods=["GET", "POST"])
@@ -1316,8 +1330,10 @@ def admin():
         live_token=cfg.get("live_token", ""),
         ultimo_heartbeat_seg=segundos_atras,
         hoy=_hoy_iso(),
-        usuarios_pendientes=usuarios.listar_usuarios(estado="pendiente"),
-        usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo") if u.get("rol") != "admin"],
+        usuarios_pendientes=usuarios.listar_usuarios(estado="pendiente", org_id=org_actual()),
+        usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo", org_id=org_actual()) if u.get("rol") != "admin"],
+        org_info=usuarios.obtener_organizacion(org_actual()),
+        musicos_activos_n=usuarios.contar_musicos_activos(org_actual()),
         usuario_actual=get_usuario_actual(),
         email_configurado=emails_module.email_configurado(),
         desc_mac=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA["mac"])),
@@ -1639,11 +1655,17 @@ def admin_live_off():
 @app.route("/admin/usuario/<int:user_id>/aprobar", methods=["POST"])
 @login_required("admin")
 def admin_usuario_aprobar(user_id):
+    org = org_actual()
     u = usuarios.buscar_por_id(user_id)
-    if not u:
+    if not u or u.get("org_id") != org:
         flash("Usuario no encontrado", "error")
         return redirect(url_for("admin"))
-    if usuarios.aprobar_usuario(user_id):
+    org_obj = usuarios.obtener_organizacion(org)
+    if (u.get("rol") == "musico" and org_obj
+            and usuarios.contar_musicos_activos(org) >= int(org_obj.get("max_musicos") or 0)):
+        flash("Alcanzaste el límite de asientos de tu paquete. Ampliá el plan o quitá un músico para aprobar a otro.", "error")
+        return redirect(url_for("admin"))
+    if usuarios.aprobar_usuario(user_id, org):
         # Mandar email de bienvenida
         nombre_completo = f"{u['nombre']} {u['apellido']}"
         ok, _ = emails_module.enviar_email_bienvenida(u["email"], nombre_completo)
@@ -1659,19 +1681,21 @@ def admin_usuario_aprobar(user_id):
 @app.route("/admin/usuario/<int:user_id>/eliminar", methods=["POST"])
 @login_required("admin")
 def admin_usuario_eliminar(user_id):
+    org = org_actual()
     u = usuarios.buscar_por_id(user_id)
-    if not u:
+    if not u or u.get("org_id") != org:
         flash("Usuario no encontrado", "error")
         return redirect(url_for("admin"))
-    # No permitir borrar el último admin activo
-    if u["rol"] == "admin" and u["estado"] == "activo" and usuarios.contar_admins_activos() <= 1:
-        flash("No podés borrar el último admin activo", "error")
+    # No permitir borrar al dueño de la organización
+    org_obj = usuarios.obtener_organizacion(org)
+    if org_obj and org_obj.get("owner_user_id") == user_id:
+        flash("No podés borrar al dueño de la organización", "error")
         return redirect(url_for("admin"))
     # No permitir auto-eliminación
     if session.get("user_id") == user_id:
         flash("No podés borrar tu propia cuenta", "error")
         return redirect(url_for("admin"))
-    if usuarios.eliminar_usuario(user_id):
+    if usuarios.eliminar_usuario(user_id, org):
         flash(f"✓ Usuario {u['nombre']} {u['apellido']} eliminado", "success")
     return redirect(url_for("admin"))
 
@@ -1681,7 +1705,7 @@ def admin_usuario_eliminar(user_id):
 def admin_usuario_reset_password(user_id):
     """Admin manda manualmente un código de reset (por si el usuario no recibe el email original)."""
     u = usuarios.buscar_por_id(user_id)
-    if not u:
+    if not u or u.get("org_id") != org_actual():
         flash("Usuario no encontrado", "error")
         return redirect(url_for("admin"))
     codigo = usuarios.crear_codigo_reset(user_id)
@@ -1776,7 +1800,7 @@ def admin_crear_admin():
     apellido = request.form.get("apellido", "").strip()
     email = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
-    ok, resultado = usuarios.crear_usuario(nombre, apellido, email, password, rol="admin", estado="activo")
+    ok, resultado = usuarios.crear_usuario(nombre, apellido, email, password, rol="admin", estado="activo", org_id=org_actual())
     if ok:
         flash(f"✓ Admin {nombre} {apellido} creado", "success")
     else:
@@ -2272,7 +2296,7 @@ def api_live_perfiles():
     """NeuralPlay: roster de perfiles (nombre + acento + prefs) para el visor local. Token."""
     if not _token_ok():
         return jsonify({"ok": False, "error": "unauthorized"}), 403
-    return jsonify(usuarios.listar_perfiles())
+    return jsonify(usuarios.listar_perfiles(org_actual()))
 
 
 @app.route("/api/live/pads")

@@ -254,6 +254,20 @@
   <div class="card sec-card" id="usuarios">
 
     <h2>Usuarios de Organización</h2>
+    {% if org_info %}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="flex:1;min-width:190px;padding:14px 16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
+        <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Código para invitar músicos</div>
+        <div style="font-size:24px;font-weight:800;letter-spacing:4px;color:var(--gold);font-family:ui-monospace,Menlo,monospace">{{ org_info.codigo }}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:6px">Tus músicos entran a <b>neuralworship.com/unirse</b> y escriben este código.</div>
+      </div>
+      <div style="flex:1;min-width:150px;padding:14px 16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
+        <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Asientos de músico</div>
+        <div style="font-size:24px;font-weight:800;color:var(--txt)">{{ musicos_activos_n }} <span style="font-size:14px;color:var(--txt2);font-weight:500">/ {{ org_info.max_musicos }}</span></div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:6px">Paquete: {{ org_info.paquete|capitalize }}</div>
+      </div>
+    </div>
+    {% endif %}
     {% if not email_configurado %}
     <div class="flash error" style="margin-bottom:14px">
       ⚠️ El sistema de email no está configurado. Los códigos de reset no podrán enviarse.

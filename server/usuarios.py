@@ -39,6 +39,19 @@ def _conexion():
     return conn
 
 
+# Código de unión de organización (corto, sin caracteres ambiguos)
+_COD_ALFA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def _codigo_libre(conn):
+    """Genera un código de organización de 6 caracteres que no exista aún."""
+    for _ in range(50):
+        c = "".join(secrets.choice(_COD_ALFA) for _ in range(6))
+        if not conn.execute("SELECT 1 FROM organizations WHERE codigo = ?", (c,)).fetchone():
+            return c
+    return "".join(secrets.choice(_COD_ALFA) for _ in range(8))
+
+
 def init_db():
     """Crea las tablas si no existen."""
     with _conexion() as conn:
@@ -104,6 +117,20 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usuarios_org ON usuarios(org_id)")
         except Exception:
             pass
+        # Código de unión por organización
+        try:
+            conn.execute("ALTER TABLE organizations ADD COLUMN codigo TEXT")
+        except Exception:
+            pass  # ya existe
+        try:
+            faltantes = conn.execute(
+                "SELECT id FROM organizations WHERE codigo IS NULL OR codigo = ''"
+            ).fetchall()
+            for r in faltantes:
+                conn.execute("UPDATE organizations SET codigo = ? WHERE id = ?",
+                             (_codigo_libre(conn), r["id"]))
+        except Exception:
+            pass
 
 
 def hash_password(password):
@@ -167,7 +194,7 @@ def _ahora_iso():
     return datetime.utcnow().isoformat(timespec="seconds")
 
 
-def crear_usuario(nombre, apellido, email, password, rol="musico", estado="pendiente"):
+def crear_usuario(nombre, apellido, email, password, rol="musico", estado="pendiente", org_id=None):
     """Crea un usuario nuevo. Devuelve (ok, user_id_o_error)."""
     email = email.strip().lower()
     if not nombre or not apellido or not email or not password:
@@ -179,13 +206,14 @@ def crear_usuario(nombre, apellido, email, password, rol="musico", estado="pendi
     try:
         with _conexion() as conn:
             cur = conn.execute(
-                "INSERT INTO usuarios (nombre, apellido, email, password_hash, rol, estado, creado_en, aprobado_en) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO usuarios (nombre, apellido, email, password_hash, rol, estado, creado_en, aprobado_en, org_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     nombre.strip(), apellido.strip(), email,
                     hash_password(password), rol, estado,
                     _ahora_iso(),
                     _ahora_iso() if estado == "activo" else None,
+                    org_id,
                 ),
             )
             return True, cur.lastrowid
@@ -285,25 +313,38 @@ def buscar_por_id(user_id):
         return dict(row) if row else None
 
 
-def listar_usuarios(estado=None):
-    """Lista todos los usuarios o filtra por estado."""
+def listar_usuarios(estado=None, org_id=None):
+    """Lista usuarios; filtra opcionalmente por estado y/o organización."""
+    where, params = [], []
+    if estado:
+        where.append("estado = ?")
+        params.append(estado)
+    if org_id:
+        where.append("org_id = ?")
+        params.append(org_id)
+    sql = "SELECT * FROM usuarios"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY creado_en DESC"
     with _conexion() as conn:
-        if estado:
-            rows = conn.execute(
-                "SELECT * FROM usuarios WHERE estado = ? ORDER BY creado_en DESC", (estado,)
-            ).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM usuarios ORDER BY creado_en DESC").fetchall()
+        rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
 
-def listar_perfiles():
-    """Perfiles (id, nombre, acento, prefs) de usuarios activos, para el visor local de NeuralPlay."""
+def listar_perfiles(org_id=None):
+    """Perfiles (id, nombre, acento, prefs) de usuarios activos de una organización,
+    para el visor local de NeuralPlay ('¿Quién sos?')."""
     try:
         with _conexion() as conn:
-            rows = conn.execute(
-                "SELECT id, nombre, apellido, acento, prefs FROM usuarios WHERE estado = 'activo' ORDER BY nombre COLLATE NOCASE"
-            ).fetchall()
+            if org_id:
+                rows = conn.execute(
+                    "SELECT id, nombre, apellido, acento, prefs FROM usuarios WHERE estado = 'activo' AND org_id = ? ORDER BY nombre COLLATE NOCASE",
+                    (org_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, nombre, apellido, acento, prefs FROM usuarios WHERE estado = 'activo' ORDER BY nombre COLLATE NOCASE"
+                ).fetchall()
         out = []
         for r in rows:
             nom = (r["nombre"] or "").strip()
@@ -315,19 +356,28 @@ def listar_perfiles():
         return []
 
 
-def aprobar_usuario(user_id):
+def aprobar_usuario(user_id, org_id=None):
     with _conexion() as conn:
-        cur = conn.execute(
-            "UPDATE usuarios SET estado = 'activo', aprobado_en = ? WHERE id = ? AND estado = 'pendiente'",
-            (_ahora_iso(), user_id),
-        )
+        if org_id:
+            cur = conn.execute(
+                "UPDATE usuarios SET estado = 'activo', aprobado_en = ? WHERE id = ? AND estado = 'pendiente' AND org_id = ?",
+                (_ahora_iso(), user_id, org_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE usuarios SET estado = 'activo', aprobado_en = ? WHERE id = ? AND estado = 'pendiente'",
+                (_ahora_iso(), user_id),
+            )
         return cur.rowcount > 0
 
 
-def eliminar_usuario(user_id):
+def eliminar_usuario(user_id, org_id=None):
     with _conexion() as conn:
         conn.execute("DELETE FROM reset_codigos WHERE user_id = ?", (user_id,))
-        cur = conn.execute("DELETE FROM usuarios WHERE id = ?", (user_id,))
+        if org_id:
+            cur = conn.execute("DELETE FROM usuarios WHERE id = ? AND org_id = ?", (user_id, org_id))
+        else:
+            cur = conn.execute("DELETE FROM usuarios WHERE id = ?", (user_id,))
         return cur.rowcount > 0
 
 
@@ -460,10 +510,11 @@ def crear_organizacion(nombre, owner_user_id=None, token=None, paquete="basico",
         token = secrets.token_hex(16)
     try:
         with _conexion() as conn:
+            codigo = _codigo_libre(conn)
             cur = conn.execute(
-                "INSERT INTO organizations (nombre, owner_user_id, token, paquete, max_musicos, almacen_gb, estado_suscripcion, creado_en) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (nombre, owner_user_id, token, paquete, int(max_musicos), int(almacen_gb), estado, _ahora_iso()),
+                "INSERT INTO organizations (nombre, owner_user_id, token, codigo, paquete, max_musicos, almacen_gb, estado_suscripcion, creado_en) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (nombre, owner_user_id, token, codigo, paquete, int(max_musicos), int(almacen_gb), estado, _ahora_iso()),
             )
             return True, cur.lastrowid
     except sqlite3.IntegrityError as e:
@@ -488,6 +539,27 @@ def obtener_org_por_token(token):
     with _conexion() as conn:
         row = conn.execute("SELECT * FROM organizations WHERE token = ?", (token,)).fetchone()
         return dict(row) if row else None
+
+
+def buscar_org_por_codigo(codigo):
+    """Devuelve la organización por su código de unión (case-insensitive), o None."""
+    if not codigo:
+        return None
+    codigo = str(codigo).strip().upper()
+    with _conexion() as conn:
+        row = conn.execute("SELECT * FROM organizations WHERE UPPER(codigo) = ?", (codigo,)).fetchone()
+        return dict(row) if row else None
+
+
+def contar_musicos_activos(org_id):
+    """Cuántos músicos activos tiene una organización (para el límite de asientos)."""
+    if not org_id:
+        return 0
+    with _conexion() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM usuarios WHERE rol = 'musico' AND estado = 'activo' AND org_id = ?",
+            (org_id,),
+        ).fetchone()[0]
 
 
 def org_de_usuario(user_id):
