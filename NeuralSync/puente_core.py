@@ -50,7 +50,7 @@ ARCHIVO_CONFIG = APP_SOPORTE / "config.json"      # config del usuario (escribib
 ARCHIVO_SETLIST = APP_SOPORTE / "setlist.json"
 
 DEFAULT_CONFIG = {
-    "vps_url": "https://miworship.miiglesiainternacional.org",
+    "vps_url": "https://neuralworship.com",
     "token": "",
     "midi_channel": 16,
     "iac_port": "To Secuencias Live",
