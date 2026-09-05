@@ -543,6 +543,40 @@ def asegurar_org_inicial(nombre="Neural Worship", token=None, paquete="ministeri
     return True, org_id, f"Organización #{org_id} '{nombre}' creada (dueño user_id={owner_id}); {migrados} usuario(s) migrado(s)."
 
 
+def crear_org_con_dueno(org_nombre, nombre, apellido, email, password,
+                        paquete="basico", max_musicos=3, almacen_gb=20):
+    """Crea una organización nueva + su usuario admin dueño (activo), atómicamente.
+    Devuelve (ok, dict_con_datos | mensaje_error).
+    dict = {org_id, user_id, token, nombre_org}."""
+    email = (email or "").strip().lower()
+    if not org_nombre or not (org_nombre or "").strip():
+        return False, "El nombre de la organización es obligatorio"
+    # Validar email libre ANTES de crear la organización
+    if buscar_por_email(email):
+        return False, "Ya existe una cuenta con ese email"
+    ok, org_id = crear_organizacion(org_nombre, paquete=paquete,
+                                    max_musicos=max_musicos, almacen_gb=almacen_gb,
+                                    estado="prueba")
+    if not ok:
+        return False, org_id  # mensaje de error
+    ok2, res = crear_usuario(nombre, apellido, email, password, rol="admin", estado="activo")
+    if not ok2:
+        # Rollback: borrar la organización recién creada
+        try:
+            with _conexion() as conn:
+                conn.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
+        except Exception:
+            pass
+        return False, res
+    user_id = res
+    with _conexion() as conn:
+        conn.execute("UPDATE usuarios SET org_id = ? WHERE id = ?", (org_id, user_id))
+        conn.execute("UPDATE organizations SET owner_user_id = ? WHERE id = ?", (user_id, org_id))
+    org = obtener_organizacion(org_id)
+    return True, {"org_id": org_id, "user_id": user_id,
+                  "token": org["token"], "nombre_org": org_nombre}
+
+
 if __name__ == "__main__":
     init_db()
     print(f"✓ Base de datos inicializada en {ARCHIVO_DB}")

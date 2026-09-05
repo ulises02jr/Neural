@@ -189,6 +189,24 @@ def guardar_config(cfg, org=None):
         json.dump(cfg, f, indent=2)
 
 
+def _crear_config_org(org_id, token, org_nombre):
+    """Crea el config.json inicial de una organización nueva.
+    Clave: live_token = token de la organización (para que NeuralPlay/API funcione)."""
+    cfg = {
+        "password_musicos": secrets.token_hex(32),
+        "password_admin": secrets.token_hex(32),
+        "secret_key": secrets.token_hex(32),
+        "live_token": token,
+        "setlists": [],
+        "live_activo": False,
+        "mac_local_ip": None,
+        "ultimo_heartbeat": None,
+        "org_nombre": org_nombre,
+    }
+    guardar_config(cfg, org=org_id)
+    return cfg
+
+
 # ───────────────────────── App Flask ─────────────────────────
 # Cargamos config una vez para inicializar Flask
 _config_inicial = cargar_config()
@@ -461,6 +479,47 @@ def registro():
     return render_template("registro.html")
 
 
+@app.route("/crear-organizacion", methods=["GET", "POST"])
+def crear_organizacion():
+    """Registro de una organización nueva (iglesia) + su admin dueño (auto-activo)."""
+    if request.method == "POST":
+        org_nombre = request.form.get("org_nombre", "").strip()
+        nombre = request.form.get("nombre", "").strip()
+        apellido = request.form.get("apellido", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        prev = dict(org_nombre=org_nombre, nombre=nombre, apellido=apellido, email=email)
+        if not org_nombre or not nombre or not apellido or not email or not password:
+            flash("Completá todos los campos", "error")
+            return render_template("crear_organizacion.html", **prev)
+        if password != password2:
+            flash("Las contraseñas no coinciden", "error")
+            return render_template("crear_organizacion.html", **prev)
+        if len(password) < 6:
+            flash("La contraseña debe tener al menos 6 caracteres", "error")
+            return render_template("crear_organizacion.html", **prev)
+        ok, res = usuarios.crear_org_con_dueno(org_nombre, nombre, apellido, email, password)
+        if not ok:
+            flash(res, "error")
+            return render_template("crear_organizacion.html", **prev)
+        # Crear el config.json de la organización con su token
+        try:
+            _crear_config_org(res["org_id"], res["token"], org_nombre)
+        except Exception as e:
+            logging.error("crear config org %s: %s", res.get("org_id"), e)
+        # Iniciar sesión como admin dueño de la nueva organización
+        session.permanent = True
+        session.clear()
+        session["user_id"] = res["user_id"]
+        session["rol"] = "admin"
+        session["nombre"] = nombre
+        session["org_id"] = res["org_id"]
+        flash("✓ ¡Organización creada! Bienvenido a NeuralWorship.", "success")
+        return redirect(url_for("admin"))
+    return render_template("crear_organizacion.html")
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     """Login para admins. Soporta:
@@ -683,9 +742,7 @@ def ver_cancion(numero):
 def api_sync_biblioteca():
     """Para el Puente local (app de escritorio): entrega toda la biblioteca de
     canciones (JSON completo). Autenticacion por token (server-to-server)."""
-    auth = request.headers.get("Authorization", "")
-    token = auth[7:].strip() if auth[:7].lower() == "bearer " else request.args.get("token", "")
-    if token != get_config().get("live_token"):
+    if not _token_ok():
         return jsonify({"ok": False, "error": "unauthorized"}), 403
     bib = cargar_biblioteca()
     canciones = [bib[n] for n in sorted(bib.keys())]
