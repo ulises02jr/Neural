@@ -82,9 +82,8 @@ usuarios y token. Ninguna organización ve datos de otra. Marca fija = NeuralWor
 - Marca fija NeuralWorship (sin personalización de nombre/logo/acento).
 
 ## Pendiente de decidir
-- ¿Prueba antes de pagar, o pago obligatorio desde el registro?
-- Tarifas/paquetes concretos (límites de músicos y almacenamiento por paquete).
 - Detalles de la pasarela de pago (Stripe/PayPal) y el panel de súper-admin.
+- (Prueba de 7 días y tarifas/paquetes → YA decididos, ver §12.)
 
 ---
 
@@ -94,30 +93,49 @@ usuarios y token. Ninguna organización ve datos de otra. Marca fija = NeuralWor
 - **Prueba gratis: 7 días** (máximo).
 - **Correo (noreply@neuralworship.com) = PRIMERA tarea de implementación** (dependencia de invitaciones + reset de contraseña; se experimentará bastante).
 
-## 12. Paquetes / Precios (BORRADOR de discusión)
-Cobro por organización. Gating de features de NeuralPlay según paquete (la app consulta el paquete de la org al iniciar sesión y habilita/deshabilita).
+## 12. Paquetes / Precios (FINAL — decidido)
+Cobro por organización. Gating de features según paquete (la app/servidor consulta el paquete de la org al iniciar sesión y habilita/deshabilita).
 
-### Ejes de diferenciación
-- **NeuralPlay Básico**: salida estéreo (2 canales), sin ruteo por familia, sin MIDI (ni mapping ni OUT).
-- **NeuralPlay Premium**: 32 salidas + ruteo por familia + MIDI IN + mapping + MIDI OUT (ProPresenter/luces).
-- **NeuralSync** (puente DAW/Logic): solo Premium+.
-- Asientos de músico, almacenamiento, soporte.
+### Tabla de paquetes
+| | **Básico** | **Premium** | **Ministerio** |
+|---|---|---|---|
+| **Precio** | $9.99/mes | $20/mes | $45/mes |
+| **Asientos** | 3 | 5 | 10 |
+| **Almacenamiento** | 20 GB | 50 GB | 100 GB |
+| **NeuralPlay** | Basic (2 salidas, estéreo, sin MIDI) | Premium (32 salidas + MIDI mapping + MIDI OUT) | Premium |
+| **NeuralSync** (puente Logic) | ❌ | ✅ | ✅ |
+| **Exportar PDF** (charts) | ❌ | ✅ | ✅ |
+| **Charts + Setlists + Pads** | ✅ | ✅ | ✅ |
 
-### Borrador de 3 paquetes (precios de arranque, ajustables)
-| Paquete | NeuralPlay | NeuralSync | Asientos | Almacen. | Precio aprox |
-|---|---|---|---|---|---|
-| **Básico** | Básico (estéreo, sin MIDI) | No | 5 | 5 GB | ~$9/mes · ~$90/año |
-| **Premium** | Premium (32 salidas + MIDI in/out/mapping) | Sí | 15 | 25 GB | ~$25/mes · ~$250/año |
-| **Ministerio** | Premium | Sí | 30+ | 100 GB | ~$49/mes · ~$490/año |
+### Add-ons (extras)
+| Extra | Precio | Costo p/nosotros | Margen |
+|---|---|---|---|
+| **+25 GB** | $5/mes | ~$2.50 | ~$2.50 (50%) |
+| **+1 asiento (músico)** | $2/mes | ~$0 | ~$2 (casi 100%) |
 
-- Todos incluyen el núcleo en la nube: visor, charts, setlists, pads, exportar PDF.
-- Prueba de 7 días en cualquier paquete. Anual ≈ 2 meses gratis (mejora flujo de caja y retención).
+### Manejo del espacio
+- La **cuota** (20/50/100 GB) cuenta **TODO**: canciones + pistas + **tonos generados** (los tonos NO auto-expiran; lo que generan se queda).
+- Se mide con `du` sobre `/mnt/ssd50gb/charts_data/orgs/<ID>/`.
+- En el admin: **barra de uso** ("Usando X de Y GB"). Aviso al ~90%.
+- Si se llena: **se bloquean subidas nuevas** (nunca se borra lo existente; sigue tocando).
+- Para más espacio: comprar bloques **+25 GB ($5)** o subir de plan. El que genera muchos tonos → paga más espacio, natural.
+- **No hay botón de borrar tonos** (evita que la gente borre para no pagar; y menos que construir).
+
+### Economía por paquete (costo vs. margen)
+| Plan | Ingresa | Costo aprox (almacen.+cómputo+banda+comisión) | **Margen** |
+|---|---|---|---|
+| Básico | $9.99 | ~$3.40 | **~66%** |
+| Premium | $20 | ~$7.15 | **~64%** |
+| Ministerio | $45 | ~$13.50 | **~70%** |
+- Base de costos DigitalOcean: almacenamiento $0.10/GiB/mes; droplet desde $4; banda $0.01/GiB sobre 500+ GB.
+- Comisión de pago ~2.9%+$0.30 (puede ser mayor en Latam/internacional).
+- Márgenes sanos (60-70%+); los add-ons (sobre todo asientos) suben todavía más la utilidad.
+
+### Notas comerciales
+- Prueba de **7 días** en cualquier paquete.
+- Ministerio se puede subir a **$50** cuando se agregue un servicio nuevo que hoy no existe (para que el precio se sienta ganado, no forzado).
 - Referencia de mercado: MultiTracks Playback ≈ $15/mes (solo playback); Planning Center ≈ $14+/mes. NeuralWorship queda competitivo/mejor.
+- **Compresión**: si el usuario sube MP3/stems comprimidos, ahorra su propia cuota (es su decisión). Ojo producto: un solo MP3 estéreo pierde la mezcla multipista; lo ideal es stem por stem.
 
 ### Nota técnica de gating
-El paquete de la org se guarda en `organizations`. Al iniciar sesión NeuralPlay/NeuralSync, el servidor devuelve el tier → la app **habilita/deshabilita** salidas y MIDI. Debe validarse en la app (no solo ocultar en UI).
-
-### Pendiente de decidir (precios)
-- Precios finales y moneda (mercado Latam vs internacional).
-- Límites exactos por paquete (asientos, GB, ¿tope de canciones?).
-- ¿Mensual, anual, o ambos con foco en anual?
+El paquete de la org se guarda en `organizations`. Al iniciar sesión NeuralPlay/NeuralSync, el servidor devuelve el tier → la app **habilita/deshabilita** salidas, MIDI, NeuralSync y Exportar PDF. Debe validarse en servidor/app (no solo ocultar en UI).
