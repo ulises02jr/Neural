@@ -54,19 +54,62 @@ import emails as emails_module
 
 # ───────────────────────── Configuración base ─────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
+CARPETA_ORGS = BASE_DIR / "orgs"
 CARPETA_CANCIONES = BASE_DIR / "canciones"
 ARCHIVO_CONFIG = BASE_DIR / "config.json"
 
 CARPETA_CANCIONES.mkdir(exist_ok=True)
 
 
+# ───────────────────── Almacenamiento por organización ─────────────────────
+# Org #1 (instalación original) usa las carpetas actuales tal cual (no se mueven).
+# Organizaciones nuevas viven en BASE_DIR/orgs/<id>/{canciones,pistas,pads,config.json}.
+def _org_base(org=1):
+    try:
+        if org and int(org) != 1:
+            return CARPETA_ORGS / str(int(org))
+    except Exception:
+        pass
+    return BASE_DIR
+
+
+def dir_canciones(org=1):
+    d = _org_base(org) / "canciones"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def dir_pistas(org=1):
+    d = _org_base(org) / "pistas"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def dir_pads(org=1):
+    d = _org_base(org) / "pads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def archivo_config(org=1):
+    try:
+        if org and int(org) != 1:
+            base = CARPETA_ORGS / str(int(org))
+            base.mkdir(parents=True, exist_ok=True)
+            return base / "config.json"
+    except Exception:
+        pass
+    return ARCHIVO_CONFIG
+
+
 def hash_password(plain):
     return hashlib.sha256(plain.encode("utf-8")).hexdigest()
 
 
-def cargar_config():
-    """Carga config.json. Si no existe, lo crea con valores por defecto."""
-    if not ARCHIVO_CONFIG.exists():
+def cargar_config(org=1):
+    """Carga el config.json de la organización. Si no existe, lo crea con defaults."""
+    _cfg_path = archivo_config(org)
+    if not _cfg_path.exists():
         # Primera ejecución: crear config con passwords por defecto
         default = {
             "password_musicos": hash_password("musicos2026"),
@@ -78,12 +121,12 @@ def cargar_config():
             "mac_local_ip": None,
             "ultimo_heartbeat": None,
         }
-        with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
+        with open(_cfg_path, "w", encoding="utf-8") as f:
             json.dump(default, f, indent=2)
         print("⚠️  config.json creado con passwords por defecto.")
         print("    Cámbialos editando el archivo.")
         return default
-    with open(ARCHIVO_CONFIG, "r", encoding="utf-8") as f:
+    with open(_cfg_path, "r", encoding="utf-8") as f:
         cfg = json.load(f)
     # Migración automática: agregar campos nuevos si la config es vieja
     cambios = False
@@ -123,7 +166,7 @@ def cargar_config():
         cambios = True
     # (Los repertorios ya NO se borran automáticamente por fecha; el usuario los elimina cuando quiera.)
     if cambios:
-        with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
+        with open(_cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
     return cfg
 
@@ -140,8 +183,9 @@ def _ahora_iso():
     return datetime.now().isoformat(timespec="seconds")
 
 
-def guardar_config(cfg):
-    with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as f:
+def guardar_config(cfg, org=None):
+    org = org if org is not None else org_actual()
+    with open(archivo_config(org), "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
 
 
@@ -251,10 +295,11 @@ def api_perfil_prefs():
     return jsonify({"ok": True, "prefs": usuarios.obtener_prefs(uid)})
 
 
-def get_config():
-    """Lee config.json del disco en cada llamada.
+def get_config(org=None):
+    """Lee el config.json (de la organización actual) del disco en cada llamada.
     Esto garantiza que múltiples workers vean los cambios."""
-    return cargar_config()
+    org = org if org is not None else org_actual()
+    return cargar_config(org)
 
 
 # ───────────────────────── Helpers ─────────────────────────
@@ -315,10 +360,10 @@ def org_actual():
     NOTA: solo llamar dentro de un contexto de request; los hilos de render
     reciben el org_id explícitamente, no usan este helper.
     """
-    oid = session.get("org_id")
-    if oid:
-        return oid
     try:
+        oid = session.get("org_id")
+        if oid:
+            return oid
         auth = request.headers.get("Authorization", "")
         token = auth[7:].strip() if auth[:7].lower() == "bearer " else request.args.get("token", "")
         if token:
@@ -641,7 +686,14 @@ def api_sync_biblioteca():
 def _token_ok():
     auth = request.headers.get("Authorization", "")
     token = auth[7:].strip() if auth[:7].lower() == "bearer " else request.args.get("token", "")
-    return bool(token) and token == get_config().get("live_token")
+    if not token:
+        return False
+    try:
+        if usuarios.obtener_org_por_token(token):
+            return True
+    except Exception:
+        pass
+    return token == get_config(1).get("live_token")
 
 
 def _semitono_override(base_tono, override_tono):
