@@ -2130,7 +2130,7 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>MI Worship · En vivo</title>
 <style>
- :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;--txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--accent:#C9A96E;--accent-soft:#2a2418;--accent-ink:#1a1407;--live:#86B36A;--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
+ :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;--txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--accent:#9CA3AF;--accent-soft:rgba(156,163,175,0.16);--accent-ink:#000;--live:#86B36A;--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
  body[data-size="xs"]{--lyric-size:14px;--chord-size:13px;--chord-min:17px;}
  body[data-size="s"]{--lyric-size:16px;--chord-size:15px;--chord-min:19px;}
  body[data-size="m"]{--lyric-size:18px;--chord-size:17px;--chord-min:21px;}
@@ -2201,7 +2201,6 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  .size-big:disabled{opacity:.35}
  .size-lbl{font-size:16px;color:var(--accent);font-weight:700;min-width:40px;text-align:center;font-family:ui-monospace,Menlo,monospace}
 </style></head><body>
-<script>/*acento*/(function(){try{var c=localStorage.getItem('mw_acento');if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];var R=parseInt(h.substr(0,2),16),G=parseInt(h.substr(2,2),16),B=parseInt(h.substr(4,2),16);d.setProperty('--accent',c);d.setProperty('--accent-soft','rgba('+R+','+G+','+B+',0.16)');d.setProperty('--accent-ink',(0.299*R+0.587*G+0.114*B)>145?'#000':'#fff');}}catch(e){}})();</script>
 <div class="wrap">
  <div class="topbar">
   <div style="min-width:0">
@@ -2238,17 +2237,6 @@ static const char* kMusicianPage = R"HTMLPAGE(<!doctype html><html lang="es"><he
  </div>
  <div class="aj-lbl">Grosor de acordes</div>
  <div class="seg" id="seg-grosor"><button data-val="fino" onclick="setVista('grosor','fino')">Fino</button><button data-val="normal" onclick="setVista('grosor','normal')">Normal</button><button data-val="grueso" onclick="setVista('grosor','grueso')">Grueso</button></div>
- <div class="aj-lbl">Color de acento (interfaz)</div>
- <div class="seg colores" id="seg-acento">
-  <button data-val="" onclick="setAcento('')" title="Por defecto" style="background:#C9A96E"></button>
-  <button data-val="#5B8DEF" onclick="setAcento('#5B8DEF')" title="Azul" style="background:#5B8DEF"></button>
-  <button data-val="#3FB950" onclick="setAcento('#3FB950')" title="Verde" style="background:#3FB950"></button>
-  <button data-val="#A371F7" onclick="setAcento('#A371F7')" title="Morado" style="background:#A371F7"></button>
-  <button data-val="#E5534B" onclick="setAcento('#E5534B')" title="Rojo" style="background:#E5534B"></button>
-  <button data-val="#2DB7A3" onclick="setAcento('#2DB7A3')" title="Turquesa" style="background:#2DB7A3"></button>
-  <button data-val="#FFFFFF" onclick="setAcento('#FFFFFF')" title="Blanco" style="background:#FFFFFF"></button>
-  <input type="color" id="acento-custom-v" title="Color personalizado" onchange="setAcento(this.value)">
- </div>
  <div style="margin-top:16px;text-align:center"><button onclick="cambiarMusico()" style="background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:underline">Cambiar de músico</button></div>
 </div>
 
@@ -2281,7 +2269,7 @@ function cargarVista(){ try{ VISTA.tema=localStorage.getItem('charts_tema')||'os
 function setVista(clave,val){ VISTA[clave]=val; try{localStorage.setItem('charts_'+clave,val);}catch(e){} aplicarVista(); }
 function hexRgbaV(hex,a){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; return 'rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+','+a+')'; }
 function inkFor(hex){ var h=hex.replace('#',''); if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2]; var r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16); return (0.299*r+0.587*g+0.114*b)>145?'#000':'#fff'; }
-function aplicarAcento(){ var c=null; try{c=localStorage.getItem('mw_acento');}catch(e){} var d=document.documentElement.style; if(c){ d.setProperty('--accent',c); d.setProperty('--accent-soft',hexRgbaV(c,0.16)); d.setProperty('--accent-ink',inkFor(c)); } else { d.removeProperty('--accent'); d.removeProperty('--accent-soft'); d.removeProperty('--accent-ink'); } marcarV('seg-acento',c||''); var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; } }
+function aplicarAcento(){}
 function setAcento(val){ try{ if(val)localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} aplicarAcento(); }
 function abrirAjustes(){ document.getElementById('bg-ajustes').classList.add('open'); document.getElementById('sheet-ajustes').classList.add('open'); }
 function cerrarAjustes(){ document.getElementById('bg-ajustes').classList.remove('open'); document.getElementById('sheet-ajustes').classList.remove('open'); }
