@@ -8,7 +8,7 @@
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
     --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
-    --gold:#C9A96E; --gold-soft:#2a2418; --gold-ink:#000;
+    --gold:#9CA3AF; --gold-soft:rgba(156,163,175,0.16); --gold-ink:#000;
     --lyric-size:18px; --chord-size:17px; --chord-min:21px;
     --ensayo-h:0px;
   }
@@ -156,7 +156,6 @@
   .seg.colores input[type=color]::-moz-color-swatch{border:none;border-radius:50%}
 </style>
   <link rel="stylesheet" href="/static/ensayo.css">
-<script>/*mw-acento*/(function(){try{var s="{{ mi_acento }}";var c=s||localStorage.getItem('mw_acento');if(s){try{localStorage.setItem('mw_acento',s);}catch(_){}}if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');d.setProperty('--gold-ink',(0.299*parseInt(h.substr(0,2),16)+0.587*parseInt(h.substr(2,2),16)+0.114*parseInt(h.substr(4,2),16))>145?'#000':'#fff');}}catch(e){}})();</script>
 <script>/*mw-prefs*/(function(){try{var P=JSON.parse({{ mi_prefs|tojson }}||'{}');if(P&&typeof P==='object'){var m={tema:'charts_tema',modo:'charts_modo',color:'charts_color',grosor:'charts_grosor',tam:'charts_tam'};for(var k in m){if(P[k]!==undefined&&P[k]!==null){try{localStorage.setItem(m[k],String(P[k]));}catch(_){}}}}}catch(e){}})();</script>
 </head>
 <body>
@@ -211,20 +210,6 @@
     <button data-val="grueso" onclick="setVista('grosor','grueso')">Grueso</button>
   </div>
 
-  <div class="aj-lbl">Color de acento (interfaz)</div>
-  <div class="seg colores" id="seg-acento">
-    <button data-val="" onclick="setAcento('')" title="Por defecto" style="background:#C9A96E"></button>
-    <button data-val="#5B8DEF" onclick="setAcento('#5B8DEF')" title="Azul" style="background:#5B8DEF"></button>
-    <button data-val="#3FB950" onclick="setAcento('#3FB950')" title="Verde" style="background:#3FB950"></button>
-    <button data-val="#A371F7" onclick="setAcento('#A371F7')" title="Morado" style="background:#A371F7"></button>
-    <button data-val="#E5534B" onclick="setAcento('#E5534B')" title="Rojo" style="background:#E5534B"></button>
-    <button data-val="#2DB7A3" onclick="setAcento('#2DB7A3')" title="Turquesa" style="background:#2DB7A3"></button>
-    <button data-val="#9CA3AF" onclick="setAcento('#9CA3AF')" title="Gris claro" style="background:#9CA3AF"></button>
-    <button data-val="#6B7280" onclick="setAcento('#6B7280')" title="Gris" style="background:#6B7280"></button>
-    <button data-val="#4B5563" onclick="setAcento('#4B5563')" title="Gris oscuro" style="background:#4B5563"></button>
-    <button data-val="#FFFFFF" onclick="setAcento('#FFFFFF')" title="Blanco" style="background:#FFFFFF"></button>
-    <input type="color" id="acento-custom-v" title="Color personalizado" onchange="setAcento(this.value)">
-  </div>
 </div>
 
 <script>
@@ -334,7 +319,6 @@ function aplicarAcento(){
   var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; }
 }
 function setAcento(val){ try{ if(val) localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} try{ fetch('/api/perfil/acento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acento:val||''})}); }catch(e){} aplicarAcento(); }
-aplicarAcento();
 
 function renderLines(lines){
   return `<div class="lyrics">${(lines||[]).map(line => {

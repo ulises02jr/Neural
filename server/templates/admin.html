@@ -8,8 +8,8 @@
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
     --txt:#ffffff; --txt2:#a3a3a3; --txt3:#666666;
-    --accent:#ffffff;
-    --gold:#C9A96E; --gold-soft:#2a2418;
+    --accent:#9CA3AF;
+    --gold:#9CA3AF; --gold-soft:rgba(156,163,175,0.16);
     --live:#86B36A; --danger:#dc6262;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -168,7 +168,6 @@
   .seg.colores input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
   .seg.colores input[type=color]::-moz-color-swatch{border:none;border-radius:50%}
 </style>
-<script>/*mw-acento*/(function(){try{var s="{{ mi_acento }}";var c=s||localStorage.getItem('mw_acento');if(s){try{localStorage.setItem('mw_acento',s);}catch(_){}}if(c){var d=document.documentElement.style,h=c.replace('#','');if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];d.setProperty('--gold',c);d.setProperty('--accent',c);d.setProperty('--gold-soft','rgba('+parseInt(h.substr(0,2),16)+','+parseInt(h.substr(2,2),16)+','+parseInt(h.substr(4,2),16)+',0.16)');}}catch(e){}})();</script>
 </head>
 <body>
 <div class="wrap">
@@ -202,7 +201,6 @@
     <a class="navicon" href="javascript:void(0)" onclick="showSection('biblioteca')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span class="ni-lbl">Biblioteca</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('organizacion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span><span class="ni-lbl">Información de Organización</span></a>
     <a class="navicon" href="javascript:void(0)" onclick="showSection('suscripcion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span><span class="ni-lbl">Suscripción</span></a>
-    <a class="navicon" href="javascript:void(0)" onclick="showSection('personalizacion')"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.4L22 18l-2.1.6L19 21l-.9-2.4L16 18l2.1-.6z"/></svg></span><span class="ni-lbl">Personalización</span></a>
   </nav>
   </div>
 
@@ -543,54 +541,6 @@
     </div>
   </div>
 
-  <!-- Personalización -->
-  <div class="card sec-card" id="personalizacion">
-    <h2>Personalización</h2>
-
-    <div style="margin-bottom:18px">
-      <div class="col-h"><span>Tamaño de los iconos</span></div>
-      <div class="seg" id="seg-iconsize">
-        <button type="button" data-val="sm" onclick="setPref('iconsize','sm')">Pequeño</button>
-        <button type="button" data-val="md" onclick="setPref('iconsize','md')">Mediano</button>
-        <button type="button" data-val="lg" onclick="setPref('iconsize','lg')">Grande</button>
-      </div>
-    </div>
-
-    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
-      <div class="col-h"><span>Tema de colores</span></div>
-      <div class="seg" id="seg-tema">
-        <button type="button" data-val="oscuro" onclick="setPref('tema','oscuro')">🌙 Oscuro</button>
-        <button type="button" data-val="claro" onclick="setPref('tema','claro')">☀️ Día</button>
-      </div>
-    </div>
-
-    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
-      <div class="col-h"><span>Color de acento</span></div>
-      <div class="seg colores" id="seg-acento">
-        <button type="button" data-val="" onclick="setPref('acento','')" title="Por defecto" style="background:#C9A96E"></button>
-        <button type="button" data-val="#5B8DEF" onclick="setPref('acento','#5B8DEF')" title="Azul" style="background:#5B8DEF"></button>
-        <button type="button" data-val="#3FB950" onclick="setPref('acento','#3FB950')" title="Verde" style="background:#3FB950"></button>
-        <button type="button" data-val="#A371F7" onclick="setPref('acento','#A371F7')" title="Morado" style="background:#A371F7"></button>
-        <button type="button" data-val="#E5534B" onclick="setPref('acento','#E5534B')" title="Rojo" style="background:#E5534B"></button>
-        <button type="button" data-val="#2DB7A3" onclick="setPref('acento','#2DB7A3')" title="Turquesa" style="background:#2DB7A3"></button>
-        <button type="button" data-val="#9CA3AF" onclick="setPref('acento','#9CA3AF')" title="Gris claro" style="background:#9CA3AF"></button>
-        <button type="button" data-val="#6B7280" onclick="setPref('acento','#6B7280')" title="Gris" style="background:#6B7280"></button>
-        <button type="button" data-val="#4B5563" onclick="setPref('acento','#4B5563')" title="Gris oscuro" style="background:#4B5563"></button>
-        <button type="button" data-val="#FFFFFF" onclick="setPref('acento','#FFFFFF')" title="Blanco" style="background:#FFFFFF"></button>
-        <input type="color" id="acento-custom" title="Color personalizado" onchange="setPref('acento', this.value)">
-      </div>
-    </div>
-
-    <div style="padding-top:16px;border-top:1px solid var(--line)">
-      <div class="col-h"><span>Estilo del menú de inicio</span></div>
-      <div class="seg" id="seg-nav">
-        <button type="button" data-val="iconos" onclick="setPref('nav','iconos')">Iconos</button>
-        <button type="button" data-val="barras" onclick="setPref('nav','barras')">Barra de opciones</button>
-      </div>
-      <p class="help" style="margin-top:10px">Cambiá si el inicio se ve como iconos grandes o como una lista de barras.</p>
-    </div>
-  </div>
-
   <!-- Modal de edición -->
   <div id="edit-modal" class="modal" style="display:none">
     <div class="modal-content">
@@ -741,7 +691,7 @@ function setPref(clave, val){
   if(clave==='acento'){ try{ fetch('/api/perfil/acento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acento:val||''})}); }catch(e){} }
   aplicarPrefs();
 }
-cargarPrefs();
+
 function showSection(id){
   const l=document.getElementById('launcher'); if(l) l.style.display='none';
   document.querySelectorAll('.sec-card').forEach(c=>c.style.display='none');
