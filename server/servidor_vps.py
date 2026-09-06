@@ -50,6 +50,7 @@ from werkzeug.utils import secure_filename
 from transposicion import transponer_cancion, NOTA_A_INDICE
 import usuarios
 import emails as emails_module
+import almacen
 
 
 # ───────────────────────── Configuración base ─────────────────────────
@@ -100,6 +101,48 @@ def archivo_config(org=1):
     except Exception:
         pass
     return ARCHIVO_CONFIG
+
+
+# ── Audio en Spaces (delivery) con fallback local (interruptor spaces_activo) ──
+def _key_audio(local_path):
+    """Key S3 = ruta lógica del archivo (pistas/... , pads/... , orgs/<id>/...).
+    Robusto ante symlinks resueltos (el volumen se monta en otra ruta)."""
+    s = str(local_path).replace("\\", "/")
+    for marker in ("/orgs/", "/pistas/", "/pads/", "/canciones/"):
+        i = s.find(marker)
+        if i >= 0:
+            return s[i + 1:]
+    try:
+        return str(Path(local_path).relative_to(BASE_DIR))
+    except Exception:
+        return None
+
+
+def _subir_audio(local_path):
+    """Sube un archivo de audio recién creado al Space (si está activo). Silencioso."""
+    try:
+        if not almacen.habilitado():
+            return
+        p = Path(local_path)
+        if not p.is_file():
+            return
+        key = _key_audio(p)
+        if key:
+            almacen.subir(key, str(p))
+    except Exception as e:
+        logging.error("subir audio a Spaces %s: %s", local_path, e)
+
+
+def _servir_audio(local_path, mimetype=None):
+    """Sirve audio: por URL firmada de Spaces si está ahí; si no, el archivo local."""
+    try:
+        if almacen.habilitado():
+            key = _key_audio(local_path)
+            if key and almacen.existe(key):
+                return redirect(almacen.url_firmada(key))
+    except Exception as e:
+        logging.error("servir audio Spaces %s: %s", local_path, e)
+    return send_file(str(local_path), mimetype=mimetype, conditional=True) if mimetype else send_file(str(local_path))
 
 
 def hash_password(plain):
@@ -877,7 +920,7 @@ def api_live_pista(numero, archivo):
         dentro = False
     if not dentro or not ruta.is_file():
         abort(404)
-    return send_file(str(ruta))
+    return _servir_audio(ruta)
 
 
 @app.route("/api/live/midi/<int:numero>")
@@ -2121,6 +2164,7 @@ def _asegurar_web(numero, n, org=None):
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
                 except Exception as e:
                     logging.error("proxy %s/%s %s: %s", numero, n, f.name, e)
+            _subir_audio(out)
             hechos += 1
             try:
                 lock.write_text(str(hechos) + "/" + str(len(reales)))
@@ -2170,6 +2214,7 @@ def _render_tono(numero, n, org=None):
                         ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
                          "-af", "rubberband=pitch=" + repr(ratio), "-b:a", "192k", str(salida)],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+            _subir_audio(salida)
             hechos += 1
             try:
                 lock.write_text(str(hechos) + "/" + str(len(orig)))
@@ -2291,6 +2336,7 @@ def _render_pad_pack(pack_id, org=None):
                                    stderr=subprocess.DEVNULL, timeout=600)
                 except Exception as e:
                     logging.error("render pad %s idx %d: %s", pack_id, i, e)
+            _subir_audio(out)
             hechos += 1
             try:
                 lock.write_text(str(hechos) + "/12")
@@ -2346,6 +2392,7 @@ def admin_pads_crear():
         d = dir_pads(_cur_org()) / pack_id
         d.mkdir(parents=True, exist_ok=True)
         archivo.save(str(d / ("base" + ext)))
+        _subir_audio(d / ("base" + ext))
         portada_rel = ""
         pf = request.files.get("portada")
         if pf and pf.filename:
@@ -2457,6 +2504,7 @@ def admin_pads_editar(pack_id):
                             pass
                     d.mkdir(parents=True, exist_ok=True)
                     nuevo.save(str(d / ("base" + ext)))
+                    _subir_audio(d / ("base" + ext))
                     it["ext"] = ext
                     regen = True
             pf = request.files.get("portada")
@@ -2502,7 +2550,7 @@ def admin_pads_audio(pack_id, idx):
     f = dir_pads(_cur_org()) / pack_id / ("pad_%d.wav" % idx)
     if not f.is_file():
         abort(404)
-    return send_file(str(f))
+    return _servir_audio(f)
 
 
 # ---- API NeuralPlay: pads ----
@@ -2540,7 +2588,7 @@ def api_live_pad(pack_id, idx):
     f = dir_pads(_cur_org()) / pack_id / ("pad_%d.wav" % idx)
     if not f.is_file():
         abort(404)
-    return send_file(str(f))
+    return _servir_audio(f)
 
 
 
@@ -2626,7 +2674,7 @@ def servir_pista(numero, archivo):
         dentro = False
     if not dentro or not ruta.is_file():
         abort(404)
-    return send_file(str(ruta))
+    return _servir_audio(ruta)
 
 
 # ---- Admin: gestion de pistas de ensayo ----
@@ -2666,6 +2714,7 @@ def admin_pistas_subir():
         if not nombre:
             continue
         a.save(str(carpeta / nombre))
+        _subir_audio(carpeta / nombre)
         guardadas += 1
     if guardadas:
         _invalidar_tonos(int(numero))
@@ -2859,7 +2908,7 @@ def admin_audio(numero, tipo):
     out = _admin_audio_dir(numero) / (tipo + ".mp3")
     if not out.exists():
         return ("no listo", 404)
-    return send_file(str(out), mimetype="audio/mpeg", conditional=True)
+    return _servir_audio(out, mimetype="audio/mpeg")
 
 
 def _hallar_stem_click(numero):
@@ -3125,6 +3174,7 @@ def admin_nueva_pistas(numero):
             if not nombre:
                 continue
             a.save(str(carpeta / nombre))
+            _subir_audio(carpeta / nombre)
             guardadas += 1
         if guardadas:
             _invalidar_tonos(numero)
@@ -3590,6 +3640,7 @@ def admin_editar_subir(numero):
         if not nombre:
             continue
         a.save(str(carpeta / nombre))
+        _subir_audio(carpeta / nombre)
         guardadas += 1
     if guardadas:
         _invalidar_tonos(numero)
@@ -3612,6 +3663,7 @@ def admin_editar_subir_uno(numero):
     carpeta = dir_pistas(_cur_org()) / str(numero)
     carpeta.mkdir(exist_ok=True)
     a.save(str(carpeta / nombre))
+    _subir_audio(carpeta / nombre)
     return jsonify({"ok": True, "name": nombre})
 
 
