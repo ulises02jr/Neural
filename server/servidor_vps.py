@@ -1335,6 +1335,7 @@ def admin():
         org_info=usuarios.obtener_organizacion(org_actual()),
         musicos_activos_n=usuarios.contar_musicos_activos(org_actual()),
         invitaciones_pendientes=usuarios.listar_invitaciones(org_actual(), "pendiente"),
+        es_super=es_super_admin(),
         usuario_actual=get_usuario_actual(),
         email_configurado=emails_module.email_configurado(),
         desc_mac=os.path.exists(os.path.join(DESCARGAS_DIR, ARCHIVOS_DESCARGA["mac"])),
@@ -1920,6 +1921,104 @@ def api_auth_login():
         "apellido": u.get("apellido", ""),
         "rol": u["rol"],
     })
+
+
+# ───────────────────────── Súper-admin (vendedor) ─────────────────────────
+def _super_admins():
+    """Lista de emails de súper-admin, leída de secrets.json (fuera de Git)."""
+    try:
+        d = json.loads((BASE_DIR / "secrets.json").read_text())
+        return [str(e).strip().lower() for e in d.get("super_admins", []) if e]
+    except Exception:
+        return []
+
+
+def es_super_admin():
+    try:
+        u = get_usuario_actual()
+        em = (u or {}).get("email", "")
+        return bool(em) and em.strip().lower() in _super_admins()
+    except Exception:
+        return False
+
+
+def super_admin_required(fn):
+    @wraps(fn)
+    def _w(*a, **k):
+        if not es_super_admin():
+            abort(404)   # ocultar la existencia del panel
+        return fn(*a, **k)
+    return _w
+
+
+def _uso_almacen_bytes(org_id):
+    """Bytes usados por una organización (du). Org #1 = carpetas legado."""
+    dirs = []
+    if int(org_id) == 1:
+        for d in ("canciones", "pistas", "pads"):
+            p = (BASE_DIR / d)
+            if p.exists():
+                dirs.append(str(p.resolve()))
+    else:
+        p = CARPETA_ORGS / str(int(org_id))
+        if p.exists():
+            dirs.append(str(p.resolve()))
+    if not dirs:
+        return 0
+    try:
+        out = subprocess.run(["du", "-sbL"] + dirs, capture_output=True, text=True, timeout=60)
+        total = 0
+        for line in out.stdout.splitlines():
+            try:
+                total += int(line.split()[0])
+            except Exception:
+                pass
+        return total
+    except Exception:
+        return 0
+
+
+_PRECIOS_MRR = {"basico": 9.99, "premium": 20.0, "ministerio": 45.0}
+
+
+@app.route("/superadmin")
+@super_admin_required
+def superadmin():
+    orgs = usuarios.listar_organizaciones()
+    filas = []
+    total_mrr = 0.0
+    for o in orgs:
+        owner = usuarios.buscar_por_id(o.get("owner_user_id")) if o.get("owner_user_id") else None
+        gb = round(_uso_almacen_bytes(o["id"]) / (1024 ** 3), 2)
+        estado = o.get("estado_suscripcion") or "activa"
+        if estado in ("activa", "prueba"):
+            total_mrr += _PRECIOS_MRR.get(o.get("paquete"), 0.0)
+        filas.append({**o,
+                      "owner_email": owner["email"] if owner else "—",
+                      "musicos": usuarios.contar_musicos_activos(o["id"]),
+                      "usuarios_n": usuarios.contar_usuarios(o["id"]),
+                      "gb": gb})
+    return render_template("superadmin.html", orgs=filas,
+                           total_mrr=round(total_mrr, 2), total_orgs=len(orgs))
+
+
+@app.route("/superadmin/org/<int:org_id>/actualizar", methods=["POST"])
+@super_admin_required
+def superadmin_org_actualizar(org_id):
+    def _int(v):
+        try:
+            return int(v)
+        except Exception:
+            return None
+    ok = usuarios.actualizar_organizacion(
+        org_id,
+        paquete=(request.form.get("paquete") or None),
+        max_musicos=_int(request.form.get("max_musicos")),
+        almacen_gb=_int(request.form.get("almacen_gb")),
+        estado_suscripcion=(request.form.get("estado_suscripcion") or None),
+    )
+    flash("✓ Organización actualizada" if ok else "No se pudo actualizar", "success" if ok else "error")
+    return redirect(url_for("superadmin"))
 
 
 # ───────────────────────── Main ─────────────────────────

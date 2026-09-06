@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Súper-admin · NeuralWorship</title>
+<style>
+  :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;
+    --txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--gold:#9CA3AF;
+    --error:#dc6262;--success:#86B36A;--live:#86B36A}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;padding:24px;max-width:1100px;margin:0 auto}
+  .brand{font-size:15px;font-weight:700;letter-spacing:3px;color:var(--gold)}
+  h1{font-size:22px;font-weight:700;margin:6px 0 2px}
+  .sub{color:var(--txt2);font-size:13px;margin-bottom:20px}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+  .stat{flex:1;min-width:160px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .stat .k{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px}
+  .stat .v{font-size:26px;font-weight:800;margin-top:4px}
+  .stat .v.gold{color:var(--gold)}
+  .flash{padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:14px;border:1px solid}
+  .flash.success{background:rgba(134,179,106,0.1);color:var(--success);border-color:rgba(134,179,106,0.3)}
+  .flash.error{background:rgba(220,98,98,0.12);color:var(--error);border-color:rgba(220,98,98,0.25)}
+  .org{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px}
+  .org-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .org-name{font-size:16px;font-weight:700}
+  .org-meta{font-size:12px;color:var(--txt2);margin-top:3px;line-height:1.6}
+  .codigo{font-family:ui-monospace,Menlo,monospace;color:var(--gold);font-weight:700;letter-spacing:2px}
+  .badge{padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700}
+  .badge.activa{background:rgba(134,179,106,0.15);color:var(--live)}
+  .badge.prueba{background:rgba(156,163,175,0.16);color:var(--gold)}
+  .badge.suspendida{background:rgba(220,98,98,0.14);color:var(--error)}
+  form.edit{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr)) auto;gap:8px;align-items:end;border-top:1px solid var(--line);padding-top:12px}
+  label{display:block;font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+  input,select{width:100%;padding:8px 10px;font-size:13px;background:var(--raised);border:1px solid var(--line);border-radius:7px;color:var(--txt);font-family:inherit}
+  button{padding:9px 18px;font-size:13px;font-weight:700;background:var(--gold);color:#000;border:none;border-radius:7px;cursor:pointer;white-space:nowrap}
+  .use{font-size:12px}
+  .use b{color:var(--txt)}
+</style>
+</head>
+<body>
+  <div class="brand">NEURALWORSHIP</div>
+  <h1>Panel de súper-admin</h1>
+  <p class="sub">Todas las organizaciones del sistema. Solo vos ves esto.</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}
+      <div class="flash {{ category }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="stats">
+    <div class="stat"><div class="k">Organizaciones</div><div class="v">{{ total_orgs }}</div></div>
+    <div class="stat"><div class="k">MRR estimado</div><div class="v gold">${{ '%.2f'|format(total_mrr) }}</div></div>
+    <div class="stat"><div class="k">Al año (est.)</div><div class="v">${{ '%.0f'|format(total_mrr * 12) }}</div></div>
+  </div>
+
+  {% for o in orgs %}
+  <div class="org">
+    <div class="org-head">
+      <div>
+        <div class="org-name">#{{ o.id }} · {{ o.nombre }}
+          <span class="badge {{ o.estado_suscripcion or 'activa' }}">{{ (o.estado_suscripcion or 'activa')|capitalize }}</span>
+        </div>
+        <div class="org-meta">
+          Código <span class="codigo">{{ o.codigo }}</span> · Dueño: {{ o.owner_email }}<br>
+          Creada: {{ (o.creado_en or '')[:10] }} · Usuarios: {{ o.usuarios_n }} · Músicos activos: {{ o.musicos }}/{{ o.max_musicos }}
+        </div>
+      </div>
+      <div class="use">Almacenamiento<br><b>{{ o.gb }} GB</b> / {{ o.almacen_gb }} GB</div>
+    </div>
+    <form class="edit" method="POST" action="{{ url_for('superadmin_org_actualizar', org_id=o.id) }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <div>
+        <label>Paquete</label>
+        <select name="paquete">
+          {% for p in ['basico','premium','ministerio'] %}
+          <option value="{{ p }}" {% if o.paquete == p %}selected{% endif %}>{{ p|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>Asientos</label><input type="number" name="max_musicos" value="{{ o.max_musicos }}" min="1" max="500"></div>
+      <div><label>GB</label><input type="number" name="almacen_gb" value="{{ o.almacen_gb }}" min="1" max="10000"></div>
+      <div>
+        <label>Estado</label>
+        <select name="estado_suscripcion">
+          {% for e in ['activa','prueba','suspendida'] %}
+          <option value="{{ e }}" {% if (o.estado_suscripcion or 'activa') == e %}selected{% endif %}>{{ e|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Guardar</button>
+    </form>
+  </div>
+  {% endfor %}
+</body>
+</html>

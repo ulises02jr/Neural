@@ -369,6 +369,9 @@
   <!-- Información de Organización -->
   <div class="card sec-card" id="organizacion">
     <h2>Información de Organización</h2>
+    {% if es_super %}
+    <a href="{{ url_for('superadmin') }}" style="display:inline-block;margin-bottom:14px;background:var(--raised);border:1px solid var(--gold);color:var(--gold);text-decoration:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700">★ Panel de súper-admin</a>
+    {% endif %}
 
     <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
       <div class="col-h"><span>Mi perfil de administrador</span></div>

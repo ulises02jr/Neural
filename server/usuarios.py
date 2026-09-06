@@ -574,6 +574,33 @@ def contar_musicos_activos(org_id):
         ).fetchone()[0]
 
 
+def contar_usuarios(org_id):
+    """Total de usuarios de una organización (admins + músicos)."""
+    if not org_id:
+        return 0
+    with _conexion() as conn:
+        return conn.execute("SELECT COUNT(*) FROM usuarios WHERE org_id = ?", (org_id,)).fetchone()[0]
+
+
+def actualizar_organizacion(org_id, paquete=None, max_musicos=None, almacen_gb=None, estado_suscripcion=None):
+    """Actualiza campos de una organización (para el súper-admin)."""
+    sets, params = [], []
+    if paquete is not None:
+        sets.append("paquete = ?"); params.append(paquete)
+    if max_musicos is not None:
+        sets.append("max_musicos = ?"); params.append(int(max_musicos))
+    if almacen_gb is not None:
+        sets.append("almacen_gb = ?"); params.append(int(almacen_gb))
+    if estado_suscripcion is not None:
+        sets.append("estado_suscripcion = ?"); params.append(estado_suscripcion)
+    if not sets:
+        return False
+    params.append(org_id)
+    with _conexion() as conn:
+        cur = conn.execute("UPDATE organizations SET " + ", ".join(sets) + " WHERE id = ?", params)
+        return cur.rowcount > 0
+
+
 def org_de_usuario(user_id):
     """Devuelve el org_id del usuario (o None)."""
     if not user_id:
