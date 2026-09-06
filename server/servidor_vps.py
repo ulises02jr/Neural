@@ -2197,7 +2197,7 @@ def _render_tono(numero, n, org=None):
 # según la raíz del tono de cada canción.
 CARPETA_PADS = BASE_DIR / "pads"
 CARPETA_PADS.mkdir(exist_ok=True)
-_PADS_INDEX = CARPETA_PADS / "packs.json"
+_PADS_INDEX = dir_pads(_cur_org()) / "packs.json"
 _EXT_AUDIO_PAD = (".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aif", ".aiff")
 PAD_ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 _pads_lock = threading.Lock()
@@ -2213,14 +2213,14 @@ def _pad_root_idx(tono):
 
 def _pads_cargar():
     try:
-        return json.loads(_PADS_INDEX.read_text())
+        return json.loads((dir_pads(_cur_org()) / "packs.json").read_text())
     except Exception:
         return []
 
 
 def _pads_guardar(lst):
     try:
-        _PADS_INDEX.write_text(json.dumps(lst, ensure_ascii=False, indent=2))
+        (dir_pads(_cur_org()) / "packs.json").write_text(json.dumps(lst, ensure_ascii=False, indent=2))
     except Exception as e:
         logging.error("guardar packs.json: %s", e)
 
@@ -2242,7 +2242,7 @@ def _pad_semitonos(base_idx, target_idx):
 
 def _pad_estado(pack_id):
     """Progreso/estado del render de un pack: {hechos,total,listo,render}."""
-    d = CARPETA_PADS / pack_id
+    d = dir_pads(_cur_org()) / pack_id
     total = 12
     lock = d / ".lock"
     if lock.exists():
@@ -2256,12 +2256,14 @@ def _pad_estado(pack_id):
     return {"hechos": hechos, "total": total, "listo": hechos >= total, "render": False}
 
 
-def _render_pad_pack(pack_id):
+def _render_pad_pack(pack_id, org=None):
     """Genera los 12 tonos del pad desde el base, por pitch-shift (rubberband)."""
+    if org is not None:
+        _set_org_ctx(org)
     pack = _pad_pack(pack_id)
     if not pack:
         return
-    d = CARPETA_PADS / pack_id
+    d = dir_pads(_cur_org()) / pack_id
     d.mkdir(parents=True, exist_ok=True)
     base = d / ("base" + pack.get("ext", ".wav"))
     if not base.is_file():
@@ -2302,7 +2304,7 @@ def _render_pad_pack(pack_id):
 
 
 def _render_pad_async(pack_id):
-    threading.Thread(target=_render_pad_pack, args=(pack_id,), daemon=True).start()
+    threading.Thread(target=_render_pad_pack, args=(pack_id, org_actual()), daemon=True).start()
 
 
 # ---- Admin: gestión de pads ----
@@ -2341,7 +2343,7 @@ def admin_pads_crear():
         pack_id = secrets.token_hex(4)
         while any(x.get("id") == pack_id for x in lst):
             pack_id = secrets.token_hex(4)
-        d = CARPETA_PADS / pack_id
+        d = dir_pads(_cur_org()) / pack_id
         d.mkdir(parents=True, exist_ok=True)
         archivo.save(str(d / ("base" + ext)))
         portada_rel = ""
@@ -2373,7 +2375,7 @@ def admin_pads_crear():
 def admin_pads_eliminar(pack_id):
     with _pads_lock:
         _pads_guardar([x for x in _pads_cargar() if x.get("id") != pack_id])
-    d = CARPETA_PADS / pack_id
+    d = dir_pads(_cur_org()) / pack_id
     if d.is_dir():
         try:
             shutil.rmtree(str(d))
@@ -2395,7 +2397,7 @@ def admin_pads_eliminar(pack_id):
 def admin_pads_regenerar(pack_id):
     if not _pad_pack(pack_id):
         abort(404)
-    d = CARPETA_PADS / pack_id
+    d = dir_pads(_cur_org()) / pack_id
     for i in range(12):
         f = d / ("pad_%d.wav" % i)
         try:
@@ -2431,7 +2433,7 @@ def admin_pads_editar(pack_id):
     if not nombre or base_idx is None:
         flash("Datos invalidos", "error")
         return redirect(url_for("admin_pads_editar", pack_id=pack_id))
-    d = CARPETA_PADS / pack_id
+    d = dir_pads(_cur_org()) / pack_id
     regen = False
     with _pads_lock:
         lst = _pads_cargar()
@@ -2497,7 +2499,7 @@ def admin_pads_audio(pack_id, idx):
     """Pre-escucha en el admin: sirve el pad renderizado del tono idx (0-11)."""
     if idx < 0 or idx > 11 or not _pad_pack(pack_id):
         abort(404)
-    f = CARPETA_PADS / pack_id / ("pad_%d.wav" % idx)
+    f = dir_pads(_cur_org()) / pack_id / ("pad_%d.wav" % idx)
     if not f.is_file():
         abort(404)
     return send_file(str(f))
@@ -2535,7 +2537,7 @@ def api_live_pad(pack_id, idx):
         abort(403)
     if idx < 0 or idx > 11 or not _pad_pack(pack_id):
         abort(404)
-    f = CARPETA_PADS / pack_id / ("pad_%d.wav" % idx)
+    f = dir_pads(_cur_org()) / pack_id / ("pad_%d.wav" % idx)
     if not f.is_file():
         abort(404)
     return send_file(str(f))
