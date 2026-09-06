@@ -77,6 +77,35 @@ def guardar_config(cfg):
 CONFIG = cargar_config()
 APP_VERSION = "1.0"
 
+
+def iniciar_sesion(email, password, vps_url=None):
+    """Login en NeuralWorship: email + contraseña → token de la organización.
+    Guarda el token en la config del usuario. Devuelve (ok, mensaje)."""
+    base = (vps_url or CONFIG.get("vps_url") or "https://neuralworship.com").rstrip("/")
+    body = json.dumps({"email": (email or "").strip().lower(),
+                       "password": password or ""}).encode("utf-8")
+    req = urllib.request.Request(base + "/api/auth/login", data=body, method="POST",
+                                 headers={"Content-Type": "application/json",
+                                          "User-Agent": "NeuralSync/1.0"})
+    try:
+        ctx = _ssl_ctx()
+        r = (urllib.request.urlopen(req, timeout=15, context=ctx) if ctx
+             else urllib.request.urlopen(req, timeout=15))
+        data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            data = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            return False, "Error de conexión (%s)" % e.code
+    except Exception as e:
+        return False, "No se pudo conectar: %s" % e
+    if not data.get("ok"):
+        return False, data.get("mensaje", "Credenciales inválidas")
+    CONFIG["vps_url"] = base
+    CONFIG["token"] = data.get("token", "")
+    guardar_config(CONFIG)
+    return True, data.get("org_nombre", "Sesión iniciada")
+
 NOTA_BASE_SECCION = 36   # C1
 NOTA_FIN = 24            # C0
 HEARTBEAT_INTERVALO_SEG = 30

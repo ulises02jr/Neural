@@ -88,6 +88,8 @@ class PuenteApp(rumps.App):
             rumps.MenuItem("Abrir panel", callback=self.cb_panel),
             rumps.MenuItem("Abrir visor (músicos)", callback=self.cb_visor),
             None,
+            rumps.MenuItem("Iniciar sesión / Cambiar cuenta", callback=self.cb_login),
+            None,
             rumps.MenuItem("Salir", callback=self.cb_salir),
         ]
 
@@ -136,6 +138,27 @@ class PuenteApp(rumps.App):
 
     def cb_visor(self, _):
         webbrowser.open(f"http://{self.ip}:{self.puerto}")
+
+    def cb_login(self, _):
+        try:
+            w1 = rumps.Window(message="Ingresá tu email de NeuralWorship:",
+                              title="Iniciar sesión", default_text="",
+                              ok="Siguiente", cancel="Cancelar", dimensions=(320, 24))
+            r1 = w1.run()
+            if not r1.clicked or not r1.text.strip():
+                return
+            email = r1.text.strip()
+            w2 = rumps.Window(message="Tu contraseña:",
+                              title="Iniciar sesión", default_text="",
+                              ok="Entrar", cancel="Cancelar", dimensions=(320, 24))
+            r2 = w2.run()
+            if not r2.clicked:
+                return
+            ok, msg = core.iniciar_sesion(email, r2.text)
+            rumps.alert(title="NeuralWorship",
+                        message=(("Sesión iniciada: " + msg) if ok else ("No se pudo iniciar sesión: " + msg)))
+        except Exception as e:
+            rumps.alert(title="NeuralWorship", message="Error: %s" % e)
 
     def cb_salir(self, _):
         try:
