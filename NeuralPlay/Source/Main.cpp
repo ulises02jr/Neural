@@ -1403,7 +1403,7 @@ struct SwitchLNF : public juce::LookAndFeel_V4
 
 struct SettingsPanel : public juce::Component
 {
-    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn;
+    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn, logoutBtn;
     SwitchLNF switchLnf;
     ~SettingsPanel() override
     {
@@ -1416,6 +1416,7 @@ struct SettingsPanel : public juce::Component
     std::function<void()> onConfig;
     std::function<void()> onRefresh;
     std::function<void()> onStorage;
+    std::function<void()> onLogout;
     std::function<void (bool)> onCountIn;
     std::function<void (bool)> onMasterPS;
     std::function<void (bool)> onMixPS;
@@ -1442,6 +1443,12 @@ struct SettingsPanel : public juce::Component
         storeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         storeBtn.onClick = [this] { if (onStorage) onStorage(); };
         addAndMakeVisible (storeBtn);
+
+        logoutBtn.setButtonText (juce::String::fromUTF8 ("Cambiar cuenta"));
+        logoutBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        logoutBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        logoutBtn.onClick = [this] { if (onLogout) onLogout(); };
+        addAndMakeVisible (logoutBtn);
 
         countInBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         countInBtn.onClick = [this] { countInOn = ! countInOn; if (onCountIn) onCountIn (countInOn); refresh(); };
@@ -1539,6 +1546,7 @@ struct SettingsPanel : public juce::Component
         cfgBtn.setBounds      (b.removeFromTop (bh)); b.removeFromTop (gap);
         storeBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
         refreshBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
+        logoutBtn.setBounds   (b.removeFromTop (bh)); b.removeFromTop (gap);
         statusBounds = b.removeFromTop (22);
     }
 
@@ -2565,6 +2573,8 @@ public:
     MainComponent()
     {
         loadConfig();
+        if (serverToken.isEmpty())   // multi-tenant: sin sesión → pedir login al arrancar
+            juce::MessageManager::callAsync ([this] { mostrarLoginDialog(); });
         setLookAndFeel (&pillLnf);
         setWantsKeyboardFocus (true);   // #4 recibir teclas para el mapping de teclado
         logoImg = juce::ImageFileFormat::loadFrom (BinaryData::AppIcon_png, (size_t) BinaryData::AppIcon_pngSize);
@@ -2605,6 +2615,7 @@ public:
         settingsPanel.onConfig  = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
         settingsPanel.onRefresh = [this] { settingsPanel.setVisible (false); reloadCurrent(); };
         settingsPanel.onStorage = [this] { settingsPanel.setVisible (false); openStorage(); };
+        settingsPanel.onLogout  = [this] { settingsPanel.setVisible (false); cerrarSesion(); };
         settingsPanel.onCountIn = [this] (bool on) { countInEnabled = on; saveStorageCfg(); };
         settingsPanel.onMasterPS = [this] (bool on)
         {
@@ -4083,6 +4094,90 @@ private:
         loadCachedPerfiles();
         fetchPerfiles();
     }
+
+    // ── Cuenta / login (multi-tenant): email+password → token de la organización ──
+    void guardarConfigCuenta()
+    {
+        auto f = npAppDir().getChildFile ("config.json");
+        juce::var v;
+        if (f.existsAsFile()) v = juce::JSON::parse (f.loadFileAsString());
+        auto* o = v.getDynamicObject();
+        if (o == nullptr) { o = new juce::DynamicObject(); v = juce::var (o); }
+        o->setProperty ("serverUrl", serverUrl);
+        o->setProperty ("token", serverToken);
+        f.getParentDirectory().createDirectory();
+        f.replaceWithText (juce::JSON::toString (v));
+    }
+
+    void doLogin (juce::String url, juce::String email, juce::String password)
+    {
+        url = url.trim();
+        while (url.endsWithChar ('/')) url = url.dropLastCharacters (1);
+        if (url.isEmpty()) url = "https://neuralworship.com";
+        connStatus.setText (juce::String::fromUTF8 ("Iniciando sesion\xe2\x80\xa6"), juce::dontSendNotification);
+        const juce::String body = "{\"email\":" + juce::JSON::toString (juce::var (email))
+                                + ",\"password\":" + juce::JSON::toString (juce::var (password)) + "}";
+        const juce::String loginUrl = url + "/api/auth/login";
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, loginUrl, url, body]
+        {
+            auto resp = httpPostJson (loginUrl, body);
+            juce::MessageManager::callAsync ([sp, url, resp]
+            {
+                if (sp == nullptr) return;
+                auto v = juce::JSON::parse (resp);
+                if ((bool) v.getProperty ("ok", false))
+                {
+                    sp->serverUrl   = url;
+                    sp->serverToken = v.getProperty ("token", "").toString();
+                    sp->guardarConfigCuenta();
+                    sp->fetchPadPacks();
+                    sp->fetchPerfiles();
+                    if (sp->repPicker.isVisible()) sp->openRepertoirePicker();
+                    sp->connStatus.setText (juce::String::fromUTF8 ("Sesion: ")
+                                            + v.getProperty ("org_nombre", "").toString(),
+                                            juce::dontSendNotification);
+                }
+                else
+                {
+                    auto msg = v.getProperty ("mensaje", "").toString();
+                    if (msg.isEmpty()) msg = juce::String::fromUTF8 ("No se pudo conectar. Revisa el servidor y tu conexion.");
+                    sp->connStatus.setText (msg, juce::dontSendNotification);
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                            juce::String::fromUTF8 ("Iniciar sesion"), msg);
+                }
+            });
+        });
+    }
+
+    void mostrarLoginDialog()
+    {
+        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Iniciar sesion en NeuralWorship"),
+                                          juce::String::fromUTF8 ("Entra con tu cuenta para cargar tu organizacion."),
+                                          juce::MessageBoxIconType::NoIcon);
+        aw->addTextEditor ("url", serverUrl.isNotEmpty() ? serverUrl : juce::String ("https://neuralworship.com"),
+                           juce::String::fromUTF8 ("Servidor:"));
+        aw->addTextEditor ("email", "", juce::String::fromUTF8 ("Email:"));
+        aw->addTextEditor ("pass", "", juce::String::fromUTF8 ("Contrasena:"), true);
+        aw->addButton ("Entrar", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        aw->addButton ("Cancelar", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        juce::Component::SafePointer<MainComponent> sp (this);
+        aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
+        {
+            if (r == 1 && sp != nullptr)
+                sp->doLogin (aw->getTextEditorContents ("url"),
+                             aw->getTextEditorContents ("email").trim(),
+                             aw->getTextEditorContents ("pass"));
+        }), true);
+    }
+
+    void cerrarSesion()   // "Cambiar cuenta": olvida el token y pide login de nuevo
+    {
+        serverToken.clear();
+        guardarConfigCuenta();
+        mostrarLoginDialog();
+    }
+
     void loadCachedPerfiles()   // roster de perfiles cacheado (offline)
     {
         auto f = npAppDir().getChildFile ("perfiles.json");
