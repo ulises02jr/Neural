@@ -2092,9 +2092,9 @@ def _uso_almacen_bytes(org_id):
 # Definición canónica de paquetes: precio mensual, asientos (músicos) y GB.
 # Los asientos y el almacenamiento SIEMPRE se derivan del paquete (no se editan a mano).
 PAQUETES = {
-    "basico":     {"precio": 12.0, "asientos": 3,  "gb": 20},
-    "premium":    {"precio": 25.0, "asientos": 5,  "gb": 50},
-    "ministerio": {"precio": 50.0, "asientos": 10, "gb": 100},
+    "basico":     {"precio": 10.0, "asientos": 3,  "gb": 20},
+    "premium":    {"precio": 20.0, "asientos": 5,  "gb": 50},
+    "ministerio": {"precio": 45.0, "asientos": 10, "gb": 100},
 }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 

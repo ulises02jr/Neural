@@ -99,8 +99,9 @@ Cobro por organización. Gating de features según paquete (la app/servidor cons
 ### Tabla de paquetes
 | | **Básico** | **Premium** | **Ministerio** |
 |---|---|---|---|
-| **Precio (mensual)** | $12/mes | $25/mes | $50/mes |
-| **Precio (anual, 2 meses gratis)** | $120/año (~$10/mes) | $250/año (~$20.83/mes) | $500/año (~$41.67/mes) |
+| **Precio (mensual)** — LANZAMIENTO | $10/mes | $20/mes | $45/mes |
+| **Precio (anual, 2 meses gratis)** | $100/año (~$8.33/mes) | $200/año (~$16.67/mes) | $450/año (~$37.50/mes) |
+| **Precio de lista (a futuro)** | $12/mes | $25/mes | $50/mes |
 | **Asientos** | 3 | 5 | 10 |
 | **Almacenamiento** | 20 GB | 50 GB | 100 GB |
 | **NeuralPlay** | Basic (2 salidas, estéreo, sin MIDI) | Premium (32 salidas + MIDI mapping + MIDI OUT) | Premium |
@@ -125,9 +126,10 @@ Cobro por organización. Gating de features según paquete (la app/servidor cons
 ### Economía por paquete (costo vs. margen) — con Spaces
 | Plan | Ingresa | Costo aprox (almacen.+cómputo+banda+comisión) | **Margen** |
 |---|---|---|---|
-| Básico | $12 | ~$1.65 | **~86%** |
-| Premium | $25 | ~$2.88 | **~88%** |
-| Ministerio | $50 | ~$4.85 | **~90%** |
+| Básico | $10 | ~$1.59 | **~84%** |
+| Premium | $20 | ~$2.74 | **~86%** |
+| Ministerio | $45 | ~$4.71 | **~90%** |
+_(Precios de lanzamiento. Estrategia: entrar con precio bajo para ganar iglesias; subir al precio de lista con el tiempo respetando el precio viejo a los que ya están — grandfathering.)_
 - **Clave del margen: el audio vive en DigitalOcean Spaces ($0.02/GiB/mes), 5× más barato que el volumen de bloque ($0.10/GiB).** Eso es lo que lleva el margen de ~65% a ~86-90%. Ver §14.
 - Droplet desde $4; transferencia de Spaces $0.01/GiB (1 TiB incluido en el base de $5).
 - Comisión de pago ~2.9%+$0.30 (puede ser mayor en Latam/internacional; el cobro anual la reduce).
