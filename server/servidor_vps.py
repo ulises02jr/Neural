@@ -643,10 +643,7 @@ def crear_organizacion():
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    """Login para admins. Soporta:
-    - Email + password (sistema nuevo)
-    - Password de emergencia (fallback para no quedar bloqueado)
-    """
+    """Login para admins: email + password."""
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
@@ -654,22 +651,6 @@ def admin_login():
         ip = _client_ip()
         if usuarios.login_bloqueado(ip):
             flash("Demasiados intentos fallidos. Esperá unos minutos.", "error")
-            return render_template("login_admin.html")
-
-        # Si dejan email vacío → intentar password de emergencia
-        if not email and password:
-            cfg = get_config()
-            if hash_password(password) == cfg.get("password_admin", ""):
-                usuarios.limpiar_intentos(ip)
-                session.permanent = True
-                session.clear()
-                session["rol"] = "admin"
-                session["nombre"] = "Admin (Emergencia)"
-                session["org_id"] = 1
-                flash("⚠️ Entraste con password de emergencia. Iniciá sesión con tu cuenta personal cuando puedas.", "success")
-                return redirect(url_for("admin"))
-            usuarios.registrar_intento(ip)
-            flash("Password de emergencia incorrecto", "error")
             return render_template("login_admin.html")
 
         # Login normal con email
@@ -724,6 +705,9 @@ def reset_password():
         ok, msg = usuarios.usar_codigo_y_cambiar_password(email, codigo, nueva)
         if ok:
             flash("✓ Contraseña cambiada. Ya podés ingresar.", "success")
+            u = usuarios.buscar_por_email(email)
+            if u and u.get("rol") == "admin":
+                return redirect(url_for("admin_login"))
             return redirect(url_for("login"))
         flash(msg, "error")
         return render_template("reset_password.html", email=email, codigo=codigo)
