@@ -1430,6 +1430,7 @@ def admin():
         usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo", org_id=org_actual()) if u.get("rol") != "admin"],
         org_info=usuarios.obtener_organizacion(org_actual()),
         paquetes=PAQUETES,
+        plan_activo=((usuarios.obtener_organizacion(org_actual()) or {}).get("estado_suscripcion") in ("activa", "prueba")),
         musicos_activos_n=usuarios.contar_musicos_activos(org_actual()),
         invitaciones_pendientes=usuarios.listar_invitaciones(org_actual(), "pendiente"),
         es_super=es_super_admin(),
@@ -2259,6 +2260,37 @@ def superadmin_org_actualizar(org_id):
     )
     flash("✓ Organización actualizada" if ok else "No se pudo actualizar", "success" if ok else "error")
     return redirect(url_for("superadmin"))
+
+
+@app.route("/admin/planes")
+@login_required("admin")
+def admin_planes():
+    """Pantalla para elegir/cambiar de plan (3 tiras)."""
+    org = usuarios.obtener_organizacion(org_actual())
+    return render_template("planes.html", paquetes=PAQUETES,
+                           actual=(org or {}).get("paquete"),
+                           estado=(org or {}).get("estado_suscripcion"),
+                           es_operador=(int(org_actual()) == OPERADOR_ORG_ID))
+
+
+@app.route("/admin/planes/elegir", methods=["POST"])
+@login_required("admin")
+def admin_planes_elegir():
+    """Activa el plan elegido. NOTA: por ahora activa directo (sin cobro);
+    cuando se conecte la pasarela, aquí irá primero el pago."""
+    pk = request.form.get("paquete", "")
+    if pk not in PAQUETES:
+        flash("Plan inválido", "error")
+        return redirect(url_for("admin_planes"))
+    if int(org_actual()) == OPERADOR_ORG_ID:
+        flash("Tu organización tiene el plan fijo.", "error")
+        return redirect(url_for("admin"))
+    usuarios.actualizar_organizacion(
+        org_actual(), paquete=pk,
+        max_musicos=PAQUETES[pk]["asientos"], almacen_gb=PAQUETES[pk]["gb"],
+        estado_suscripcion="activa")
+    flash("✓ Plan " + PAQUETES[pk]["nombre"] + " activado. ¡Ya tenés todo habilitado!", "success")
+    return redirect(url_for("admin"))
 
 
 # ───────────────────────── Main ─────────────────────────

@@ -665,9 +665,10 @@ def crear_org_con_dueno(org_nombre, nombre, apellido, email, password,
     # Validar email libre ANTES de crear la organización
     if buscar_por_email(email):
         return False, "Ya existe una cuenta con ese email"
+    # Nace SIN plan activo: el menú queda bloqueado hasta que el dueño elige un plan.
     ok, org_id = crear_organizacion(org_nombre, paquete=paquete,
                                     max_musicos=max_musicos, almacen_gb=almacen_gb,
-                                    estado="prueba")
+                                    estado="sin_plan")
     if not ok:
         return False, org_id  # mensaje de error
     ok2, res = crear_usuario(nombre, apellido, email, password, rol="admin", estado="activo")

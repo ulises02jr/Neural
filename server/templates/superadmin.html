@@ -30,6 +30,7 @@
   .badge.activa{background:rgba(134,179,106,0.15);color:var(--live)}
   .badge.prueba{background:rgba(156,163,175,0.16);color:var(--gold)}
   .badge.suspendida{background:rgba(220,98,98,0.14);color:var(--error)}
+  .badge.sin_plan{background:rgba(156,163,175,0.14);color:var(--txt2)}
   form.edit{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr)) auto;gap:8px;align-items:end;border-top:1px solid var(--line);padding-top:12px}
   label{display:block;font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
   input,select{width:100%;padding:8px 10px;font-size:13px;background:var(--raised);border:1px solid var(--line);border-radius:7px;color:var(--txt);font-family:inherit}
@@ -199,7 +200,7 @@
       <div>
         <label>Estado</label>
         <select name="estado_suscripcion">
-          {% for e in ['activa','prueba','suspendida'] %}
+          {% for e in ['sin_plan','activa','prueba','suspendida'] %}
           <option value="{{ e }}" {% if (o.estado_suscripcion or 'activa') == e %}selected{% endif %}>{{ e|capitalize }}</option>
           {% endfor %}
         </select>
