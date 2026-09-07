@@ -2065,11 +2065,22 @@ def api_auth_login():
         "org_id": org["id"],
         "org_nombre": org["nombre"],
         "paquete": org.get("paquete"),
+        "features": _features(org.get("paquete")),
         "user_id": u["id"],
         "nombre": u.get("nombre", ""),
         "apellido": u.get("apellido", ""),
         "rol": u["rol"],
     })
+
+
+@app.route("/api/live/plan")
+def api_live_plan():
+    """NeuralPlay: plan y features de la organización, para gatear funciones. Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    org = usuarios.obtener_organizacion(org_actual())
+    pk = (org or {}).get("paquete", "basico")
+    return jsonify({"ok": True, "paquete": pk, "features": _features(pk)})
 
 
 # ───────────────────────── Súper-admin (vendedor) ─────────────────────────
@@ -2143,10 +2154,26 @@ def _uso_almacen_bytes(org_id):
 # nombre = etiqueta visible; la clave interna (basico/premium/ministerio) NO cambia
 # para no romper la base de datos. midi = habilita la sección MIDI y NeuralPlay completo.
 PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 10.0, "asientos": 3,  "gb": 20,  "midi": False},
-    "premium":    {"nombre": "Plus",    "precio": 20.0, "asientos": 5,  "gb": 50,  "midi": True},
-    "ministerio": {"nombre": "Premium", "precio": 45.0, "asientos": 10, "gb": 100, "midi": True},
+    "basico":     {"nombre": "Básico",  "precio": 10.0, "asientos": 3,  "gb": 20,  "midi": False, "salidas": 2},
+    "premium":    {"nombre": "Plus",    "precio": 20.0, "asientos": 5,  "gb": 50,  "midi": True,  "salidas": 32},
+    "ministerio": {"nombre": "Premium", "precio": 45.0, "asientos": 10, "gb": 100, "midi": True,  "salidas": 32},
 }
+
+
+def _features(paquete):
+    """Flags de funciones que la app (NeuralPlay) debe respetar según el plan."""
+    p = PAQUETES.get(paquete, PAQUETES["basico"])
+    full = bool(p.get("midi"))
+    return {
+        "midi": full,               # sección MIDI (mapping / MIDI OUT)
+        "neuralsync": full,         # puente con DAW
+        "export_pdf": full,         # exportar charts a PDF
+        "salidas": p.get("salidas", 2),   # salidas de audio (2 estéreo en básico, 32 en Plus+)
+        "asientos": p.get("asientos", 3),
+        "gb": p.get("gb", 20),
+        "paquete": paquete,
+        "nombre": p.get("nombre", ""),
+    }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
 # La organización del operador (dueño del negocio): es propia, no se factura

@@ -2852,7 +2852,7 @@ public:
         addAndMakeVisible (infiniteBtn);
         faderViewBtn.onClick = [this] { if (clickOrArm (kaFaderView)) return; setFaderView (0); };
         busesBtn.onClick     = [this] { if (clickOrArm (kaBuses))     return; setFaderView (1); };
-        muteMidiBtn.onClick  = [this] { if (clickOrArm (kaMidi))      return; setFaderView (2); };
+        muteMidiBtn.onClick  = [this] { if (! featMidi) { avisoPlanMidi(); return; } if (clickOrArm (kaMidi))      return; setFaderView (2); };
 
         repeatBtn.onClick   = [this] { if (clickOrArm (kaRepeat)) return; toggleRepeatOnce(); };
         infiniteBtn.onClick = [this] { if (clickOrArm (kaLoop))   return; toggleLoopInfinite(); };
@@ -4111,9 +4111,29 @@ private:
         auto v = juce::JSON::parse (f.loadFileAsString());
         serverUrl   = v.getProperty ("serverUrl", "").toString();
         serverToken = v.getProperty ("token", "").toString();
+        featMidi    = (bool) v.getProperty ("feat_midi", true);
         fetchPadPacks();
         loadCachedPerfiles();
         fetchPerfiles();
+        fetchPlan();
+    }
+
+    void fetchPlan()   // refresca las features del plan (MIDI, etc.) desde el servidor
+    {
+        if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
+        const juce::String url = serverUrl + "/api/live/plan";
+        const juce::String tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, url, tok]
+        {
+            auto v = juce::JSON::parse (httpGet (url, tok));
+            juce::MessageManager::callAsync ([sp, v]
+            {
+                if (sp == nullptr) return;
+                auto fs = v.getProperty ("features", juce::var());
+                if (fs.isObject()) sp->aplicarPlanMidi ((bool) fs.getProperty ("midi", true));
+            });
+        });
     }
 
     // ── Cuenta / login (multi-tenant): email+password → token de la organización ──
@@ -4126,6 +4146,7 @@ private:
         if (o == nullptr) { o = new juce::DynamicObject(); v = juce::var (o); }
         o->setProperty ("serverUrl", serverUrl);
         o->setProperty ("token", serverToken);
+        o->setProperty ("feat_midi", featMidi);
         f.getParentDirectory().createDirectory();
         f.replaceWithText (juce::JSON::toString (v));
     }
@@ -4151,6 +4172,7 @@ private:
                 {
                     sp->serverUrl   = url;
                     sp->serverToken = v.getProperty ("token", "").toString();
+                    { auto fs = v.getProperty ("features", juce::var()); if (fs.isObject()) sp->aplicarPlanMidi ((bool) fs.getProperty ("midi", true)); }
                     sp->guardarConfigCuenta();
                     sp->fetchPadPacks();
                     sp->fetchPerfiles();
@@ -5949,6 +5971,7 @@ private:
         flushMidiOffs();
         midiOuts.clear();
         cajaOut.clearQuick();
+        if (! featMidi) return;   // plan Basico: no se envia MIDI
         auto devs = juce::MidiOutput::getAvailableDevices();
         juce::StringArray openedIds;
         for (int i = 0; i < midiPanel.count(); ++i)
@@ -6594,8 +6617,24 @@ private:
         masterSlider.setInterceptsMouseClicks (! on, ! on);
         padPanel.setArmMode (on);
     }
+    void avisoPlanMidi()
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+            juce::String::fromUTF8 ("Disponible en el plan Plus"),
+            juce::String::fromUTF8 ("La secci\xc3\xb3n MIDI se habilita desde el plan Plus. Actualiz\xc3\xa1 tu plan para usarla."));
+    }
+    void aplicarPlanMidi (bool permitido)   // gating segun el plan de la organizacion
+    {
+        featMidi = permitido;
+        if (! featMidi) { midiMapMode = false; setFadersArmable (false); }
+        rebuildMidiOuts();
+        refreshMapButtons();
+        resized();
+        repaint();
+    }
     void toggleMidiMapMode()
     {
+        if (! midiMapMode && ! featMidi) { avisoPlanMidi(); return; }   // MIDI solo desde plan Plus
         midiMapMode = ! midiMapMode;
         clearArm();
         if (midiMapMode) { keyMapMode = false; openMidiInputs(); }   // re-escanear por si conectaron el controlador
@@ -6961,6 +7000,7 @@ private:
     // #5/#6 MIDI IN + learn (paralelo al mapping de teclado)
     juce::OwnedArray<juce::MidiInput> midiInputs;   // todas las entradas MIDI abiertas
     bool midiMapMode = false;                        // modo "MIDI Mapping"
+    bool featMidi = true;                            // el plan habilita MIDI (Plus+); Basico = false
     bool armFader = false;                           // se armó un fader (control continuo), no un disparador
     int  armFaderIdx = -1;                           // -1=master, >=0 track, o bus por nombre en armTrack
     juce::TextButton midiMapBtn;                     // botón "MIDI Mapping" en la barra de Editar
