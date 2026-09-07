@@ -22,7 +22,6 @@ Endpoints:
 
 Configuración: archivo config.json con:
   - password_musicos (sha256 hash)
-  - password_admin (sha256 hash)
   - secret_key (cookie de sesión)
   - setlist (lista de números)
 """
@@ -220,7 +219,6 @@ def cargar_config(org=1):
         # Primera ejecución: crear config con passwords por defecto
         default = {
             "password_musicos": hash_password("musicos2026"),
-            "password_admin": hash_password("admin2026"),
             "secret_key": secrets.token_hex(32),
             "live_token": secrets.token_hex(16),
             "setlists": [],  # Multi-setlists: lista de {id, nombre, fecha, canciones}
@@ -301,7 +299,6 @@ def _crear_config_org(org_id, token, org_nombre):
     Clave: live_token = token de la organización (para que NeuralPlay/API funcione)."""
     cfg = {
         "password_musicos": secrets.token_hex(32),
-        "password_admin": secrets.token_hex(32),
         "secret_key": secrets.token_hex(32),
         "live_token": token,
         "setlists": [],
@@ -472,9 +469,6 @@ def get_usuario_actual():
         u = usuarios.buscar_por_id(uid)
         if u:
             return u
-    # Fallback: login con password compartido (admin de emergencia)
-    if session.get("rol") == "admin" and session.get("nombre") == "Admin (Emergencia)":
-        return {"nombre": "Admin", "apellido": "(Emergencia)", "email": "—", "rol": "admin", "id": None}
     return None
 
 
@@ -1686,9 +1680,6 @@ def admin_cambiar_password():
     if cual == "musicos":
         cfg["password_musicos"] = hash_password(nueva)
         flash("✓ Password de músicos actualizado", "success")
-    elif cual == "admin":
-        cfg["password_admin"] = hash_password(nueva)
-        flash("✓ Password de admin actualizado", "success")
     else:
         flash("Tipo de password inválido", "error")
         return redirect(url_for("admin"))
