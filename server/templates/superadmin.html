@@ -36,6 +36,26 @@
   button{padding:9px 18px;font-size:13px;font-weight:700;background:var(--gold);color:#000;border:none;border-radius:7px;cursor:pointer;white-space:nowrap}
   .use{font-size:12px}
   .use b{color:var(--txt)}
+  .conta{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:22px}
+  .conta-title{font-size:15px;font-weight:800;margin-bottom:14px}
+  .conta-title .proj{font-size:11px;font-weight:500;color:var(--txt3)}
+  .conta-grid{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .cbox{flex:1;min-width:150px;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .cbox.big{border-color:rgba(134,179,106,0.35)}
+  .cbox .k{font-size:10px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px}
+  .cbox .v{font-size:22px;font-weight:800;margin-top:3px}
+  .cbox .v.gold{color:var(--gold)} .cbox .v.pos{color:var(--success)} .cbox .v.neg{color:var(--error)}
+  .cbox .sub2{font-size:11px;color:var(--txt3);margin-top:3px}
+  .cpanel{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+  .cp-title{font-size:12px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+  .crow{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--txt2)}
+  .crow b{color:var(--txt)}
+  .crow.tot{border-top:1px solid var(--line);margin-top:6px;padding-top:8px;font-weight:700}
+  .crow.tot b{color:var(--gold)}
+  .bar{height:8px;background:var(--raised);border-radius:5px;overflow:hidden;margin:4px 0}
+  .bar-fill{height:100%;background:var(--gold);border-radius:5px}
+  .bar-fill.warn{background:var(--error)}
+  .alerta{background:rgba(220,98,98,0.12);color:var(--error);border:1px solid rgba(220,98,98,0.3);border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:10px;font-weight:600}
 </style>
 </head>
 <body>
@@ -53,6 +73,51 @@
     <div class="stat"><div class="k">Organizaciones</div><div class="v">{{ total_orgs }}</div></div>
     <div class="stat"><div class="k">MRR estimado</div><div class="v gold">${{ '%.2f'|format(total_mrr) }}</div></div>
     <div class="stat"><div class="k">Al año (est.)</div><div class="v">${{ '%.0f'|format(total_mrr * 12) }}</div></div>
+  </div>
+
+  <!-- ══════════ CONTABILIDAD ══════════ -->
+  <div class="conta">
+    <div class="conta-title">Contabilidad <span class="proj">· proyectado de las suscripciones activas (será real al conectar el cobro)</span></div>
+
+    <div class="conta-grid">
+      <div class="cbox"><div class="k">Ingresos (MRR)</div><div class="v gold">${{ '%.2f'|format(conta.ingresos) }}</div><div class="sub2">al año ${{ '%.0f'|format(conta.ingresos*12) }}</div></div>
+      <div class="cbox"><div class="k">− Comisiones pasarela</div><div class="v neg">−${{ '%.2f'|format(conta.comisiones) }}</div><div class="sub2">2.9% + $0.30 por cobro</div></div>
+      <div class="cbox"><div class="k">− Costos de infra</div><div class="v neg">−${{ '%.2f'|format(conta.costo_infra) }}</div><div class="sub2">servidor + Spaces + dominio</div></div>
+      <div class="cbox big"><div class="k">Utilidad neta</div><div class="v pos">${{ '%.2f'|format(conta.utilidad) }}</div><div class="sub2">margen {{ '%.0f'|format(conta.margen) }}% · al año ${{ '%.0f'|format(conta.utilidad*12) }}</div></div>
+    </div>
+
+    <div class="cpanel">
+      <div class="cp-title">Ingresos por plan</div>
+      {% for pk, d in conta.por_plan.items() %}
+      <div class="crow"><span>{{ pk|capitalize }} — {{ d.n }} × ${{ '%.0f'|format(d.precio) }}/mes</span><b>${{ '%.2f'|format(d.sub) }}/mes</b></div>
+      {% else %}
+      <div class="crow"><span>Sin suscripciones activas todavía.</span></div>
+      {% endfor %}
+    </div>
+
+    <div class="cpanel">
+      <div class="cp-title">Costos de infraestructura (mensual)</div>
+      <div class="crow"><span>Servidor (droplet 1 vCPU / 1 GB)</span><b>${{ '%.2f'|format(conta.c.droplet_mes) }}</b></div>
+      <div class="crow"><span>Spaces (base: {{ conta.incluido }} GB + 1 TB transferencia)</span><b>${{ '%.2f'|format(conta.c.spaces_base_mes) }}</b></div>
+      {% if conta.spaces_extra > 0 %}<div class="crow"><span>Spaces extra ({{ '%.0f'|format(conta.gb_total - conta.incluido) }} GB × $0.02)</span><b>${{ '%.2f'|format(conta.spaces_extra) }}</b></div>{% endif %}
+      <div class="crow"><span>Dominio</span><b>${{ '%.2f'|format(conta.c.dominio_mes) }}</b></div>
+      <div class="crow"><span>Correo (Resend · plan gratis)</span><b>${{ '%.2f'|format(conta.c.email_mes) }}</b></div>
+      <div class="crow tot"><span>Total costos</span><b>${{ '%.2f'|format(conta.costo_infra) }}</b></div>
+    </div>
+
+    <div class="cpanel">
+      <div class="cp-title">Capacidad de almacenamiento</div>
+      {% if conta.alerta_spaces %}
+      <div class="alerta">⚠️ Necesitás ampliar: estás al {{ '%.0f'|format(conta.pct_spaces) }}% del almacenamiento incluido en Spaces. Cada GB extra cuesta $0.02/mes — considerá aumentar el plan de Spaces en DigitalOcean.</div>
+      {% endif %}
+      <div class="crow"><span>Spaces (audio): {{ '%.1f'|format(conta.gb_total) }} GB de {{ conta.incluido }} GB incluidos</span><b>{{ '%.0f'|format(conta.pct_spaces) }}%</b></div>
+      <div class="bar"><div class="bar-fill {{ 'warn' if conta.alerta_spaces else '' }}" style="width:{{ [conta.pct_spaces, 100]|min }}%"></div></div>
+      {% if conta.alerta_disco %}
+      <div class="alerta" style="margin-top:10px">⚠️ Disco del servidor al {{ '%.0f'|format(conta.disco_pct) }}%. Agrandá el droplet en DigitalOcean.</div>
+      {% endif %}
+      <div class="crow" style="margin-top:10px"><span>Disco del servidor (metadata): {{ '%.1f'|format(conta.disco_usado) }} GB de {{ '%.0f'|format(conta.disco_total) }} GB</span><b>{{ '%.0f'|format(conta.disco_pct) }}%</b></div>
+      <div class="bar"><div class="bar-fill {{ 'warn' if conta.alerta_disco else '' }}" style="width:{{ [conta.disco_pct, 100]|min }}%"></div></div>
+    </div>
   </div>
 
   {% for o in orgs %}

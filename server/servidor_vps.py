@@ -2098,6 +2098,68 @@ PAQUETES = {
 }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
+# Modelo de costos de infraestructura (editable). Sirve para la contabilidad.
+COSTOS_INFRA = {
+    "droplet_mes": 6.0,          # DigitalOcean droplet 1vCPU/1GB/24GB
+    "spaces_base_mes": 5.0,      # incluye 250 GB almacenamiento + 1 TB transferencia
+    "spaces_incluido_gb": 250,   # almacenamiento incluido en la base
+    "spaces_extra_gb_mes": 0.02, # por GB sobre lo incluido
+    "dominio_mes": 1.0,          # ~$12/año
+    "email_mes": 0.0,            # Resend (plan gratis por ahora)
+    "comision_pct": 0.029,       # comisión pasarela 2.9%
+    "comision_fija": 0.30,       # + $0.30 por transacción
+    "alerta_almacen_pct": 80,    # aviso "ampliar" al llegar a este % de capacidad
+}
+
+
+def _contabilidad(filas):
+    """Calcula la contabilidad del negocio a partir de las orgs y el modelo de costos.
+    Ingresos/comisiones son PROYECTADOS de las suscripciones activas (hasta conectar el cobro)."""
+    C = COSTOS_INFRA
+    activas = [o for o in filas if (o.get("estado_suscripcion") or "activa") in ("activa", "prueba")]
+    por_plan, ingresos, comisiones = {}, 0.0, 0.0
+    for o in activas:
+        pk = o.get("paquete")
+        precio = PAQUETES.get(pk, {}).get("precio", 0.0)
+        ingresos += precio
+        comisiones += precio * C["comision_pct"] + C["comision_fija"]
+        d = por_plan.setdefault(pk, {"n": 0, "precio": precio, "sub": 0.0})
+        d["n"] += 1
+        d["sub"] += precio
+    # Almacenamiento real en Spaces (todas las orgs)
+    gb_total = 0.0
+    try:
+        if almacen.habilitado():
+            gb_total = (almacen.uso_bytes("pistas/") + almacen.uso_bytes("pads/")
+                        + almacen.uso_bytes("orgs/")) / (1024 ** 3)
+    except Exception:
+        gb_total = sum(o.get("gb", 0) for o in filas)
+    incluido = C["spaces_incluido_gb"]
+    spaces_extra = max(0.0, gb_total - incluido) * C["spaces_extra_gb_mes"]
+    costo_spaces = C["spaces_base_mes"] + spaces_extra
+    costo_infra = C["droplet_mes"] + costo_spaces + C["dominio_mes"] + C["email_mes"]
+    utilidad = ingresos - comisiones - costo_infra
+    margen = (utilidad / ingresos * 100) if ingresos > 0 else 0.0
+    pct_spaces = (gb_total / incluido * 100) if incluido else 0.0
+    try:
+        import shutil as _sh
+        du = _sh.disk_usage("/")
+        disco_pct = du.used / du.total * 100
+        disco_usado, disco_total = du.used / (1024 ** 3), du.total / (1024 ** 3)
+    except Exception:
+        disco_pct = disco_usado = disco_total = 0
+    return {
+        "por_plan": por_plan, "ingresos": ingresos, "comisiones": comisiones,
+        "costo_spaces": costo_spaces, "spaces_extra": spaces_extra, "costo_infra": costo_infra,
+        "utilidad": utilidad, "margen": margen,
+        "gb_total": gb_total, "incluido": incluido, "pct_spaces": pct_spaces,
+        "disco_pct": disco_pct, "disco_usado": disco_usado, "disco_total": disco_total,
+        "alerta_pct": C["alerta_almacen_pct"],
+        "alerta_spaces": pct_spaces >= C["alerta_almacen_pct"],
+        "alerta_disco": disco_pct >= C["alerta_almacen_pct"],
+        "c": C,
+    }
+
 
 @app.route("/superadmin")
 @super_admin_required
@@ -2117,6 +2179,7 @@ def superadmin():
                       "usuarios_n": usuarios.contar_usuarios(o["id"]),
                       "gb": gb})
     return render_template("superadmin.html", orgs=filas, paquetes=PAQUETES,
+                           conta=_contabilidad(filas),
                            total_mrr=round(total_mrr, 2), total_orgs=len(orgs))
 
 
