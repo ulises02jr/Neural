@@ -35,3 +35,5 @@ NeuralSync/venv/
 
 # entregas locales (archivos que Claude te da)
 entregas/
+server/_set_spaces.py
+server/_test_spaces.py

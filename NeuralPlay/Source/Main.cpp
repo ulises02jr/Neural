@@ -64,12 +64,33 @@ static bool httpDownload (const juce::String& url, const juce::String& token, co
                           std::function<void (double)> onProgress = {},
                           std::function<bool()> cancel = {})
 {
-    juce::URL u (url);
-    auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                    .withExtraHeaders ("Authorization: Bearer " + token)
-                    .withConnectionTimeoutMs (30000);
-    std::unique_ptr<juce::InputStream> in (u.createInputStream (opts));
-    if (in == nullptr) return false;
+    // Paso 1: conectar al servidor SIN seguir el redirect. Así, si el audio vive en
+    // Spaces (respuesta 302 con URL presignada), NO arrastramos el header "Authorization:
+    // Bearer" al saltar a Spaces (S3 rechaza mezclar presignada + header de auth => 400).
+    juce::WebInputStream probe (juce::URL (url), false);
+    probe.withExtraHeaders ("Authorization: Bearer " + token)
+         .withConnectionTimeout (30000)
+         .withNumRedirectsToFollow (0);
+    if (! probe.connect (nullptr)) return false;
+
+    juce::WebInputStream* in = &probe;                 // por defecto leemos del servidor (archivo local, 200)
+    std::unique_ptr<juce::WebInputStream> spaces;      // si hubo redirect: stream de Spaces
+    const int sc = probe.getStatusCode();
+    if (sc >= 300 && sc < 400)
+    {
+        const juce::String loc = probe.getResponseHeaders().getValue ("Location", {});
+        if (loc.isEmpty()) return false;
+        // Paso 2: bajar de la URL presignada SIN header de autorización (se autentica sola).
+        spaces.reset (new juce::WebInputStream (juce::URL (loc), false));
+        spaces->withConnectionTimeout (30000).withNumRedirectsToFollow (5);
+        if (! spaces->connect (nullptr)) return false;
+        in = spaces.get();
+    }
+    else if (sc >= 400)
+    {
+        return false;
+    }
+
     const juce::int64 expected = in->getTotalLength();   // -1 si el server no da Content-Length
     dest.getParentDirectory().createDirectory();
     juce::TemporaryFile tmp (dest);
@@ -4155,8 +4176,6 @@ private:
         auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Iniciar sesion en NeuralWorship"),
                                           juce::String::fromUTF8 ("Entra con tu cuenta para cargar tu organizacion."),
                                           juce::MessageBoxIconType::NoIcon);
-        aw->addTextEditor ("url", serverUrl.isNotEmpty() ? serverUrl : juce::String ("https://neuralworship.com"),
-                           juce::String::fromUTF8 ("Servidor:"));
         aw->addTextEditor ("email", "", juce::String::fromUTF8 ("Email:"));
         aw->addTextEditor ("pass", "", juce::String::fromUTF8 ("Contrasena:"), true);
         aw->addButton ("Entrar", 1, juce::KeyPress (juce::KeyPress::returnKey));
@@ -4165,9 +4184,13 @@ private:
         aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
         {
             if (r == 1 && sp != nullptr)
-                sp->doLogin (aw->getTextEditorContents ("url"),
+            {
+                const juce::String srv = sp->serverUrl.isNotEmpty() ? sp->serverUrl
+                                                                    : juce::String ("https://neuralworship.com");
+                sp->doLogin (srv,
                              aw->getTextEditorContents ("email").trim(),
                              aw->getTextEditorContents ("pass"));
+            }
         }), true);
     }
 

@@ -145,6 +145,70 @@ def _servir_audio(local_path, mimetype=None):
     return send_file(str(local_path), mimetype=mimetype, conditional=True) if mimetype else send_file(str(local_path))
 
 
+def _listar_audio(local_dir, exts=None):
+    """Nombres de archivos de audio en una 'carpeta' (Spaces si activo; si no, local)."""
+    import os as _os
+    if exts is None:
+        exts = (".mp3", ".m4a", ".ogg", ".wav")
+    if almacen.habilitado():
+        pref = _key_audio(local_dir)
+        if not pref:
+            return []
+        try:
+            return sorted([n for n in almacen.listar_nombres(pref)
+                           if _os.path.splitext(n)[1].lower() in exts])
+        except Exception as e:
+            logging.error("listar audio Spaces %s: %s", local_dir, e)
+            return []
+    d = Path(local_dir)
+    if not d.is_dir():
+        return []
+    return sorted([f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in exts])
+
+
+def _existe_audio(local_path):
+    """True si el archivo de audio existe (en Spaces si activo; si no, local)."""
+    try:
+        if almacen.habilitado():
+            key = _key_audio(local_path)
+            return bool(key and almacen.existe(key))
+    except Exception:
+        pass
+    return Path(local_path).is_file()
+
+
+def _asegurar_local(local_path):
+    """Garantiza que el archivo esté en disco local para poder leerlo/renderizar.
+    Si no está local pero sí en Spaces, lo baja. Devuelve la ruta local o None."""
+    p = Path(local_path)
+    if p.is_file():
+        return p
+    try:
+        if almacen.habilitado():
+            key = _key_audio(local_path)
+            if key and almacen.existe(key):
+                p.parent.mkdir(parents=True, exist_ok=True)
+                almacen.bajar(key, str(p))
+                if p.is_file():
+                    return p
+    except Exception as e:
+        logging.error("bajar de Spaces %s: %s", local_path, e)
+    return None
+
+
+def _limpiar_local(*paths):
+    """Borra archivos locales temporales (los reales viven en Spaces)."""
+    if not almacen.habilitado():
+        return
+    for lp in paths:
+        try:
+            pp = Path(lp)
+            if pp.is_file():
+                pp.unlink()
+        except Exception:
+            pass
+
+
 def hash_password(plain):
     return hashlib.sha256(plain.encode("utf-8")).hexdigest()
 
@@ -892,10 +956,10 @@ def api_live_pistas(numero):
     stems = []
     fam = _leer_familias(numero)
     if listo:
-        for f in sorted(_carpeta_tono(numero, n).iterdir()):
-            if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
-                stems.append({"name": f.stem, "file": f.name,
-                              "familia": fam.get(f.name) or _familia_auto(f.stem)})
+        for nombre in _listar_audio(_carpeta_tono(numero, n)):
+            base = os.path.splitext(nombre)[0]
+            stems.append({"name": base, "file": nombre,
+                          "familia": fam.get(nombre) or _familia_auto(base)})
     cancion = cargar_biblioteca().get(numero, {})
     return jsonify({"numero": numero, "tono": n, "listo": listo,
                     "hay_pistas": len(_stems_originales(numero)) > 0,
@@ -918,7 +982,7 @@ def api_live_pista(numero, archivo):
         dentro = os.path.commonpath([str(base), str(ruta)]) == str(base)
     except ValueError:
         dentro = False
-    if not dentro or not ruta.is_file():
+    if not dentro or not _existe_audio(ruta):
         abort(404)
     return _servir_audio(ruta)
 
@@ -1182,12 +1246,23 @@ def api_live_tonos(numero):
     rendered = []
     if _stems_originales(numero): rendered.append(0)
     d = dir_pistas(_cur_org()) / str(numero)
+    candidatos = set()
+    if almacen.habilitado():
+        pref = _key_audio(d)
+        if pref:
+            pref = pref.rstrip("/") + "/"
+            for k in almacen.listar(pref):
+                resto = k[len(pref):]
+                if resto.startswith("tono_") and "/" in resto:
+                    try: candidatos.add(int(resto.split("/", 1)[0][5:]))
+                    except ValueError: pass
     if d.is_dir():
         for sub in d.iterdir():
             if sub.is_dir() and sub.name.startswith("tono_"):
-                try: n = int(sub.name[5:])
-                except ValueError: continue
-                if _tono_listo(numero, n): rendered.append(n)
+                try: candidatos.add(int(sub.name[5:]))
+                except ValueError: pass
+    for n in candidatos:
+        if _tono_listo(numero, n): rendered.append(n)
     rendered = sorted(set(rendered))
     orig = base.get("tono", "")
     from transposicion import NOTAS_BEMOL, transponer_acorde, usar_sostenidos, NOTA_A_INDICE
@@ -1432,6 +1507,13 @@ def admin_eliminar(numero):
             if datos.get("numero") == numero:
                 archivo.unlink()
                 carpeta_p = dir_pistas(_cur_org()) / str(numero)
+                if almacen.habilitado():
+                    pref = _key_audio(carpeta_p)
+                    if pref:
+                        try:
+                            almacen.borrar_prefijo(pref.rstrip("/") + "/")
+                        except Exception as e:
+                            logging.error("eliminar cancion Spaces %s: %s", numero, e)
                 if carpeta_p.is_dir():
                     try:
                         shutil.rmtree(str(carpeta_p))
@@ -1995,7 +2077,18 @@ def super_admin_required(fn):
 
 
 def _uso_almacen_bytes(org_id):
-    """Bytes usados por una organización (du). Org #1 = carpetas legado."""
+    """Bytes de audio usados por una organización. Con Spaces activo, suma el
+    tamaño real de los objetos en el bucket (el audio ya no vive en el disco)."""
+    if almacen.habilitado():
+        try:
+            if int(org_id) == 1:
+                # Org #1 (legado): audio bajo pistas/ y pads/ (canciones/ es metadata)
+                return almacen.uso_bytes("pistas/") + almacen.uso_bytes("pads/")
+            return almacen.uso_bytes("orgs/%d/" % int(org_id))
+        except Exception as e:
+            logging.error("uso almacen Spaces org %s: %s", org_id, e)
+            return 0
+    # Fallback: du local (si Spaces está desactivado)
     dirs = []
     if int(org_id) == 1:
         for d in ("canciones", "pistas", "pads"):
@@ -2079,22 +2172,19 @@ def _carpeta_tono(numero, n):
 
 
 def _stems_originales(numero):
-    d = dir_pistas(_cur_org()) / str(numero)
-    if not d.is_dir():
-        return []
-    return sorted([f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO])
+    return _listar_audio(dir_pistas(_cur_org()) / str(numero))
 
 
 def _tono_listo(numero, n):
     if n == 0:
         return len(_stems_originales(numero)) > 0
     d = _carpeta_tono(numero, n)
-    if not d.is_dir() or (d / ".lock").exists():
+    if (d / ".lock").exists():   # lock local = render en curso
         return False
     orig = _stems_originales(numero)
     if not orig:
         return False
-    hechos = set(f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO)
+    hechos = set(_listar_audio(d))
     return all(o in hechos for o in orig)
 
 
@@ -2123,20 +2213,29 @@ def _nombre_base_export(cancion, numero):
 def _invalidar_tonos(numero):
     """Borra los caches de tonos transpuestos: quedan inconsistentes al cambiar los stems."""
     base = dir_pistas(_cur_org()) / str(numero)
-    if not base.is_dir():
-        return
-    for d in base.glob("tono_*"):
-        if d.is_dir():
+    # Spaces: purga los tonos y previews del admin (deja los originales)
+    if almacen.habilitado():
+        pref = _key_audio(base)
+        if pref:
+            pref = pref.rstrip("/")
             try:
-                shutil.rmtree(str(d))
+                almacen.borrar_prefijo(pref + "/tono_")
+                almacen.borrar_prefijo(pref + "/_admin/")
+            except Exception as e:
+                logging.error("invalidar tonos Spaces %s: %s", numero, e)
+    if base.is_dir():
+        for d in base.glob("tono_*"):
+            if d.is_dir():
+                try:
+                    shutil.rmtree(str(d))
+                except Exception:
+                    pass
+        adm = base / "_admin"
+        if adm.is_dir():
+            try:
+                shutil.rmtree(str(adm))
             except Exception:
                 pass
-    adm = base / "_admin"
-    if adm.is_dir():
-        try:
-            shutil.rmtree(str(adm))
-        except Exception:
-            pass
 
 
 def _asegurar_web(numero, n, org=None):
@@ -2150,21 +2249,32 @@ def _asegurar_web(numero, n, org=None):
     if lock.exists():
         return
     try:
-        reales = [f for f in sorted(d.iterdir())
-                  if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO]
+        reales = _listar_audio(d)
         lock.write_text("0/" + str(len(reales)))
         hechos = 0
-        for f in reales:
-            out = web / (f.stem + ".mp3")
-            if not out.exists():
+        for nombre in reales:
+            out = web / (os.path.splitext(nombre)[0] + ".mp3")
+            if _existe_audio(out):
+                hechos += 1
                 try:
-                    subprocess.run(
-                        ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(f),
-                         "-b:a", "128k", str(out)],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
-                except Exception as e:
-                    logging.error("proxy %s/%s %s: %s", numero, n, f.name, e)
+                    lock.write_text(str(hechos) + "/" + str(len(reales)))
+                except Exception:
+                    pass
+                continue
+            entrada = _asegurar_local(d / nombre)
+            if not entrada:
+                logging.error("proxy %s/%s: falta real %s", numero, n, nombre)
+                continue
+            try:
+                subprocess.run(
+                    ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
+                     "-b:a", "128k", str(out)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+            except Exception as e:
+                logging.error("proxy %s/%s %s: %s", numero, n, nombre, e)
             _subir_audio(out)
+            # limpiar el proxy local y el real temporal (viven en Spaces)
+            _limpiar_local(out, entrada)
             hechos += 1
             try:
                 lock.write_text(str(hechos) + "/" + str(len(reales)))
@@ -2182,12 +2292,11 @@ def _web_listo(numero, n):
     if not _tono_listo(numero, n):
         return False
     d = _carpeta_tono(numero, n)
-    web = d / "web"
-    reales = [f.stem for f in d.iterdir()
-              if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO]
+    reales = [os.path.splitext(x)[0] for x in _listar_audio(d)]
     if not reales:
         return False
-    return all((web / (s + ".mp3")).exists() for s in reales)
+    web = set(os.path.splitext(x)[0] for x in _listar_audio(d / "web", exts=(".mp3",)))
+    return all(s in web for s in reales)
 
 
 def _render_tono(numero, n, org=None):
@@ -2203,18 +2312,30 @@ def _render_tono(numero, n, org=None):
         hechos = 0
         fam_map = _leer_familias(numero)
         for nombre in orig:
-            entrada = dir_pistas(_cur_org()) / str(numero) / nombre
             salida = d / nombre
-            if not salida.exists():
-                fam = fam_map.get(nombre) or _familia_auto(Path(nombre).stem)
-                if fam in FAMILIAS_FIJAS:
-                    shutil.copy2(str(entrada), str(salida))
-                else:
-                    subprocess.run(
-                        ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
-                         "-af", "rubberband=pitch=" + repr(ratio), "-b:a", "192k", str(salida)],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+            if _existe_audio(salida):   # ya renderizado (Spaces o local)
+                hechos += 1
+                try:
+                    lock.write_text(str(hechos) + "/" + str(len(orig)))
+                except Exception:
+                    pass
+                continue
+            entrada = _asegurar_local(dir_pistas(_cur_org()) / str(numero) / nombre)
+            if not entrada:
+                logging.error("render tono %s/%s: falta original %s", numero, n, nombre)
+                continue
+            fam = fam_map.get(nombre) or _familia_auto(Path(nombre).stem)
+            if fam in FAMILIAS_FIJAS:
+                shutil.copy2(str(entrada), str(salida))
+            else:
+                subprocess.run(
+                    ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
+                     "-af", "rubberband=pitch=" + repr(ratio), "-b:a", "192k", str(salida)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
             _subir_audio(salida)
+            # el original bajado a temp solo se limpia si vino de Spaces
+            if str(entrada).startswith("/tmp") or almacen.habilitado():
+                _limpiar_local(entrada)
             hechos += 1
             try:
                 lock.write_text(str(hechos) + "/" + str(len(orig)))
@@ -2297,7 +2418,8 @@ def _pad_estado(pack_id):
         except Exception:
             pass
         return {"hechos": hechos, "total": total, "listo": False, "render": True}
-    hechos = sum(1 for i in range(12) if (d / ("pad_%d.wav" % i)).is_file())
+    presentes = set(_listar_audio(d, exts=(".wav",)))
+    hechos = sum(1 for i in range(12) if ("pad_%d.wav" % i) in presentes)
     return {"hechos": hechos, "total": total, "listo": hechos >= total, "render": False}
 
 
@@ -2310,8 +2432,8 @@ def _render_pad_pack(pack_id, org=None):
         return
     d = dir_pads(_cur_org()) / pack_id
     d.mkdir(parents=True, exist_ok=True)
-    base = d / ("base" + pack.get("ext", ".wav"))
-    if not base.is_file():
+    base = _asegurar_local(d / ("base" + pack.get("ext", ".wav")))
+    if not base:
         logging.error("pad pack %s sin base", pack_id)
         return
     base_idx = int(pack.get("base_idx", 0))
@@ -2321,28 +2443,36 @@ def _render_pad_pack(pack_id, org=None):
         hechos = 0
         for i in range(12):
             out = d / ("pad_%d.wav" % i)
-            if not out.exists():
-                semis = _pad_semitonos(base_idx, i)
-                if semis == 0:
-                    cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
-                           "-i", str(base), str(out)]
-                else:
-                    ratio = 2 ** (semis / 12.0)
-                    cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
-                           "-i", str(base), "-af", "rubberband=pitch=" + repr(ratio),
-                           str(out)]
+            if _existe_audio(out):
+                hechos += 1
                 try:
-                    subprocess.run(cmd, stdout=subprocess.DEVNULL,
-                                   stderr=subprocess.DEVNULL, timeout=600)
-                except Exception as e:
-                    logging.error("render pad %s idx %d: %s", pack_id, i, e)
+                    lock.write_text(str(hechos) + "/12")
+                except Exception:
+                    pass
+                continue
+            semis = _pad_semitonos(base_idx, i)
+            if semis == 0:
+                cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
+                       "-i", str(base), str(out)]
+            else:
+                ratio = 2 ** (semis / 12.0)
+                cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
+                       "-i", str(base), "-af", "rubberband=pitch=" + repr(ratio),
+                       str(out)]
+            try:
+                subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, timeout=600)
+            except Exception as e:
+                logging.error("render pad %s idx %d: %s", pack_id, i, e)
             _subir_audio(out)
+            _limpiar_local(out)
             hechos += 1
             try:
                 lock.write_text(str(hechos) + "/12")
             except Exception:
                 pass
     finally:
+        _limpiar_local(base)   # el base vive en Spaces
         try:
             lock.unlink()
         except Exception:
@@ -2423,6 +2553,13 @@ def admin_pads_eliminar(pack_id):
     with _pads_lock:
         _pads_guardar([x for x in _pads_cargar() if x.get("id") != pack_id])
     d = dir_pads(_cur_org()) / pack_id
+    if almacen.habilitado():
+        pref = _key_audio(d)
+        if pref:
+            try:
+                almacen.borrar_prefijo(pref.rstrip("/") + "/")
+            except Exception as e:
+                logging.error("eliminar pad Spaces %s: %s", pack_id, e)
     if d.is_dir():
         try:
             shutil.rmtree(str(d))
@@ -2529,6 +2666,15 @@ def admin_pads_editar(pack_id):
             break
         _pads_guardar(lst)
     if regen:
+        if almacen.habilitado():
+            pref = _key_audio(d)
+            if pref:
+                pref = pref.rstrip("/")
+                for i in range(12):
+                    try:
+                        almacen.borrar(pref + "/pad_%d.wav" % i)
+                    except Exception:
+                        pass
         for i in range(12):
             f = d / ("pad_%d.wav" % i)
             try:
@@ -2548,7 +2694,7 @@ def admin_pads_audio(pack_id, idx):
     if idx < 0 or idx > 11 or not _pad_pack(pack_id):
         abort(404)
     f = dir_pads(_cur_org()) / pack_id / ("pad_%d.wav" % idx)
-    if not f.is_file():
+    if not _existe_audio(f):
         abort(404)
     return _servir_audio(f)
 
@@ -2586,7 +2732,7 @@ def api_live_pad(pack_id, idx):
     if idx < 0 or idx > 11 or not _pad_pack(pack_id):
         abort(404)
     f = dir_pads(_cur_org()) / pack_id / ("pad_%d.wav" % idx)
-    if not f.is_file():
+    if not _existe_audio(f):
         abort(404)
     return _servir_audio(f)
 
@@ -2605,10 +2751,10 @@ def api_pistas(numero):
     fam_por_stem = {os.path.splitext(k)[0]: v for k, v in fam_guardadas.items()}
     if listo:
         web = _carpeta_tono(numero, n) / "web"
-        for f in sorted(web.iterdir()):
-            if f.is_file() and f.suffix.lower() == ".mp3":
-                stems.append({"name": f.stem, "file": f.name,
-                              "familia": fam_por_stem.get(f.stem) or _familia_auto(f.stem)})
+        for nombre in _listar_audio(web, exts=(".mp3",)):
+            base = os.path.splitext(nombre)[0]
+            stems.append({"name": base, "file": nombre,
+                          "familia": fam_por_stem.get(base) or _familia_auto(base)})
     elif _tono_listo(numero, n):
         web = _carpeta_tono(numero, n) / "web"
         if not (web.exists() and (web / ".lock").exists()):
@@ -2672,7 +2818,7 @@ def servir_pista(numero, archivo):
         dentro = os.path.commonpath([str(base), str(ruta)]) == str(base)
     except ValueError:
         dentro = False
-    if not dentro or not ruta.is_file():
+    if not dentro or not _existe_audio(ruta):
         abort(404)
     return _servir_audio(ruta)
 
@@ -2685,10 +2831,7 @@ def admin_pistas():
     songs = []
     for numero in sorted(biblioteca.keys()):
         c = biblioteca[numero]
-        carpeta = dir_pistas(_cur_org()) / str(numero)
-        n = 0
-        if carpeta.is_dir():
-            n = sum(1 for f in carpeta.iterdir() if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO)
+        n = len(_stems_originales(numero))
         songs.append({"numero": numero, "titulo": c.get("titulo", ""), "artista": c.get("artista", ""), "n_pistas": n})
     return render_template("admin_pistas.html", songs=songs)
 
@@ -2730,6 +2873,13 @@ def admin_pistas_subir():
 def admin_pistas_eliminar(numero):
     carpeta = dir_pistas(_cur_org()) / str(numero)
     borradas = 0
+    if almacen.habilitado():
+        pref = _key_audio(carpeta)
+        if pref:
+            try:
+                almacen.borrar_prefijo(pref.rstrip("/") + "/")
+            except Exception as e:
+                logging.error("eliminar pista Spaces %s: %s", numero, e)
     if carpeta.is_dir():
         for f in list(carpeta.iterdir()):
             if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
@@ -2788,14 +2938,11 @@ def _fmt_tiempo(secs):
 
 def _hallar_stem_familia(numero, familia):
     base = dir_pistas(_cur_org()) / str(numero)
-    if not base.is_dir():
-        return None
     fam = _leer_familias(numero)
-    for f in sorted(base.iterdir()):
-        if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
-            fa = fam.get(f.name) or _familia_auto(f.stem)
-            if fa == familia:
-                return f
+    for nombre in _stems_originales(numero):
+        fa = fam.get(nombre) or _familia_auto(os.path.splitext(nombre)[0])
+        if fa == familia:
+            return _asegurar_local(base / nombre)
     return None
 
 
@@ -2808,16 +2955,35 @@ def _admin_audio_dir(numero):
 def _stems_para_mezcla(numero):
     """Todos los stems menos Click y Guia (los instrumentos, para la mezcla de preview)."""
     base = dir_pistas(_cur_org()) / str(numero)
-    if not base.is_dir():
-        return []
     fam = _leer_familias(numero)
     outs = []
-    for f in sorted(base.iterdir()):
-        if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
-            fa = fam.get(f.name) or _familia_auto(f.stem)
-            if fa not in ("Click", "Guía"):
-                outs.append(f)
+    for nombre in _stems_originales(numero):
+        fa = fam.get(nombre) or _familia_auto(os.path.splitext(nombre)[0])
+        if fa not in ("Click", "Guía"):
+            lp = _asegurar_local(base / nombre)
+            if lp:
+                outs.append(lp)
     return outs
+
+
+def _hay_stem_familia(numero, familia):
+    """True si existe un stem de esa familia (sin bajar nada de Spaces)."""
+    fam = _leer_familias(numero)
+    for nombre in _stems_originales(numero):
+        fa = fam.get(nombre) or _familia_auto(os.path.splitext(nombre)[0])
+        if fa == familia:
+            return True
+    return False
+
+
+def _hay_stems_mezcla(numero):
+    """True si hay instrumentos para la mezcla (todo menos Click/Guía), sin descargar."""
+    fam = _leer_familias(numero)
+    for nombre in _stems_originales(numero):
+        fa = fam.get(nombre) or _familia_auto(os.path.splitext(nombre)[0])
+        if fa not in ("Click", "Guía"):
+            return True
+    return False
 
 
 def _asegurar_audio_admin(numero, tipo, org=None):
@@ -2827,14 +2993,16 @@ def _asegurar_audio_admin(numero, tipo, org=None):
     d = _admin_audio_dir(numero)
     out = d / (tipo + ".mp3")
     lock = d / (tipo + ".lock")
-    if out.exists() or lock.exists():
+    if _existe_audio(out) or lock.exists():
         return
+    tmp_ins = []   # originales bajados a temp para limpiarlos al final
     try:
         lock.write_text("1")
         if tipo == "guia":
             g = _hallar_stem_familia(numero, "Guía")
             if g is None:
                 return
+            tmp_ins.append(g)
             subprocess.run(["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(g),
                             "-b:a", "128k", str(out)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
@@ -2842,6 +3010,7 @@ def _asegurar_audio_admin(numero, tipo, org=None):
             g = _hallar_stem_familia(numero, "Click")
             if g is None:
                 return
+            tmp_ins.append(g)
             subprocess.run(["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(g),
                             "-b:a", "128k", str(out)],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
@@ -2849,6 +3018,7 @@ def _asegurar_audio_admin(numero, tipo, org=None):
             ins = _stems_para_mezcla(numero)
             if not ins:
                 return
+            tmp_ins += ins
             cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y"]
             for f in ins:
                 cmd += ["-i", str(f)]
@@ -2861,6 +3031,7 @@ def _asegurar_audio_admin(numero, tipo, org=None):
             ins = ([g] if g else []) + _stems_para_mezcla(numero)
             if not ins:
                 return
+            tmp_ins += ins
             cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y"]
             for fpath in ins:
                 cmd += ["-i", str(fpath)]
@@ -2869,9 +3040,13 @@ def _asegurar_audio_admin(numero, tipo, org=None):
                     "amix=inputs=%d:normalize=0:weights=%s,alimiter=limit=0.95" % (len(ins), pesos),
                     "-b:a", "128k", str(out)]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
+        if out.is_file():
+            _subir_audio(out)
+            _limpiar_local(out)
     except Exception as e:
         logging.error("audio_admin %s/%s: %s", numero, tipo, e)
     finally:
+        _limpiar_local(*tmp_ins)
         try:
             lock.unlink()
         except Exception:
@@ -2883,16 +3058,16 @@ def _asegurar_audio_admin(numero, tipo, org=None):
 def admin_audio_prep(numero, tipo):
     if tipo not in ("guia", "mezcla", "ambas", "click"):
         return jsonify({"ok": False, "error": "tipo"})
-    if tipo == "guia" and _hallar_stem_familia(numero, "Guía") is None:
+    if tipo == "guia" and not _hay_stem_familia(numero, "Guía"):
         return jsonify({"ok": False, "error": "sin_guia"})
-    if tipo == "click" and _hallar_stem_familia(numero, "Click") is None:
+    if tipo == "click" and not _hay_stem_familia(numero, "Click"):
         return jsonify({"ok": False, "error": "sin_click"})
-    if tipo == "mezcla" and not _stems_para_mezcla(numero):
+    if tipo == "mezcla" and not _hay_stems_mezcla(numero):
         return jsonify({"ok": False, "error": "sin_stems"})
-    if tipo == "ambas" and _hallar_stem_familia(numero, "Guía") is None and not _stems_para_mezcla(numero):
+    if tipo == "ambas" and not _hay_stem_familia(numero, "Guía") and not _hay_stems_mezcla(numero):
         return jsonify({"ok": False, "error": "sin_stems"})
     out = _admin_audio_dir(numero) / (tipo + ".mp3")
-    if out.exists():
+    if _existe_audio(out):
         return jsonify({"ok": True, "ready": True})
     lock = _admin_audio_dir(numero) / (tipo + ".lock")
     if not lock.exists():
@@ -2906,7 +3081,7 @@ def admin_audio(numero, tipo):
     if tipo not in ("guia", "mezcla", "ambas", "click"):
         return ("no", 404)
     out = _admin_audio_dir(numero) / (tipo + ".mp3")
-    if not out.exists():
+    if not _existe_audio(out):
         return ("no listo", 404)
     return _servir_audio(out, mimetype="audio/mpeg")
 
@@ -2914,19 +3089,20 @@ def admin_audio(numero, tipo):
 def _hallar_stem_click(numero):
     """Devuelve el archivo del stem de Click (familia 'Click'), o None."""
     base = dir_pistas(_cur_org()) / str(numero)
-    if not base.is_dir():
-        return None
     fam = _leer_familias(numero)
     cand = []
-    for f in sorted(base.iterdir()):
-        if f.is_file() and f.suffix.lower() in _EXT_AUDIO_ENSAYO:
-            fa = fam.get(f.name) or _familia_auto(f.stem)
-            if fa == "Click":
-                cand.append(f)
-    for f in cand:
-        if re.search(r"click|metr", f.stem, re.I):
-            return f
-    return cand[0] if cand else None
+    for nombre in _stems_originales(numero):
+        fa = fam.get(nombre) or _familia_auto(os.path.splitext(nombre)[0])
+        if fa == "Click":
+            cand.append(nombre)
+    elegido = None
+    for nombre in cand:
+        if re.search(r"click|metr", os.path.splitext(nombre)[0], re.I):
+            elegido = nombre
+            break
+    if elegido is None and cand:
+        elegido = cand[0]
+    return _asegurar_local(base / elegido) if elegido else None
 
 
 def _detectar_beats_click(numero):
@@ -3686,8 +3862,17 @@ def admin_pista_borrar_una(numero):
         for d in base.glob("tono_*"):
             if d.is_dir():
                 objetivos += [d / archivo, d / "web" / (stem + ".mp3")]
+        # Spaces: borra el original y su proxy web (los tonos los purga _invalidar_tonos)
+        if almacen.habilitado():
+            for lp in (base / archivo, base / "web" / (stem + ".mp3")):
+                k = _key_audio(lp)
+                if k:
+                    try:
+                        almacen.borrar(k)
+                    except Exception as e:
+                        logging.error("borrar stem Spaces %s: %s", k, e)
         _invalidar_tonos(numero)
-        borro = False
+        borro = almacen.habilitado()   # si está en Spaces, ya se borró arriba
         for p in objetivos:
             if p.is_file():
                 try:
@@ -4066,6 +4251,14 @@ def admin_borrar_tono(numero, n):
         return redirect(url_for("admin_editar", numero=numero) + "?tab=transposicion")
     if n != 0:
         d = _carpeta_tono(numero, n)
+        if almacen.habilitado():
+            pref = _key_audio(d)
+            if pref:
+                try:
+                    almacen.borrar_prefijo(pref.rstrip("/") + "/")
+                    flash("Transposición eliminada", "success")
+                except Exception as e:
+                    flash("No se pudo eliminar: %s" % e, "error")
         if d.is_dir():
             try:
                 shutil.rmtree(str(d))

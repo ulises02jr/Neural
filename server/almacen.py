@@ -100,6 +100,23 @@ def listar(prefix):
     return out
 
 
+def uso_bytes(prefix):
+    """Suma el tamaño (bytes) de todos los objetos bajo un prefijo (paginado)."""
+    total, tok = 0, None
+    while True:
+        kw = {"Bucket": _bucket(), "Prefix": prefix}
+        if tok:
+            kw["ContinuationToken"] = tok
+        r = _s3().list_objects_v2(**kw)
+        for o in r.get("Contents", []):
+            total += o.get("Size", 0)
+        if r.get("IsTruncated"):
+            tok = r.get("NextContinuationToken")
+        else:
+            break
+    return total
+
+
 def listar_nombres(prefix):
     """Nombres de archivo (sin el prefijo) que cuelgan directo de un prefijo tipo carpeta."""
     p = prefix if prefix.endswith("/") else prefix + "/"
