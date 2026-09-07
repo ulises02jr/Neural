@@ -73,14 +73,14 @@
       <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <div>
         <label>Paquete</label>
-        <select name="paquete">
+        <select name="paquete" onchange="aplicarPaquete(this)">
           {% for p in ['basico','premium','ministerio'] %}
           <option value="{{ p }}" {% if o.paquete == p %}selected{% endif %}>{{ p|capitalize }}</option>
           {% endfor %}
         </select>
       </div>
-      <div><label>Asientos</label><input type="number" name="max_musicos" value="{{ o.max_musicos }}" min="1" max="500"></div>
-      <div><label>GB</label><input type="number" name="almacen_gb" value="{{ o.almacen_gb }}" min="1" max="10000"></div>
+      <div><label>Asientos <span style="opacity:.5;font-size:11px">(según paquete)</span></label><input type="number" class="f-asientos" value="{{ o.max_musicos }}" readonly tabindex="-1" style="opacity:.55;cursor:not-allowed;background:rgba(255,255,255,.03)"></div>
+      <div><label>GB <span style="opacity:.5;font-size:11px">(según paquete)</span></label><input type="number" class="f-gb" value="{{ o.almacen_gb }}" readonly tabindex="-1" style="opacity:.55;cursor:not-allowed;background:rgba(255,255,255,.03)"></div>
       <div>
         <label>Estado</label>
         <select name="estado_suscripcion">
@@ -93,5 +93,15 @@
     </form>
   </div>
   {% endfor %}
+<script>
+  var PAQUETES = {{ paquetes|tojson }};
+  function aplicarPaquete(sel){
+    var form = sel.closest('form');
+    var pk = PAQUETES[sel.value] || {};
+    var a = form.querySelector('.f-asientos'), g = form.querySelector('.f-gb');
+    if(a && pk.asientos != null) a.value = pk.asientos;
+    if(g && pk.gb != null) g.value = pk.gb;
+  }
+</script>
 </body>
 </html>

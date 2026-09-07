@@ -2089,7 +2089,14 @@ def _uso_almacen_bytes(org_id):
         return 0
 
 
-_PRECIOS_MRR = {"basico": 9.99, "premium": 20.0, "ministerio": 45.0}
+# Definición canónica de paquetes: precio mensual, asientos (músicos) y GB.
+# Los asientos y el almacenamiento SIEMPRE se derivan del paquete (no se editan a mano).
+PAQUETES = {
+    "basico":     {"precio": 12.0, "asientos": 3,  "gb": 20},
+    "premium":    {"precio": 25.0, "asientos": 5,  "gb": 50},
+    "ministerio": {"precio": 50.0, "asientos": 10, "gb": 100},
+}
+_PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
 
 @app.route("/superadmin")
@@ -2109,7 +2116,7 @@ def superadmin():
                       "musicos": usuarios.contar_musicos_activos(o["id"]),
                       "usuarios_n": usuarios.contar_usuarios(o["id"]),
                       "gb": gb})
-    return render_template("superadmin.html", orgs=filas,
+    return render_template("superadmin.html", orgs=filas, paquetes=PAQUETES,
                            total_mrr=round(total_mrr, 2), total_orgs=len(orgs))
 
 
@@ -2121,11 +2128,17 @@ def superadmin_org_actualizar(org_id):
             return int(v)
         except Exception:
             return None
+    paquete = request.form.get("paquete") or None
+    # Asientos y GB NO se editan a mano: se derivan del paquete elegido.
+    max_musicos = almacen_gb = None
+    if paquete and paquete in PAQUETES:
+        max_musicos = PAQUETES[paquete]["asientos"]
+        almacen_gb = PAQUETES[paquete]["gb"]
     ok = usuarios.actualizar_organizacion(
         org_id,
-        paquete=(request.form.get("paquete") or None),
-        max_musicos=_int(request.form.get("max_musicos")),
-        almacen_gb=_int(request.form.get("almacen_gb")),
+        paquete=paquete,
+        max_musicos=max_musicos,
+        almacen_gb=almacen_gb,
         estado_suscripcion=(request.form.get("estado_suscripcion") or None),
     )
     flash("✓ Organización actualizada" if ok else "No se pudo actualizar", "success" if ok else "error")
