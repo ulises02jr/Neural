@@ -265,7 +265,7 @@
       <div style="flex:1;min-width:150px;padding:14px 16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
         <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Asientos de músico</div>
         <div style="font-size:24px;font-weight:800;color:var(--txt)">{{ musicos_activos_n }} <span style="font-size:14px;color:var(--txt2);font-weight:500">/ {{ org_info.max_musicos }}</span></div>
-        <div style="font-size:11px;color:var(--txt3);margin-top:6px">Paquete: {{ org_info.paquete|capitalize }}</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:6px">Paquete: {{ paquetes[org_info.paquete].nombre if (org_info and org_info.paquete in paquetes) else '—' }}</div>
       </div>
     </div>
     {% endif %}
@@ -520,26 +520,37 @@
 
     {% set pk = org_info.paquete if org_info else 'ministerio' %}
     {% set p = paquetes.get(pk, {}) %}
+    {% set full = p.midi %}
     <div style="margin-bottom:18px">
       <div class="col-h"><span>Tu plan</span></div>
       <div style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
         <div style="flex:1">
-          <div style="font-size:22px;font-weight:800;color:var(--gold)">{{ pk|capitalize }}</div>
+          <div style="font-size:22px;font-weight:800;color:var(--gold)">{{ p.nombre }}</div>
           <div style="font-size:14px;color:var(--txt);margin-top:2px">${{ '%.0f'|format(p.precio) }} <span style="font-size:12px;color:var(--txt2)">/ mes</span></div>
-          <div style="font-size:13px;color:var(--txt2);margin-top:4px">{{ p.asientos }} asientos de músico &middot; {{ p.gb }} GB de almacenamiento</div>
         </div>
         <span style="background:rgba(134,179,106,0.15);color:var(--live);padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap">&#9679; {{ (org_info.estado_suscripcion or 'activa')|capitalize }}</span>
       </div>
     </div>
 
-    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
-      <div class="col-h"><span>Tu plan incluye</span></div>
-      <div class="lista">
-        <div class="item"><div class="info"><div class="nm">Charts + Setlists + Pads</div><div class="ar">✓ Incluido</div></div></div>
-        <div class="item"><div class="info"><div class="nm">NeuralPlay</div><div class="ar">{{ 'Premium (32 salidas + MIDI)' if pk != 'basico' else 'Basic (2 salidas, estéreo)' }}</div></div></div>
-        <div class="item"><div class="info"><div class="nm">NeuralSync (puente DAW)</div><div class="ar">{{ '✓ Incluido' if pk != 'basico' else '—' }}</div></div></div>
-        <div class="item"><div class="info"><div class="nm">Exportar PDF de charts</div><div class="ar">{{ '✓ Incluido' if pk != 'basico' else '—' }}</div></div></div>
+    {% macro fila(nombre, desc, valor, ok) -%}
+      <div style="display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)">
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:14px">{{ nombre }}</div>
+          <div style="font-size:12px;color:var(--txt2);margin-top:2px;line-height:1.5">{{ desc }}</div>
+        </div>
+        <div style="font-size:13px;font-weight:700;white-space:nowrap;color:{{ 'var(--live)' if ok else 'var(--txt3)' }}">{{ valor }}</div>
       </div>
+    {%- endmacro %}
+
+    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div class="col-h"><span>Qué incluye tu plan</span></div>
+      {{ fila('Charts', 'Acceso a los charts (acordes + letra) que creás, y su sincronización en vivo con NeuralPlay.', '✓ Incluido', true) }}
+      {{ fila('NeuralPlay', 'App reproductora de multipistas para tocar en vivo con tu banda.', ('Completo (32 salidas + MIDI)' if full else 'Básico (2 salidas, estéreo)'), true) }}
+      {{ fila('NeuralSync', 'Puente para sincronizar tu propio DAW (Logic, Ableton…) con los músicos.', ('✓ Incluido' if full else 'No incluido'), full) }}
+      {{ fila('Exportar PDF', 'Exportá tus charts a PDF para imprimir o compartir.', ('✓ Incluido' if full else 'No incluido'), full) }}
+      {{ fila('Sección MIDI', 'Mapeo y control MIDI completo en NeuralPlay (cajas, notas y faders).', ('✓ Incluido' if full else 'No incluido'), full) }}
+      {{ fila('Asientos', 'Cantidad de músicos que pueden entrar a tu organización.', p.asientos ~ ' músicos', true) }}
+      {{ fila('Almacenamiento', 'Espacio para tus canciones, pistas y los tonos que generés.', p.gb ~ ' GB', true) }}
     </div>
 
     <div style="padding-top:16px;border-top:1px solid var(--line)">

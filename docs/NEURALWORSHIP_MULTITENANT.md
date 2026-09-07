@@ -97,7 +97,9 @@ usuarios y token. Ninguna organización ve datos de otra. Marca fija = NeuralWor
 Cobro por organización. Gating de features según paquete (la app/servidor consulta el paquete de la org al iniciar sesión y habilita/deshabilita).
 
 ### Tabla de paquetes
-| | **Básico** | **Premium** | **Ministerio** |
+> Nombres visibles: **Básico** ($10), **Plus** ($20), **Premium** ($45). Claves internas en la BD: `basico`, `premium`, `ministerio` (no cambian). La **sección MIDI** y NeuralPlay completo se habilitan desde **Plus** en adelante.
+
+| | **Básico** | **Plus** | **Premium** |
 |---|---|---|---|
 | **Precio (mensual)** — LANZAMIENTO | $10/mes | $20/mes | $45/mes |
 | **Precio (anual, 2 meses gratis)** | $100/año (~$8.33/mes) | $200/año (~$16.67/mes) | $450/año (~$37.50/mes) |

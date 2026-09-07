@@ -122,7 +122,7 @@
           {% for pk in ['basico','premium','ministerio'] %}
           {% set d = conta.planes.get(pk) %}
           <tr>
-            <td>{{ pk|capitalize }} <span class="mut">(${{ '%.0f'|format(paquetes[pk].precio) }}/mes · {{ paquetes[pk].asientos }} asientos · {{ paquetes[pk].gb }} GB)</span></td>
+            <td>{{ paquetes[pk].nombre }} <span class="mut">(${{ '%.0f'|format(paquetes[pk].precio) }}/mes · {{ paquetes[pk].asientos }} asientos · {{ paquetes[pk].gb }} GB)</span></td>
             <td>{{ d.n if d else 0 }}</td>
             <td>${{ '%.2f'|format(d.sub_mes if d else 0) }}</td>
             <td>${{ '%.0f'|format((d.sub_mes if d else 0)*12) }}</td>
@@ -185,11 +185,11 @@
       <div>
         <label>Paquete</label>
         {% if o.id == 1 %}
-        <input type="text" value="Ministerio · tu organización" readonly tabindex="-1" style="opacity:.6;cursor:not-allowed;background:rgba(255,255,255,.03)">
+        <input type="text" value="{{ paquetes[o.paquete].nombre }} · tu organización" readonly tabindex="-1" style="opacity:.6;cursor:not-allowed;background:rgba(255,255,255,.03)">
         {% else %}
         <select name="paquete" onchange="aplicarPaquete(this)">
           {% for p in ['basico','premium','ministerio'] %}
-          <option value="{{ p }}" {% if o.paquete == p %}selected{% endif %}>{{ p|capitalize }}</option>
+          <option value="{{ p }}" {% if o.paquete == p %}selected{% endif %}>{{ paquetes[p].nombre }}</option>
           {% endfor %}
         </select>
         {% endif %}

@@ -2092,10 +2092,12 @@ def _uso_almacen_bytes(org_id):
 
 # Definición canónica de paquetes: precio mensual, asientos (músicos) y GB.
 # Los asientos y el almacenamiento SIEMPRE se derivan del paquete (no se editan a mano).
+# nombre = etiqueta visible; la clave interna (basico/premium/ministerio) NO cambia
+# para no romper la base de datos. midi = habilita la sección MIDI y NeuralPlay completo.
 PAQUETES = {
-    "basico":     {"precio": 10.0, "asientos": 3,  "gb": 20},
-    "premium":    {"precio": 20.0, "asientos": 5,  "gb": 50},
-    "ministerio": {"precio": 45.0, "asientos": 10, "gb": 100},
+    "basico":     {"nombre": "Básico",  "precio": 10.0, "asientos": 3,  "gb": 20,  "midi": False},
+    "premium":    {"nombre": "Plus",    "precio": 20.0, "asientos": 5,  "gb": 50,  "midi": True},
+    "ministerio": {"nombre": "Premium", "precio": 45.0, "asientos": 10, "gb": 100, "midi": True},
 }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
