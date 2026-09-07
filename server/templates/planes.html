@@ -45,9 +45,10 @@
 
   {% for pk in ['basico','premium','ministerio'] %}
   {% set p = paquetes[pk] %}
-  <div class="plan {{ 'best' if pk == 'premium' else '' }}">
+  {% set sin_plan = estado not in ('activa','prueba') %}
+  <div class="plan {{ 'best' if (pk == 'premium' and sin_plan) else '' }}">
     <div style="min-width:150px">
-      <div class="nom">{{ p.nombre }}{% if pk == 'premium' %}<span class="best-tag">Recomendado</span>{% endif %}</div>
+      <div class="nom">{{ p.nombre }}{% if pk == 'premium' and sin_plan %}<span class="best-tag">Recomendado</span>{% endif %}</div>
       <div class="price">${{ '%.0f'|format(p.precio) }}<small> /mes</small></div>
     </div>
     <div class="feats">
@@ -57,7 +58,7 @@
     </div>
     <div class="col">
       {% if actual == pk and estado in ('activa','prueba') %}
-        <span class="actual">✓ Plan actual</span>
+        <span class="actual">✓ Activo</span>
       {% elif es_operador %}
         <button class="sec" disabled style="opacity:.5;cursor:not-allowed">No disponible</button>
       {% else %}

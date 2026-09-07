@@ -460,6 +460,43 @@ def login_required(rol):
     return wrapper
 
 
+def _plan_activo(org_id):
+    """True si la organización tiene un plan activo (o es la del operador)."""
+    try:
+        if int(org_id) == OPERADOR_ORG_ID:
+            return True
+        o = usuarios.obtener_organizacion(org_id)
+        return (o or {}).get("estado_suscripcion") in ("activa", "prueba")
+    except Exception:
+        return True
+
+
+def plan_required(fn):
+    """Bloquea rutas de admin si la organización no tiene un plan activo."""
+    @wraps(fn)
+    def _w(*a, **k):
+        if not _plan_activo(org_actual()):
+            flash("Elegí un plan para acceder a esta sección.", "error")
+            return redirect(url_for("admin_planes"))
+        return fn(*a, **k)
+    return _w
+
+
+# Refuerzo server-side: cualquier ACCIÓN (POST) del panel admin queda bloqueada
+# si la organización no tiene plan activo. Se permiten las rutas de plan/perfil/login.
+_ADMIN_POST_LIBRE = ("/admin/login", "/admin/planes", "/admin/perfil", "/admin/cambiar_password")
+
+
+@app.before_request
+def _gate_admin_por_plan():
+    if (request.method == "POST" and session.get("rol") == "admin"
+            and request.path.startswith("/admin/")
+            and not request.path.startswith(_ADMIN_POST_LIBRE)):
+        if not _plan_activo(org_actual()):
+            flash("Elegí un plan para acceder a esta sección.", "error")
+            return redirect(url_for("admin_planes"))
+
+
 def get_usuario_actual():
     """Devuelve dict del usuario logueado o None.
     Si es login viejo (password compartido), devuelve un dict mínimo.
@@ -718,6 +755,13 @@ def logout():
 @app.route("/")
 @login_required("musico")
 def principal():
+    if not _plan_activo(org_actual()):
+        if session.get("rol") == "admin":
+            flash("Elegí un plan para habilitar el Modo Músico.", "error")
+            return redirect(url_for("admin_planes"))
+        session.clear()
+        flash("Tu organización no tiene un plan activo. Contactá a tu administrador.", "error")
+        return redirect(url_for("login"))
     biblioteca = cargar_biblioteca()
     biblioteca_ordenada = sorted(biblioteca.values(), key=lambda c: c["numero"])
     cfg = get_config()
@@ -868,8 +912,11 @@ def _token_ok():
     if not token:
         return False
     try:
-        if usuarios.obtener_org_por_token(token):
-            return True
+        org = usuarios.obtener_org_por_token(token)
+        if org:
+            # Solo con plan activo (o la org del operador) se sirve la API.
+            return (org.get("estado_suscripcion") in ("activa", "prueba")
+                    or int(org.get("id") or 0) == OPERADOR_ORG_ID)
     except Exception:
         pass
     return token == get_config(1).get("live_token")

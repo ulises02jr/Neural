@@ -528,9 +528,7 @@
   <div class="card sec-card" id="suscripcion">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">Suscripción</h2>
-      {% if not org_info or org_info.id != 1 %}
       <a href="{{ url_for('admin_planes') }}" style="background:var(--gold);color:#000;text-decoration:none;padding:9px 18px;border-radius:999px;font-weight:800;font-size:13px">Cambiar plan</a>
-      {% endif %}
     </div>
 
     {% set pk = org_info.paquete if org_info else 'ministerio' %}
