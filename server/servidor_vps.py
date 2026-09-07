@@ -2165,7 +2165,8 @@ def _features(paquete):
     p = PAQUETES.get(paquete, PAQUETES["basico"])
     full = bool(p.get("midi"))
     return {
-        "midi": full,               # sección MIDI (mapping / MIDI OUT)
+        "midi": full,               # sección MIDI (mapping / MIDI OUT / controlador externo)
+        "infinito": full,           # botón Reproductor Infinito (Plus+)
         "neuralsync": full,         # puente con DAW
         "export_pdf": full,         # exportar charts a PDF
         "salidas": p.get("salidas", 2),   # salidas de audio (2 estéreo en básico, 32 en Plus+)

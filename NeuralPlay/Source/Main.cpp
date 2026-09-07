@@ -1590,6 +1590,7 @@ struct AudioConfigPanel : public juce::Component
     juce::Label srLbl;
     juce::Array<double> srList;
     int numChans = 2;
+    int maxChans = 32;                              // tope de salidas segun el plan (2 en Basico)
     std::function<void (const juce::String&)> onDevice;
     std::function<void (int, int, int)> onRoute;   // fam, mode, base
     std::function<void (double)> onSampleRate;     // 0 = automático (seguir dispositivo)
@@ -1663,8 +1664,10 @@ struct AudioConfigPanel : public juce::Component
 
     void buildRouteItems (int chans)
     {
-        numChans = juce::jlimit (0, 32, chans);
-        chInfo.setText (juce::String (numChans) + juce::String::fromUTF8 (" canales disponibles"), juce::dontSendNotification);
+        numChans = juce::jlimit (0, juce::jmin (32, maxChans), chans);
+        chInfo.setText (juce::String (numChans) + juce::String::fromUTF8 (" canales disponibles")
+                        + (maxChans <= 2 ? juce::String::fromUTF8 (" \xc2\xb7 plan B\xc3\xa1sico") : juce::String()),
+                        juce::dontSendNotification);
         for (auto* c : routeBoxes)
         {
             c->clear (juce::dontSendNotification);
@@ -3263,7 +3266,8 @@ public:
 
             const int fi   = (t < kMaxTracks ? trackRouteFam[t] : 10);   // familia -> ruta de salida
             const int mode = famMode[fi];
-            const int base = famBaseCh[fi];
+            int base = famBaseCh[fi];
+            if (featSalidas <= 2 && base >= 2) base = 0;   // Basico: todo al par principal (1/2)
             float peak = 0.0f;
 
             if (mode == 2 && base >= 0 && base < useCh)            // estéreo (canal base + base+1)
@@ -3309,6 +3313,7 @@ public:
             for (int t = 0; t < resamplers.size(); ++t)
                 if (t < kMaxTracks && trackIsClick[t]) { const int fi = trackRouteFam[t]; cm = famMode[fi]; cb = famBaseCh[fi]; break; }
             if (cb < 0) { cb = 0; cm = 2; }
+            if (featSalidas <= 2 && cb >= 2) cb = 0;   // Basico: click al par principal
             float* cL = (cb >= 0 && cb < useCh) ? out[cb] : nullptr;
             float* cR = (cm == 2 && cb + 1 < useCh) ? out[cb + 1] : nullptr;
             const double twoPi = juce::MathConstants<double>::twoPi;
@@ -4111,7 +4116,10 @@ private:
         auto v = juce::JSON::parse (f.loadFileAsString());
         serverUrl   = v.getProperty ("serverUrl", "").toString();
         serverToken = v.getProperty ("token", "").toString();
-        featMidi    = (bool) v.getProperty ("feat_midi", true);
+        featMidi     = (bool) v.getProperty ("feat_midi", true);
+        featSalidas  = (int)  v.getProperty ("feat_salidas", 32);
+        featInfinito = (bool) v.getProperty ("feat_infinito", true);
+        audioCfg.maxChans = featSalidas;
         fetchPadPacks();
         loadCachedPerfiles();
         fetchPerfiles();
@@ -4130,8 +4138,7 @@ private:
             juce::MessageManager::callAsync ([sp, v]
             {
                 if (sp == nullptr) return;
-                auto fs = v.getProperty ("features", juce::var());
-                if (fs.isObject()) sp->aplicarPlanMidi ((bool) fs.getProperty ("midi", true));
+                sp->aplicarPlan (v.getProperty ("features", juce::var()));
             });
         });
     }
@@ -4147,6 +4154,8 @@ private:
         o->setProperty ("serverUrl", serverUrl);
         o->setProperty ("token", serverToken);
         o->setProperty ("feat_midi", featMidi);
+        o->setProperty ("feat_salidas", featSalidas);
+        o->setProperty ("feat_infinito", featInfinito);
         f.getParentDirectory().createDirectory();
         f.replaceWithText (juce::JSON::toString (v));
     }
@@ -4172,7 +4181,7 @@ private:
                 {
                     sp->serverUrl   = url;
                     sp->serverToken = v.getProperty ("token", "").toString();
-                    { auto fs = v.getProperty ("features", juce::var()); if (fs.isObject()) sp->aplicarPlanMidi ((bool) fs.getProperty ("midi", true)); }
+                    sp->aplicarPlan (v.getProperty ("features", juce::var()));
                     sp->guardarConfigCuenta();
                     sp->fetchPadPacks();
                     sp->fetchPerfiles();
@@ -6412,8 +6421,15 @@ private:
         repeatBtn.active = loopOnce.load(); repeatBtn.repaint();   // instantáneo, sin esperar el timer
         repaint (mapBounds);
     }
+    void avisoPlanInfinito()
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+            juce::String::fromUTF8 ("Disponible en el plan Plus"),
+            juce::String::fromUTF8 ("El Reproductor Infinito se habilita desde el plan Plus. Actualiz\xc3\xa1 tu plan para usarlo."));
+    }
     void toggleLoopInfinite()   // loop infinito de la sección actual (o de la sección de click si estamos en ella)
     {
+        if (! featInfinito && ! loopActive.load() && ! clickLoopOn.load()) { avisoPlanInfinito(); return; }   // solo bloquea al ENCENDER
         if (songHasClickSec && clickLenSec.load() > 0.0 && positionSeconds() >= totalSeconds() - 0.15)
         {   // #3 en/cerca del bloque de click, el ∞ enciende/apaga su loop (reactivable, sin saltos)
             const bool on = ! clickLoopOn.load();
@@ -6631,6 +6647,15 @@ private:
         refreshMapButtons();
         resized();
         repaint();
+    }
+    void aplicarPlan (const juce::var& fs)   // aplica TODAS las features del plan (MIDI, salidas, infinito)
+    {
+        if (! fs.isObject()) return;
+        featSalidas  = (int)  fs.getProperty ("salidas",  32);
+        featInfinito = (bool) fs.getProperty ("infinito", true);
+        audioCfg.maxChans = featSalidas;
+        audioCfg.buildRouteItems (openOutChans);   // re-limita el selector de salidas
+        aplicarPlanMidi ((bool) fs.getProperty ("midi", true));   // llama a rebuild/resized/repaint
     }
     void toggleMidiMapMode()
     {
@@ -7001,6 +7026,8 @@ private:
     juce::OwnedArray<juce::MidiInput> midiInputs;   // todas las entradas MIDI abiertas
     bool midiMapMode = false;                        // modo "MIDI Mapping"
     bool featMidi = true;                            // el plan habilita MIDI (Plus+); Basico = false
+    int  featSalidas = 32;                           // salidas de audio permitidas (2 en Basico, 32 en Plus+)
+    bool featInfinito = true;                         // boton Reproductor Infinito (Plus+); Basico = false
     bool armFader = false;                           // se armó un fader (control continuo), no un disparador
     int  armFaderIdx = -1;                           // -1=master, >=0 track, o bus por nombre en armTrack
     juce::TextButton midiMapBtn;                     // botón "MIDI Mapping" en la barra de Editar
