@@ -56,6 +56,20 @@
   .bar-fill{height:100%;background:var(--gold);border-radius:5px}
   .bar-fill.warn{background:var(--error)}
   .alerta{background:rgba(220,98,98,0.12);color:var(--error);border:1px solid rgba(220,98,98,0.3);border-radius:8px;padding:9px 12px;font-size:12px;margin-bottom:10px;font-weight:600}
+  .tabs{display:flex;gap:6px;margin-top:14px;border-bottom:1px solid var(--line)}
+  .tab{background:none;color:var(--txt2);border:none;border-bottom:2px solid transparent;border-radius:0;padding:8px 16px;font-weight:700;font-size:13px;cursor:pointer}
+  .tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+  .tabc{display:none;padding-top:12px}
+  .tabc.active{display:block}
+  table.ct{width:100%;border-collapse:collapse;font-size:13px}
+  table.ct th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3);padding:6px 8px;border-bottom:1px solid var(--line)}
+  table.ct th:nth-child(3),table.ct th:nth-child(4),table.ct td:nth-child(3),table.ct td:nth-child(4){text-align:right}
+  table.ct th:nth-child(2),table.ct td:nth-child(2){text-align:center}
+  table.ct td{padding:6px 8px;border-bottom:1px solid rgba(42,42,42,0.5);color:var(--txt2)}
+  table.ct .grp td{color:var(--txt3);text-transform:uppercase;font-size:10px;letter-spacing:1px;padding-top:14px;border:none}
+  table.ct .sub td{font-weight:700;color:var(--txt)}
+  table.ct .tot td{font-weight:800;color:var(--gold);border-top:1px solid var(--line);font-size:14px;padding-top:10px}
+  .mut{color:var(--txt3);font-size:11px}
 </style>
 </head>
 <body>
@@ -80,43 +94,66 @@
     <div class="conta-title">Contabilidad <span class="proj">· proyectado de las suscripciones activas (será real al conectar el cobro)</span></div>
 
     <div class="conta-grid">
-      <div class="cbox"><div class="k">Ingresos (MRR)</div><div class="v gold">${{ '%.2f'|format(conta.ingresos) }}</div><div class="sub2">al año ${{ '%.0f'|format(conta.ingresos*12) }}</div></div>
-      <div class="cbox"><div class="k">− Comisiones pasarela</div><div class="v neg">−${{ '%.2f'|format(conta.comisiones) }}</div><div class="sub2">2.9% + $0.30 por cobro</div></div>
-      <div class="cbox"><div class="k">− Costos de infra</div><div class="v neg">−${{ '%.2f'|format(conta.costo_infra) }}</div><div class="sub2">servidor + Spaces + dominio</div></div>
-      <div class="cbox big"><div class="k">Utilidad neta</div><div class="v pos">${{ '%.2f'|format(conta.utilidad) }}</div><div class="sub2">margen {{ '%.0f'|format(conta.margen) }}% · al año ${{ '%.0f'|format(conta.utilidad*12) }}</div></div>
+      <div class="cbox"><div class="k">Ingresos</div><div class="v gold">${{ '%.2f'|format(conta.ingresos) }}</div><div class="sub2">/mes · año ${{ '%.0f'|format(conta.ingresos*12) }}</div></div>
+      <div class="cbox"><div class="k">Egresos</div><div class="v neg">${{ '%.2f'|format(conta.egresos) }}</div><div class="sub2">/mes · año ${{ '%.0f'|format(conta.egresos*12) }}</div></div>
+      <div class="cbox big"><div class="k">Utilidad neta</div><div class="v pos">${{ '%.2f'|format(conta.utilidad) }}</div><div class="sub2">margen {{ '%.0f'|format(conta.margen) }}% · año ${{ '%.0f'|format(conta.utilidad*12) }}</div></div>
     </div>
 
-    <div class="cpanel">
-      <div class="cp-title">Ingresos por plan</div>
-      {% for pk, d in conta.por_plan.items() %}
-      <div class="crow"><span>{{ pk|capitalize }} — {{ d.n }} × ${{ '%.0f'|format(d.precio) }}/mes</span><b>${{ '%.2f'|format(d.sub) }}/mes</b></div>
-      {% else %}
-      <div class="crow"><span>Sin suscripciones activas todavía.</span></div>
-      {% endfor %}
+    <div class="tabs">
+      <button class="tab active" onclick="showTab(event,'t-ing')">Ingresos</button>
+      <button class="tab" onclick="showTab(event,'t-egr')">Egresos</button>
     </div>
 
-    <div class="cpanel">
-      <div class="cp-title">Costos de infraestructura (mensual)</div>
-      <div class="crow"><span>Servidor (droplet 1 vCPU / 1 GB)</span><b>${{ '%.2f'|format(conta.c.droplet_mes) }}</b></div>
-      <div class="crow"><span>Spaces (base: {{ conta.incluido }} GB + 1 TB transferencia)</span><b>${{ '%.2f'|format(conta.c.spaces_base_mes) }}</b></div>
-      {% if conta.spaces_extra > 0 %}<div class="crow"><span>Spaces extra ({{ '%.0f'|format(conta.gb_total - conta.incluido) }} GB × $0.02)</span><b>${{ '%.2f'|format(conta.spaces_extra) }}</b></div>{% endif %}
-      <div class="crow"><span>Dominio</span><b>${{ '%.2f'|format(conta.c.dominio_mes) }}</b></div>
-      <div class="crow"><span>Correo (Resend · plan gratis)</span><b>${{ '%.2f'|format(conta.c.email_mes) }}</b></div>
-      <div class="crow tot"><span>Total costos</span><b>${{ '%.2f'|format(conta.costo_infra) }}</b></div>
+    <!-- INGRESOS -->
+    <div id="t-ing" class="tabc active">
+      <table class="ct">
+        <thead><tr><th>Concepto</th><th>Cant.</th><th>Mensual</th><th>Anual</th></tr></thead>
+        <tbody>
+          <tr class="grp"><td colspan="4">Suscripciones por plan</td></tr>
+          {% for pk in ['basico','premium','ministerio'] %}
+          {% set d = conta.planes.get(pk) %}
+          <tr>
+            <td>{{ pk|capitalize }} <span class="mut">(${{ '%.0f'|format(paquetes[pk].precio) }}/mes · {{ paquetes[pk].asientos }} asientos · {{ paquetes[pk].gb }} GB)</span></td>
+            <td>{{ d.n if d else 0 }}</td>
+            <td>${{ '%.2f'|format(d.sub_mes if d else 0) }}</td>
+            <td>${{ '%.0f'|format((d.sub_mes if d else 0)*12) }}</td>
+          </tr>
+          {% endfor %}
+          <tr class="sub"><td>Subtotal suscripciones</td><td></td><td>${{ '%.2f'|format(conta.ing_susc) }}</td><td>${{ '%.0f'|format(conta.ing_susc*12) }}</td></tr>
+          <tr class="grp"><td colspan="4">Amenidades / add-ons</td></tr>
+          <tr><td>Asientos extra <span class="mut">($2 c/u)</span></td><td>{{ conta.addon_asientos_n }}</td><td>${{ '%.2f'|format(conta.ing_asientos) }}</td><td>${{ '%.0f'|format(conta.ing_asientos*12) }}</td></tr>
+          <tr><td>Bloques +25 GB <span class="mut">($5 c/u)</span></td><td>{{ conta.addon_gb_bloques }}</td><td>${{ '%.2f'|format(conta.ing_gb) }}</td><td>${{ '%.0f'|format(conta.ing_gb*12) }}</td></tr>
+          <tr class="sub"><td>Subtotal add-ons</td><td></td><td>${{ '%.2f'|format(conta.ing_addons) }}</td><td>${{ '%.0f'|format(conta.ing_addons*12) }}</td></tr>
+          <tr class="tot"><td>TOTAL INGRESOS</td><td></td><td>${{ '%.2f'|format(conta.ingresos) }}</td><td>${{ '%.0f'|format(conta.ingresos*12) }}</td></tr>
+        </tbody>
+      </table>
     </div>
 
-    <div class="cpanel">
-      <div class="cp-title">Capacidad de almacenamiento</div>
-      {% if conta.alerta_spaces %}
-      <div class="alerta">⚠️ Necesitás ampliar: estás al {{ '%.0f'|format(conta.pct_spaces) }}% del almacenamiento incluido en Spaces. Cada GB extra cuesta $0.02/mes — considerá aumentar el plan de Spaces en DigitalOcean.</div>
-      {% endif %}
-      <div class="crow"><span>Spaces (audio): {{ '%.1f'|format(conta.gb_total) }} GB de {{ conta.incluido }} GB incluidos</span><b>{{ '%.0f'|format(conta.pct_spaces) }}%</b></div>
-      <div class="bar"><div class="bar-fill {{ 'warn' if conta.alerta_spaces else '' }}" style="width:{{ [conta.pct_spaces, 100]|min }}%"></div></div>
-      {% if conta.alerta_disco %}
-      <div class="alerta" style="margin-top:10px">⚠️ Disco del servidor al {{ '%.0f'|format(conta.disco_pct) }}%. Agrandá el droplet en DigitalOcean.</div>
-      {% endif %}
-      <div class="crow" style="margin-top:10px"><span>Disco del servidor (metadata): {{ '%.1f'|format(conta.disco_usado) }} GB de {{ '%.0f'|format(conta.disco_total) }} GB</span><b>{{ '%.0f'|format(conta.disco_pct) }}%</b></div>
-      <div class="bar"><div class="bar-fill {{ 'warn' if conta.alerta_disco else '' }}" style="width:{{ [conta.disco_pct, 100]|min }}%"></div></div>
+    <!-- EGRESOS -->
+    <div id="t-egr" class="tabc">
+      <table class="ct">
+        <thead><tr><th>Concepto</th><th></th><th>Mensual</th><th>Anual</th></tr></thead>
+        <tbody>
+          {% for e in conta.egresos_items %}
+          <tr><td>{{ e.label }} <span class="mut">{{ e.det }}</span></td><td></td><td>${{ '%.2f'|format(e.mes) }}</td><td>${{ '%.0f'|format(e.mes*12) }}</td></tr>
+          {% endfor %}
+          <tr class="tot"><td>TOTAL EGRESOS</td><td></td><td>${{ '%.2f'|format(conta.egresos) }}</td><td>${{ '%.0f'|format(conta.egresos*12) }}</td></tr>
+        </tbody>
+      </table>
+
+      <div class="cpanel">
+        <div class="cp-title">Capacidad de almacenamiento</div>
+        {% if conta.alerta_spaces %}
+        <div class="alerta">⚠️ Necesitás ampliar: estás al {{ '%.0f'|format(conta.pct_spaces) }}% del almacenamiento incluido en Spaces. Cada GB extra cuesta $0.02/mes — aumentá el plan de Spaces en DigitalOcean.</div>
+        {% endif %}
+        <div class="crow"><span>Spaces (audio): {{ '%.1f'|format(conta.gb_total) }} GB de {{ conta.incluido }} GB incluidos</span><b>{{ '%.0f'|format(conta.pct_spaces) }}%</b></div>
+        <div class="bar"><div class="bar-fill {{ 'warn' if conta.alerta_spaces else '' }}" style="width:{{ [conta.pct_spaces, 100]|min }}%"></div></div>
+        {% if conta.alerta_disco %}
+        <div class="alerta" style="margin-top:10px">⚠️ Disco del servidor al {{ '%.0f'|format(conta.disco_pct) }}%. Agrandá el droplet en DigitalOcean.</div>
+        {% endif %}
+        <div class="crow" style="margin-top:10px"><span>Disco del servidor (metadata): {{ '%.1f'|format(conta.disco_usado) }} GB de {{ '%.0f'|format(conta.disco_total) }} GB</span><b>{{ '%.0f'|format(conta.disco_pct) }}%</b></div>
+        <div class="bar"><div class="bar-fill {{ 'warn' if conta.alerta_disco else '' }}" style="width:{{ [conta.disco_pct, 100]|min }}%"></div></div>
+      </div>
     </div>
   </div>
 
@@ -159,6 +196,12 @@
   </div>
   {% endfor %}
 <script>
+  function showTab(ev, id){
+    document.querySelectorAll('.tabc').forEach(function(t){ t.classList.remove('active'); });
+    document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+    document.getElementById(id).classList.add('active');
+    ev.currentTarget.classList.add('active');
+  }
   var PAQUETES = {{ paquetes|tojson }};
   function aplicarPaquete(sel){
     var form = sel.closest('form');

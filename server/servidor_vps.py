@@ -1429,6 +1429,7 @@ def admin():
         usuarios_pendientes=usuarios.listar_usuarios(estado="pendiente", org_id=org_actual()),
         usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo", org_id=org_actual()) if u.get("rol") != "admin"],
         org_info=usuarios.obtener_organizacion(org_actual()),
+        paquetes=PAQUETES,
         musicos_activos_n=usuarios.contar_musicos_activos(org_actual()),
         invitaciones_pendientes=usuarios.listar_invitaciones(org_actual(), "pendiente"),
         es_super=es_super_admin(),
@@ -2098,7 +2099,7 @@ PAQUETES = {
 }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
-# Modelo de costos de infraestructura (editable). Sirve para la contabilidad.
+# Modelo de costos/precios (editable). Sirve para la contabilidad.
 COSTOS_INFRA = {
     "droplet_mes": 6.0,          # DigitalOcean droplet 1vCPU/1GB/24GB
     "spaces_base_mes": 5.0,      # incluye 250 GB almacenamiento + 1 TB transferencia
@@ -2106,27 +2107,46 @@ COSTOS_INFRA = {
     "spaces_extra_gb_mes": 0.02, # por GB sobre lo incluido
     "dominio_mes": 1.0,          # ~$12/año
     "email_mes": 0.0,            # Resend (plan gratis por ahora)
+    "claude_pro_mes": 20.0,      # Claude Pro
     "comision_pct": 0.029,       # comisión pasarela 2.9%
     "comision_fija": 0.30,       # + $0.30 por transacción
     "alerta_almacen_pct": 80,    # aviso "ampliar" al llegar a este % de capacidad
+    # Precios de venta de add-ons (amenidades extra)
+    "addon_asiento_mes": 2.0,    # asiento (músico) extra sobre el plan
+    "addon_gb_bloque_mes": 5.0,  # bloque de +25 GB
+    "addon_gb_bloque": 25,       # tamaño del bloque de GB
 }
 
 
 def _contabilidad(filas):
-    """Calcula la contabilidad del negocio a partir de las orgs y el modelo de costos.
-    Ingresos/comisiones son PROYECTADOS de las suscripciones activas (hasta conectar el cobro)."""
+    """Contabilidad del negocio: ingresos (suscripciones + add-ons) y egresos
+    (comisiones + infra), con totales mensuales y anuales. Ingresos son PROYECTADOS
+    de las suscripciones activas hasta conectar el cobro."""
     C = COSTOS_INFRA
     activas = [o for o in filas if (o.get("estado_suscripcion") or "activa") in ("activa", "prueba")]
-    por_plan, ingresos, comisiones = {}, 0.0, 0.0
+
+    # ───── INGRESOS ─────
+    planes, ing_susc, comisiones = {}, 0.0, 0.0
+    addon_asientos_n, addon_gb_bloques = 0, 0
     for o in activas:
         pk = o.get("paquete")
-        precio = PAQUETES.get(pk, {}).get("precio", 0.0)
-        ingresos += precio
+        base = PAQUETES.get(pk, {})
+        precio = base.get("precio", 0.0)
+        ing_susc += precio
         comisiones += precio * C["comision_pct"] + C["comision_fija"]
-        d = por_plan.setdefault(pk, {"n": 0, "precio": precio, "sub": 0.0})
+        d = planes.setdefault(pk, {"n": 0, "precio": precio, "sub_mes": 0.0})
         d["n"] += 1
-        d["sub"] += precio
-    # Almacenamiento real en Spaces (todas las orgs)
+        d["sub_mes"] += precio
+        # add-ons: asientos y GB contratados por encima del plan base
+        addon_asientos_n += max(0, int(o.get("max_musicos") or 0) - base.get("asientos", 0))
+        extra_gb = max(0, int(o.get("almacen_gb") or 0) - base.get("gb", 0))
+        addon_gb_bloques += extra_gb // C["addon_gb_bloque"]
+    ing_asientos = addon_asientos_n * C["addon_asiento_mes"]
+    ing_gb = addon_gb_bloques * C["addon_gb_bloque_mes"]
+    ing_addons = ing_asientos + ing_gb
+    ingresos = ing_susc + ing_addons
+
+    # ───── ALMACENAMIENTO (para Spaces y avisos) ─────
     gb_total = 0.0
     try:
         if almacen.habilitado():
@@ -2137,9 +2157,21 @@ def _contabilidad(filas):
     incluido = C["spaces_incluido_gb"]
     spaces_extra = max(0.0, gb_total - incluido) * C["spaces_extra_gb_mes"]
     costo_spaces = C["spaces_base_mes"] + spaces_extra
-    costo_infra = C["droplet_mes"] + costo_spaces + C["dominio_mes"] + C["email_mes"]
-    utilidad = ingresos - comisiones - costo_infra
+
+    # ───── EGRESOS ─────
+    egresos_items = [
+        {"label": "Comisiones de pasarela", "mes": comisiones, "det": "2.9% + $0.30 por cobro"},
+        {"label": "Servidor (droplet 1 vCPU / 1 GB)", "mes": C["droplet_mes"], "det": "DigitalOcean"},
+        {"label": "Spaces (audio)", "mes": costo_spaces,
+         "det": "base %d GB + 1 TB%s" % (incluido, (" · +$%.2f extra" % spaces_extra) if spaces_extra > 0 else "")},
+        {"label": "Dominio", "mes": C["dominio_mes"], "det": "neuralworship.com"},
+        {"label": "Correo (Resend)", "mes": C["email_mes"], "det": "plan gratis"},
+        {"label": "Claude Pro", "mes": C["claude_pro_mes"], "det": "herramienta de desarrollo"},
+    ]
+    egresos = sum(i["mes"] for i in egresos_items)
+    utilidad = ingresos - egresos
     margen = (utilidad / ingresos * 100) if ingresos > 0 else 0.0
+
     pct_spaces = (gb_total / incluido * 100) if incluido else 0.0
     try:
         import shutil as _sh
@@ -2148,10 +2180,19 @@ def _contabilidad(filas):
         disco_usado, disco_total = du.used / (1024 ** 3), du.total / (1024 ** 3)
     except Exception:
         disco_pct = disco_usado = disco_total = 0
+
     return {
-        "por_plan": por_plan, "ingresos": ingresos, "comisiones": comisiones,
-        "costo_spaces": costo_spaces, "spaces_extra": spaces_extra, "costo_infra": costo_infra,
+        # ingresos
+        "planes": planes, "ing_susc": ing_susc, "ing_addons": ing_addons,
+        "ing_asientos": ing_asientos, "ing_gb": ing_gb,
+        "addon_asientos_n": addon_asientos_n, "addon_gb_bloques": addon_gb_bloques,
+        "ingresos": ingresos,
+        # egresos
+        "comisiones": comisiones, "costo_spaces": costo_spaces, "spaces_extra": spaces_extra,
+        "egresos_items": egresos_items, "egresos": egresos,
+        # resultado
         "utilidad": utilidad, "margen": margen,
+        # almacenamiento
         "gb_total": gb_total, "incluido": incluido, "pct_spaces": pct_spaces,
         "disco_pct": disco_pct, "disco_usado": disco_usado, "disco_total": disco_total,
         "alerta_pct": C["alerta_almacen_pct"],

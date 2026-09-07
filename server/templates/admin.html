@@ -518,31 +518,32 @@
   <div class="card sec-card" id="suscripcion">
     <h2>Suscripción</h2>
 
+    {% set pk = org_info.paquete if org_info else 'ministerio' %}
+    {% set p = paquetes.get(pk, {}) %}
     <div style="margin-bottom:18px">
-      <div class="col-h"><span>Plan actual</span></div>
-      <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
+      <div class="col-h"><span>Tu plan</span></div>
+      <div style="display:flex;align-items:center;gap:14px;padding:16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
         <div style="flex:1">
-          <div style="font-size:20px;font-weight:700;color:var(--gold)">$6.00 <span style="font-size:13px;color:var(--txt2);font-weight:500">/ mes</span></div>
-          <div style="font-size:13px;color:var(--txt2);margin-top:3px">1 vCPU &middot; 1 GB RAM &middot; 25 GB SSD &middot; 1000 GB de transferencia</div>
+          <div style="font-size:22px;font-weight:800;color:var(--gold)">{{ pk|capitalize }}</div>
+          <div style="font-size:14px;color:var(--txt);margin-top:2px">${{ '%.0f'|format(p.precio) }} <span style="font-size:12px;color:var(--txt2)">/ mes</span></div>
+          <div style="font-size:13px;color:var(--txt2);margin-top:4px">{{ p.asientos }} asientos de músico &middot; {{ p.gb }} GB de almacenamiento</div>
         </div>
-        <span style="background:rgba(134,179,106,0.15);color:var(--live);padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap">&#9679; Activo</span>
+        <span style="background:rgba(134,179,106,0.15);color:var(--live);padding:3px 10px;border-radius:6px;font-size:11px;font-weight:600;white-space:nowrap">&#9679; {{ (org_info.estado_suscripcion or 'activa')|capitalize }}</span>
       </div>
     </div>
 
     <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
-      <div class="col-h"><span>Servidor (Droplet)</span></div>
+      <div class="col-h"><span>Tu plan incluye</span></div>
       <div class="lista">
-        <div class="item"><div class="info"><div class="nm">Nombre</div><div class="ar">MIWorship-s-1vcpu-1gb-nyc1</div></div></div>
-        <div class="item"><div class="info"><div class="nm">Proveedor</div><div class="ar">DigitalOcean &middot; NYC1</div></div></div>
-        <div class="item"><div class="info"><div class="nm">Sistema</div><div class="ar">Linux &middot; Ubuntu 24.04 LTS</div></div></div>
-        <div class="item"><div class="info"><div class="nm">IP para acceder al servidor</div><div class="ar" style="font-family:ui-monospace,Menlo,monospace;color:var(--gold)">64.227.10.28</div></div></div>
-        <div class="item"><div class="info"><div class="nm">IP privada</div><div class="ar" style="font-family:ui-monospace,Menlo,monospace">10.116.0.2</div></div></div>
+        <div class="item"><div class="info"><div class="nm">Charts + Setlists + Pads</div><div class="ar">✓ Incluido</div></div></div>
+        <div class="item"><div class="info"><div class="nm">NeuralPlay</div><div class="ar">{{ 'Premium (32 salidas + MIDI)' if pk != 'basico' else 'Basic (2 salidas, estéreo)' }}</div></div></div>
+        <div class="item"><div class="info"><div class="nm">NeuralSync (puente DAW)</div><div class="ar">{{ '✓ Incluido' if pk != 'basico' else '—' }}</div></div></div>
+        <div class="item"><div class="info"><div class="nm">Exportar PDF de charts</div><div class="ar">{{ '✓ Incluido' if pk != 'basico' else '—' }}</div></div></div>
       </div>
     </div>
 
     <div style="padding-top:16px;border-top:1px solid var(--line)">
-      <a href="https://cloud.digitalocean.com/droplets" target="_blank" rel="noopener" style="display:inline-block;background:var(--gold);color:#000;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:700;font-size:14px">Gestionar suscripción &#8599;</a>
-      <p class="help" style="margin-top:10px">La suscripción y el tamaño del servidor se editan directamente en DigitalOcean.</p>
+      <p class="help">Tu plan se elige al contratar la suscripción. Para cambiarlo o gestionar tu pago, escribinos a soporte.</p>
     </div>
   </div>
 
