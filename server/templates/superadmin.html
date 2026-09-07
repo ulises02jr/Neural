@@ -37,7 +37,10 @@
   .use{font-size:12px}
   .use b{color:var(--txt)}
   .conta{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:22px}
-  .conta-title{font-size:15px;font-weight:800;margin-bottom:14px}
+  .conta-title{font-size:15px;font-weight:800;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .persel{display:inline-flex;gap:4px}
+  .psel{background:var(--raised);color:var(--txt2);border:1px solid var(--line);border-radius:6px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer}
+  .psel.active{background:var(--gold);color:#000;border-color:var(--gold)}
   .conta-title .proj{font-size:11px;font-weight:500;color:var(--txt3)}
   .conta-grid{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px}
   .cbox{flex:1;min-width:150px;background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
@@ -91,12 +94,18 @@
 
   <!-- ══════════ CONTABILIDAD ══════════ -->
   <div class="conta">
-    <div class="conta-title">Contabilidad <span class="proj">· proyectado de las suscripciones activas (será real al conectar el cobro)</span></div>
+    <div class="conta-title">
+      <span>Contabilidad <span class="proj">· proyectado de las suscripciones activas (será real al conectar el cobro)</span></span>
+      <span class="persel">
+        <button type="button" class="psel active" onclick="setPeriodo(event,'mes')">Mes</button>
+        <button type="button" class="psel" onclick="setPeriodo(event,'anio')">Año</button>
+      </span>
+    </div>
 
     <div class="conta-grid">
-      <div class="cbox"><div class="k">Ingresos</div><div class="v gold">${{ '%.2f'|format(conta.ingresos) }}</div><div class="sub2">/mes · año ${{ '%.0f'|format(conta.ingresos*12) }}</div></div>
-      <div class="cbox"><div class="k">Egresos</div><div class="v neg">${{ '%.2f'|format(conta.egresos) }}</div><div class="sub2">/mes · año ${{ '%.0f'|format(conta.egresos*12) }}</div></div>
-      <div class="cbox big"><div class="k">Utilidad neta</div><div class="v pos">${{ '%.2f'|format(conta.utilidad) }}</div><div class="sub2">margen {{ '%.0f'|format(conta.margen) }}% · año ${{ '%.0f'|format(conta.utilidad*12) }}</div></div>
+      <div class="cbox"><div class="k">Ingresos</div><div class="v gold pv" data-mes="{{ '%.2f'|format(conta.ingresos) }}" data-anio="{{ '%.2f'|format(conta.ingresos*12) }}">${{ '%.2f'|format(conta.ingresos) }}</div><div class="sub2 per">por mes</div></div>
+      <div class="cbox"><div class="k">Egresos</div><div class="v neg pv" data-mes="{{ '%.2f'|format(conta.egresos) }}" data-anio="{{ '%.2f'|format(conta.egresos*12) }}">${{ '%.2f'|format(conta.egresos) }}</div><div class="sub2 per">por mes</div></div>
+      <div class="cbox big"><div class="k">Utilidad neta</div><div class="v pos pv" data-mes="{{ '%.2f'|format(conta.utilidad) }}" data-anio="{{ '%.2f'|format(conta.utilidad*12) }}">${{ '%.2f'|format(conta.utilidad) }}</div><div class="sub2"><span class="per">por mes</span> · margen {{ '%.0f'|format(conta.margen) }}%</div></div>
     </div>
 
     <div class="tabs">
@@ -175,11 +184,15 @@
       <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <div>
         <label>Paquete</label>
+        {% if o.id == 1 %}
+        <input type="text" value="Ministerio · tu organización" readonly tabindex="-1" style="opacity:.6;cursor:not-allowed;background:rgba(255,255,255,.03)">
+        {% else %}
         <select name="paquete" onchange="aplicarPaquete(this)">
           {% for p in ['basico','premium','ministerio'] %}
           <option value="{{ p }}" {% if o.paquete == p %}selected{% endif %}>{{ p|capitalize }}</option>
           {% endfor %}
         </select>
+        {% endif %}
       </div>
       <div><label>Asientos <span style="opacity:.5;font-size:11px">(según paquete)</span></label><input type="number" class="f-asientos" value="{{ o.max_musicos }}" readonly tabindex="-1" style="opacity:.55;cursor:not-allowed;background:rgba(255,255,255,.03)"></div>
       <div><label>GB <span style="opacity:.5;font-size:11px">(según paquete)</span></label><input type="number" class="f-gb" value="{{ o.almacen_gb }}" readonly tabindex="-1" style="opacity:.55;cursor:not-allowed;background:rgba(255,255,255,.03)"></div>
@@ -201,6 +214,14 @@
     document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
     document.getElementById(id).classList.add('active');
     ev.currentTarget.classList.add('active');
+  }
+  function setPeriodo(ev, modo){
+    document.querySelectorAll('.psel').forEach(function(b){ b.classList.remove('active'); });
+    ev.currentTarget.classList.add('active');
+    document.querySelectorAll('.cbox .pv').forEach(function(v){
+      v.textContent = '$' + (modo === 'anio' ? v.dataset.anio : v.dataset.mes);
+    });
+    document.querySelectorAll('.per').forEach(function(s){ s.textContent = (modo === 'anio' ? 'por año' : 'por mes'); });
   }
   var PAQUETES = {{ paquetes|tojson }};
   function aplicarPaquete(sel){

@@ -2099,6 +2099,10 @@ PAQUETES = {
 }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
+# La organización del operador (dueño del negocio): es propia, no se factura
+# ni entra en la contabilidad de ingresos, y su plan queda fijo en ministerio.
+OPERADOR_ORG_ID = 1
+
 # Modelo de costos/precios (editable). Sirve para la contabilidad.
 COSTOS_INFRA = {
     "droplet_mes": 6.0,          # DigitalOcean droplet 1vCPU/1GB/24GB
@@ -2123,7 +2127,10 @@ def _contabilidad(filas):
     (comisiones + infra), con totales mensuales y anuales. Ingresos son PROYECTADOS
     de las suscripciones activas hasta conectar el cobro."""
     C = COSTOS_INFRA
-    activas = [o for o in filas if (o.get("estado_suscripcion") or "activa") in ("activa", "prueba")]
+    # Solo orgs que pagan: activas/prueba y que NO sean la del operador.
+    activas = [o for o in filas
+               if (o.get("estado_suscripcion") or "activa") in ("activa", "prueba")
+               and int(o.get("id") or 0) != OPERADOR_ORG_ID]
 
     # ───── INGRESOS ─────
     planes, ing_susc, comisiones = {}, 0.0, 0.0
@@ -2212,7 +2219,7 @@ def superadmin():
         owner = usuarios.buscar_por_id(o.get("owner_user_id")) if o.get("owner_user_id") else None
         gb = round(_uso_almacen_bytes(o["id"]) / (1024 ** 3), 2)
         estado = o.get("estado_suscripcion") or "activa"
-        if estado in ("activa", "prueba"):
+        if estado in ("activa", "prueba") and int(o.get("id") or 0) != OPERADOR_ORG_ID:
             total_mrr += _PRECIOS_MRR.get(o.get("paquete"), 0.0)
         filas.append({**o,
                       "owner_email": owner["email"] if owner else "—",
@@ -2233,6 +2240,9 @@ def superadmin_org_actualizar(org_id):
         except Exception:
             return None
     paquete = request.form.get("paquete") or None
+    # La org del operador queda fija en ministerio (no se cambia).
+    if int(org_id) == OPERADOR_ORG_ID:
+        paquete = "ministerio"
     # Asientos y GB NO se editan a mano: se derivan del paquete elegido.
     max_musicos = almacen_gb = None
     if paquete and paquete in PAQUETES:
