@@ -95,10 +95,11 @@ class Api {
     }
   }
 
-  /// URL de la portada de una cancion (si tiene).
-  String portadaUrl(String portada) {
-    if (portada.isEmpty) return '';
+  /// URL de la portada de una cancion. La web la sirve como /static/<portada>.
+  /// [ts] es portada_ts para cache-busting. Si no hay portada, devuelve el logo.
+  String portadaUrl(String portada, {int? ts}) {
+    if (portada.isEmpty) return '$baseUrl/static/logo.png';
     if (portada.startsWith('http')) return portada;
-    return '$baseUrl/static/portadas/$portada';
+    return '$baseUrl/static/$portada?v=${ts ?? 0}';
   }
 }

@@ -14,7 +14,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _email = TextEditingController();
   final _pass = TextEditingController();
   bool _cargando = false;
-  bool _verPass = false;
   String? _error;
 
   Future<void> _entrar() async {
@@ -42,72 +41,112 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Widget _label(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(t,
+            style: const TextStyle(
+                fontSize: 11,
+                color: NW.txt2,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 1.2)),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(28),
+          padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 380),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Icon(Icons.graphic_eq, size: 56, color: NW.gold),
-                const SizedBox(height: 16),
-                const Text('Neural Worship',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: NW.txt)),
-                const SizedBox(height: 4),
-                const Text('Acceso de musicos',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13, color: NW.txt3)),
-                const SizedBox(height: 30),
-                TextField(
-                  controller: _email,
-                  keyboardType: TextInputType.emailAddress,
-                  autocorrect: false,
-                  decoration: const InputDecoration(hintText: 'Email'),
-                  textInputAction: TextInputAction.next,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _pass,
-                  obscureText: !_verPass,
-                  decoration: InputDecoration(
-                    hintText: 'Contrasena',
-                    suffixIcon: IconButton(
-                      icon: Icon(_verPass ? Icons.visibility_off : Icons.visibility,
-                          color: NW.txt3, size: 20),
-                      onPressed: () => setState(() => _verPass = !_verPass),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(28, 36, 28, 28),
+              decoration: BoxDecoration(
+                color: NW.surface,
+                border: Border.all(color: NW.line),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Logo circular (como la web). Si no carga, muestra un icono.
+                  Center(
+                    child: Container(
+                      width: 90,
+                      height: 90,
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Image.network(
+                        '${Api.baseUrl}/static/logo.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.graphic_eq, color: Colors.black, size: 40),
+                      ),
                     ),
                   ),
-                  onSubmitted: (_) => _entrar(),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 14),
-                  Text(_error!,
+                  const SizedBox(height: 18),
+                  const Text('Neural Worship',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: NW.live, fontSize: 13)),
-                ],
-                const SizedBox(height: 22),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: NW.gold,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 15),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: 0.3)),
+                  const SizedBox(height: 4),
+                  const Text('Acceso de musicos',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: NW.txt2)),
+                  const SizedBox(height: 28),
+                  if (_error != null) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: const Color(0x1FDC6262),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0x40DC6262)),
+                      ),
+                      child: Text(_error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: NW.error, fontSize: 13)),
+                    ),
+                  ],
+                  _label('EMAIL'),
+                  TextField(
+                    controller: _email,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    textInputAction: TextInputAction.next,
                   ),
-                  onPressed: _cargando ? null : _entrar,
-                  child: _cargando
-                      ? const SizedBox(
-                          height: 20, width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                      : const Text('Entrar',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  _label('CONTRASEÑA'),
+                  TextField(
+                    controller: _pass,
+                    obscureText: true,
+                    onSubmitted: (_) => _entrar(),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: _cargando ? null : _entrar,
+                    child: _cargando
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                        : const Text('Ingresar',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14, letterSpacing: 0.3)),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

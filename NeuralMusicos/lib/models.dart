@@ -7,6 +7,7 @@ class Song {
   final String tono;
   final String compas;
   final String portada;
+  final int portadaTs;
   final int? tempo;
 
   Song({
@@ -16,6 +17,7 @@ class Song {
     required this.tono,
     required this.compas,
     required this.portada,
+    required this.portadaTs,
     this.tempo,
   });
 
@@ -28,6 +30,7 @@ class Song {
       tono: (j['tono'] ?? '').toString(),
       compas: (j['compas'] ?? '').toString(),
       portada: (j['portada'] ?? '').toString(),
+      portadaTs: (j['portada_ts'] is num) ? (j['portada_ts'] as num).toInt() : 0,
       tempo: (j['tempo'] == null) ? null : parseTempo(j['tempo']),
     );
   }

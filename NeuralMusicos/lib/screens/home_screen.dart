@@ -67,9 +67,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  void _abrir(int numero, int sem, String tonoNombre) {
+  void _abrir(Song s, int sem) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ChartScreen(numero: numero, semInicial: sem, tonoNombre: tonoNombre),
+      builder: (_) => ChartScreen(
+        numero: s.id,
+        semInicial: sem,
+        tonoBase: s.tono,
+      ),
     ));
   }
 
@@ -85,7 +89,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             if (Api.I.nombre.isNotEmpty)
               Text('Bienvenido ${Api.I.nombre}',
-                  style: const TextStyle(fontSize: 11, color: NW.txt3, fontWeight: FontWeight.normal)),
+                  style: const TextStyle(
+                      fontSize: 11, color: NW.txt3, fontWeight: FontWeight.normal)),
           ],
         ),
         actions: [
@@ -101,8 +106,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           labelColor: NW.txt,
           unselectedLabelColor: NW.txt3,
           tabs: [
+            Tab(text: 'Repertorios (${_setlists.length})'),
             Tab(text: 'Biblioteca (${_songs.length})'),
-            Tab(text: 'Setlists (${_setlists.length})'),
           ],
         ),
       ),
@@ -112,7 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ? _errorView()
               : TabBarView(
                   controller: _tabs,
-                  children: [_bibliotecaTab(), _setlistsTab()],
+                  children: [_setlistsTab(), _bibliotecaTab()],
                 ),
     );
   }
@@ -142,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
           child: TextField(
             decoration: const InputDecoration(
-              hintText: 'Buscar cancion o artista',
+              hintText: 'Buscar por título o artista...',
               prefixIcon: Icon(Icons.search, color: NW.txt3, size: 20),
               isDense: true,
             ),
@@ -157,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ? ListView(children: const [
                     Padding(
                       padding: EdgeInsets.all(40),
-                      child: Text('Sin resultados',
+                      child: Text('No se encontraron canciones',
                           textAlign: TextAlign.center, style: TextStyle(color: NW.txt3)),
                     )
                   ])
@@ -165,7 +170,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     padding: const EdgeInsets.fromLTRB(14, 4, 14, 20),
                     itemCount: lista.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 7),
-                    itemBuilder: (_, i) => _songTile(lista[i], lista[i].tono, 0),
+                    itemBuilder: (_, i) {
+                      final s = lista[i];
+                      return _songTile(
+                        song: s,
+                        numLabel: '#${s.id}',
+                        tonoText: s.tono,
+                        sem: 0,
+                      );
+                    },
                   ),
           ),
         ),
@@ -175,8 +188,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   Widget _setlistsTab() {
     if (_setlists.isEmpty) {
-      return const Center(
-        child: Text('No hay setlists todavia', style: TextStyle(color: NW.txt3)),
+      return RefreshIndicator(
+        color: NW.gold,
+        onRefresh: _cargar,
+        child: ListView(children: const [
+          Padding(
+            padding: EdgeInsets.all(40),
+            child: Text('No hay setlist armado para hoy',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: NW.txt3, fontStyle: FontStyle.italic)),
+          )
+        ]),
       );
     }
     return RefreshIndicator(
@@ -204,17 +226,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     Text(sl.nombre.isEmpty ? 'Setlist' : sl.nombre,
                         style: const TextStyle(fontWeight: FontWeight.w600, color: NW.txt)),
                     if (sl.fecha.isNotEmpty)
-                      Text(sl.fecha,
-                          style: const TextStyle(fontSize: 11, color: NW.txt2, fontFamily: NW.mono)),
+                      Text('📅 ${sl.fecha}',
+                          style: const TextStyle(
+                              fontSize: 11, color: NW.txt2, fontFamily: NW.mono)),
                   ],
                 ),
               ),
-              ...sl.canciones.map((it) {
+              ...sl.canciones.asMap().entries.map((e) {
+                final it = e.value;
                 final song = _porId[it.id];
                 if (song == null) return const SizedBox.shrink();
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 7),
-                  child: _songTile(song, it.tonoNombre, it.tonoSemitonos),
+                  child: _songTile(
+                    song: song,
+                    numLabel: '${e.key + 1}',
+                    tonoText: it.tonoNombre,
+                    sem: it.tonoSemitonos,
+                    setlist: true,
+                  ),
                 );
               }),
               const SizedBox(height: 12),
@@ -225,57 +255,95 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _songTile(Song s, String tonoMostrar, int sem) {
+  Widget _songTile({
+    required Song song,
+    required String numLabel,
+    required String tonoText,
+    required int sem,
+    bool setlist = false,
+  }) {
     return Material(
-      color: NW.surface,
+      color: setlist ? const Color(0xFF161616) : NW.surface,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: () => _abrir(s.id, sem, tonoMostrar),
+        onTap: () => _abrir(song, sem),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
           decoration: BoxDecoration(
-            border: Border.all(color: NW.line),
+            border: Border.all(color: setlist ? const Color(0xFF333333) : NW.line),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             children: [
-              SizedBox(
-                width: 28,
-                child: Text('${s.id}',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(color: NW.txt3, fontFamily: NW.mono, fontSize: 13)),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  Api.I.portadaUrl(song.portada, ts: song.portadaTs),
+                  width: 38,
+                  height: 38,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 38,
+                    height: 38,
+                    color: NW.raised,
+                    child: const Icon(Icons.music_note, size: 18, color: NW.txt3),
+                  ),
+                ),
               ),
               const SizedBox(width: 12),
+              SizedBox(
+                width: 30,
+                child: Text(numLabel,
+                    style: TextStyle(
+                        color: setlist ? NW.gold : NW.txt3,
+                        fontFamily: NW.mono,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500)),
+              ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(s.titulo,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: NW.txt)),
-                    if (s.artista.isNotEmpty)
-                      Text(s.artista,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, color: NW.txt2)),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(song.titulo,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600, color: NW.txt)),
+                        ),
+                        if (tonoText.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: NW.goldSoft,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(tonoText,
+                                style: const TextStyle(
+                                    color: NW.gold,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    fontFamily: NW.mono)),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (song.artista.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(song.artista,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12, color: NW.txt2)),
+                      ),
                   ],
                 ),
               ),
-              if (tonoMostrar.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: NW.goldSoft,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(tonoMostrar,
-                      style: const TextStyle(
-                          color: NW.gold, fontWeight: FontWeight.bold, fontSize: 13, fontFamily: NW.mono)),
-                ),
-              const Icon(Icons.chevron_right, color: NW.txt3),
+              const Text('›', style: TextStyle(color: NW.txt3, fontSize: 22)),
             ],
           ),
         ),

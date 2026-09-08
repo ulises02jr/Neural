@@ -12,6 +12,12 @@ class NW {
   static const gold    = Color(0xFFC9A96E);
   static const goldSoft= Color(0xFF2A2418);
   static const live    = Color(0xFFFF3B50);
+  static const error   = Color(0xFFDC6262);
+  static const success = Color(0xFF86B36A);
+  // El visor de charts usa un acento gris-plata para los acordes (igual que la web).
+  static const chord     = Color(0xFF9CA3AF);
+  static const chordSoft = Color(0x299CA3AF); // rgba(156,163,175,0.16)
+  static const chipBorder= Color(0xFF3D3422);
 
   static ThemeData theme() {
     final base = ThemeData.dark(useMaterial3: true);
