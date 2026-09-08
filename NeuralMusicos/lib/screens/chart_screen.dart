@@ -5,10 +5,20 @@ import '../models.dart';
 
 const _nombres = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
+/// Opciones de color de acordes (igual que la web). null = por defecto (plata).
+const _coloresAcorde = <String, Color?>{
+  'Por defecto': null,
+  'Blanco': Color(0xFFFFFFFF),
+  'Amarillo': Color(0xFFFFD23F),
+  'Celeste': Color(0xFF8FD3FF),
+  'Verde': Color(0xFF8FE0A0),
+  'Naranja': Color(0xFFFF9D5C),
+};
+
 class ChartScreen extends StatefulWidget {
   final int numero;
   final int semInicial;
-  final String tonoBase; // tono original de la cancion (semitono 0)
+  final String tonoBase;
 
   const ChartScreen({
     super.key,
@@ -30,11 +40,17 @@ class _ChartScreenState extends State<ChartScreen> {
   bool _cargando = true;
   bool _error = false;
 
-  int _idx = 0; // seccion activa
-  int _nivel = 2; // xs,s,m,l,xl
+  int _idx = 0;
+  int _nivel = 2;
   final _scroll = ScrollController();
   final List<GlobalKey> _keys = [];
   bool _scrollProgramatico = false;
+
+  // Preferencias de vista (como la web)
+  bool _claro = false; // tema dia
+  String _modo = 'ambos'; // ambos | acordes | letra
+  Color? _colorAcorde; // null = plata por defecto
+  String _grosor = 'normal'; // fino | normal | grueso
 
   static const _lyricSizes = [14.0, 16.0, 18.0, 22.0, 26.0];
   static const _chordSizes = [13.0, 15.0, 17.0, 20.0, 24.0];
@@ -42,6 +58,21 @@ class _ChartScreenState extends State<ChartScreen> {
 
   double get _lyricSize => _lyricSizes[_nivel];
   double get _chordSize => _chordSizes[_nivel];
+
+  bool get _showChord => _modo != 'letra';
+  bool get _showLyric => _modo != 'acordes';
+  Color get _chordColor => _colorAcorde ?? NW.chord;
+  FontWeight get _chordWeight =>
+      _grosor == 'fino' ? FontWeight.w400 : (_grosor == 'grueso' ? FontWeight.w800 : FontWeight.w700);
+
+  // Paleta segun tema (dia/noche)
+  Color get _cBg => _claro ? const Color(0xFFF4F4F6) : NW.bg;
+  Color get _cSurface => _claro ? Colors.white : NW.surface;
+  Color get _cRaised => _claro ? const Color(0xFFECECEF) : NW.raised;
+  Color get _cLine => _claro ? const Color(0xFFDCDCE2) : NW.line;
+  Color get _cTxt => _claro ? const Color(0xFF15151A) : NW.txt;
+  Color get _cTxt2 => _claro ? const Color(0xFF5B5B66) : NW.txt2;
+  Color get _cTxt3 => _claro ? const Color(0xFF8A8A95) : NW.txt3;
 
   @override
   void initState() {
@@ -116,9 +147,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (ctx != null) {
       _scrollProgramatico = true;
       Scrollable.ensureVisible(ctx,
-              duration: const Duration(milliseconds: 300),
-              alignment: 0.02,
-              curve: Curves.easeInOut)
+              duration: const Duration(milliseconds: 300), alignment: 0.02, curve: Curves.easeInOut)
           .then((_) => _scrollProgramatico = false);
     }
   }
@@ -127,6 +156,7 @@ class _ChartScreenState extends State<ChartScreen> {
   Widget build(BuildContext context) {
     final c = _chart;
     return Scaffold(
+      backgroundColor: _cBg,
       body: SafeArea(
         child: _cargando
             ? const Center(child: CircularProgressIndicator(color: NW.gold))
@@ -152,7 +182,7 @@ class _ChartScreenState extends State<ChartScreen> {
 
   Widget _errorView() => Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('No se pudo cargar el chart', style: TextStyle(color: NW.txt2)),
+          Text('No se pudo cargar el chart', style: TextStyle(color: _cTxt2)),
           const SizedBox(height: 12),
           OutlinedButton(onPressed: _cargar, child: const Text('Reintentar')),
         ]),
@@ -171,8 +201,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 spacing: 8,
                 runSpacing: 4,
                 children: [
-                  Text(c.titulo,
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                  Text(c.titulo, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: _cTxt)),
                   _tonoChip(c),
                 ],
               ),
@@ -182,7 +211,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   if (c.tempo != null && c.tempo! > 0) '${c.tempo} BPM',
                   if (c.compas.isNotEmpty) c.compas,
                 ].join(' · '),
-                style: const TextStyle(fontSize: 12, color: NW.txt2),
+                style: TextStyle(fontSize: 12, color: _cTxt2),
               ),
             ],
           ),
@@ -193,8 +222,7 @@ class _ChartScreenState extends State<ChartScreen> {
           children: [
             _dotsBtn(),
             const SizedBox(height: 6),
-            Text('${_idx + 1} / ${c.secciones.length}',
-                style: const TextStyle(fontSize: 12, color: NW.txt2)),
+            Text('${_idx + 1} / ${c.secciones.length}', style: TextStyle(fontSize: 12, color: _cTxt2)),
           ],
         ),
       ],
@@ -213,12 +241,8 @@ class _ChartScreenState extends State<ChartScreen> {
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Text(_nombreTono(_sem),
                 style: const TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    fontFamily: NW.mono)),
-            const Text(' ▾',
-                style: TextStyle(color: Colors.black54, fontSize: 10, fontWeight: FontWeight.bold)),
+                    color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14, fontFamily: NW.mono)),
+            const Text(' ▾', style: TextStyle(color: Colors.black54, fontSize: 10, fontWeight: FontWeight.bold)),
           ]),
         ),
       ),
@@ -227,7 +251,7 @@ class _ChartScreenState extends State<ChartScreen> {
 
   Widget _dotsBtn() {
     return Material(
-      color: NW.surface,
+      color: _cSurface,
       borderRadius: BorderRadius.circular(7),
       child: InkWell(
         borderRadius: BorderRadius.circular(7),
@@ -236,11 +260,8 @@ class _ChartScreenState extends State<ChartScreen> {
           width: 34,
           height: 30,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border.all(color: NW.line),
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: const Text('⋯', style: TextStyle(color: NW.txt2, fontSize: 18)),
+          decoration: BoxDecoration(border: Border.all(color: _cLine), borderRadius: BorderRadius.circular(7)),
+          child: Text('⋯', style: TextStyle(color: _cTxt2, fontSize: 18)),
         ),
       ),
     );
@@ -256,8 +277,9 @@ class _ChartScreenState extends State<ChartScreen> {
         itemBuilder: (_, i) {
           final activo = i == _idx;
           final done = i < _idx;
+          final bg = activo ? (_claro ? NW.chord : NW.txt) : _cSurface;
           return Material(
-            color: activo ? NW.txt : NW.surface,
+            color: bg,
             borderRadius: BorderRadius.circular(7),
             child: InkWell(
               borderRadius: BorderRadius.circular(7),
@@ -266,13 +288,13 @@ class _ChartScreenState extends State<ChartScreen> {
                 alignment: Alignment.center,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  border: Border.all(color: activo ? NW.txt : NW.line),
+                  border: Border.all(color: activo ? bg : _cLine),
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: Text(c.secciones[i].tipo,
                     style: TextStyle(
                         fontSize: 13,
-                        color: activo ? Colors.black : (done ? NW.txt3 : NW.txt2),
+                        color: activo ? Colors.black : (done ? _cTxt3 : _cTxt2),
                         fontWeight: activo ? FontWeight.w600 : FontWeight.normal)),
               ),
             ),
@@ -321,19 +343,18 @@ class _ChartScreenState extends State<ChartScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       decoration: BoxDecoration(
-        color: NW.surface,
-        border: Border.all(color: activo ? NW.chord : NW.line),
+        color: _cSurface,
+        border: Border.all(color: activo ? NW.chord : _cLine),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // sechead
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
             decoration: BoxDecoration(
-              color: NW.raised,
-              border: Border(left: BorderSide(color: activo ? NW.chord : NW.line, width: 3)),
+              color: _cRaised,
+              border: Border(left: BorderSide(color: activo ? NW.chord : _cLine, width: 3)),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Text(s.tipo.toUpperCase(),
@@ -341,20 +362,15 @@ class _ChartScreenState extends State<ChartScreen> {
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1.8,
-                    color: activo ? NW.chord : NW.txt3)),
+                    color: activo ? NW.chord : _cTxt3)),
           ),
           if (s.nota != null && s.nota!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 10),
-              child: Text(s.nota!,
-                  style: const TextStyle(
-                      fontSize: 13, color: NW.txt2, fontStyle: FontStyle.italic)),
+              child: Text(s.nota!, style: TextStyle(fontSize: 13, color: _cTxt2, fontStyle: FontStyle.italic)),
             ),
           const SizedBox(height: 10),
-          if (s.inst)
-            _instrumental(s.prog)
-          else
-            ...s.lines.map(_linea),
+          if (s.inst) _instrumental(s.prog) else ...s.lines.map(_linea),
         ],
       ),
     );
@@ -364,9 +380,9 @@ class _ChartScreenState extends State<ChartScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 8),
-          child: Text('Instrumental', style: TextStyle(fontSize: 15, color: NW.txt2)),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text('Instrumental', style: TextStyle(fontSize: 15, color: _cTxt2)),
         ),
         Wrap(spacing: 10, runSpacing: 10, children: prog.map(_chip).toList()),
       ],
@@ -382,16 +398,11 @@ class _ChartScreenState extends State<ChartScreen> {
         border: Border.all(color: NW.chipBorder),
       ),
       child: Text(acorde,
-          style: TextStyle(
-              color: NW.chord,
-              fontWeight: FontWeight.bold,
-              fontFamily: NW.mono,
-              fontSize: _chordSize)),
+          style: TextStyle(color: _chordColor, fontWeight: _chordWeight, fontFamily: NW.mono, fontSize: _chordSize)),
     );
   }
 
   Widget _linea(List<ChartSeg> segs) {
-    // Linea "solo acordes" (sin letra): fila de chips.
     final soloAcordes = segs.isNotEmpty && segs.every((t) => t.text.trim().isEmpty);
     if (soloAcordes) {
       return Padding(
@@ -412,15 +423,17 @@ class _ChartScreenState extends State<ChartScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(seg.chord.isEmpty ? ' ' : seg.chord,
-                  style: TextStyle(
-                      color: NW.chord,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: NW.mono,
-                      fontSize: _chordSize,
-                      height: 1.1)),
-              Text(seg.text.isEmpty ? ' ' : seg.text,
-                  style: TextStyle(color: NW.txt, fontSize: _lyricSize, height: 1.35)),
+              if (_showChord)
+                Text(seg.chord.isEmpty ? ' ' : seg.chord,
+                    style: TextStyle(
+                        color: _chordColor,
+                        fontWeight: _chordWeight,
+                        fontFamily: NW.mono,
+                        fontSize: _chordSize,
+                        height: 1.1)),
+              if (_showLyric)
+                Text(seg.text.isEmpty ? ' ' : seg.text,
+                    style: TextStyle(color: _cTxt, fontSize: _lyricSize, height: 1.35)),
             ],
           );
         }).toList(),
@@ -435,7 +448,7 @@ class _ChartScreenState extends State<ChartScreen> {
         const SizedBox(width: 6),
         Expanded(
           child: Material(
-            color: NW.raised,
+            color: _cRaised,
             borderRadius: BorderRadius.circular(8),
             child: InkWell(
               borderRadius: BorderRadius.circular(8),
@@ -443,12 +456,8 @@ class _ChartScreenState extends State<ChartScreen> {
               child: Container(
                 height: 46,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  border: Border.all(color: NW.line),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text('← Atrás',
-                    style: TextStyle(color: NW.txt, fontSize: 12.5, fontWeight: FontWeight.w500)),
+                decoration: BoxDecoration(border: Border.all(color: _cLine), borderRadius: BorderRadius.circular(8)),
+                child: Text('← Atrás', style: TextStyle(color: _cTxt, fontSize: 12.5, fontWeight: FontWeight.w500)),
               ),
             ),
           ),
@@ -461,7 +470,7 @@ class _ChartScreenState extends State<ChartScreen> {
 
   Widget _iconBtn(String glifo, VoidCallback? onTap) {
     return Material(
-      color: NW.surface,
+      color: _cSurface,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -470,12 +479,8 @@ class _ChartScreenState extends State<ChartScreen> {
           width: 44,
           height: 46,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border.all(color: NW.line),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(glifo,
-              style: TextStyle(color: onTap == null ? NW.txt3 : NW.txt, fontSize: 20)),
+          decoration: BoxDecoration(border: Border.all(color: _cLine), borderRadius: BorderRadius.circular(8)),
+          child: Text(glifo, style: TextStyle(color: onTap == null ? _cTxt3 : _cTxt, fontSize: 20)),
         ),
       ),
     );
@@ -486,20 +491,18 @@ class _ChartScreenState extends State<ChartScreen> {
     final actualIdx = ((_origBase + _sem) % 12 + 12) % 12;
     showModalBottomSheet(
       context: context,
-      backgroundColor: NW.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: _cSurface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
         padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Tonalidad',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text('Tonalidad', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _cTxt)),
             const SizedBox(height: 4),
             Text('Actual: ${_nombreTono(_sem)} · original: ${_nombreTono(0)}',
-                style: const TextStyle(fontSize: 12, color: NW.txt2)),
+                style: TextStyle(fontSize: 12, color: _cTxt2)),
             const SizedBox(height: 14),
             GridView.count(
               crossAxisCount: 4,
@@ -512,7 +515,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 final delta = _normDelta(i - _origBase);
                 final cur = i == actualIdx;
                 return Material(
-                  color: cur ? NW.chord : NW.raised,
+                  color: cur ? NW.chord : _cRaised,
                   borderRadius: BorderRadius.circular(10),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(10),
@@ -520,12 +523,12 @@ class _ChartScreenState extends State<ChartScreen> {
                     child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        border: Border.all(color: cur ? NW.chord : NW.line),
+                        border: Border.all(color: cur ? NW.chord : _cLine),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(_nombres[i] + (_menor ? 'm' : ''),
                           style: TextStyle(
-                              color: cur ? Colors.black : NW.txt,
+                              color: cur ? Colors.black : _cTxt,
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                               fontFamily: NW.mono)),
@@ -539,8 +542,8 @@ class _ChartScreenState extends State<ChartScreen> {
               width: double.infinity,
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: NW.txt2,
-                  side: const BorderSide(color: NW.line),
+                  foregroundColor: _cTxt2,
+                  side: BorderSide(color: _cLine),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
                 onPressed: () => _irTono(0),
@@ -553,53 +556,123 @@ class _ChartScreenState extends State<ChartScreen> {
     );
   }
 
-  // ── Hoja de ajustes (tamano de letra) ──
+  // ── Hoja de ajustes de vista (completo, como la web) ──
   void _abrirAjustes() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: NW.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: _cSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Ajustes de vista',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              const Text('TAMAÑO DE LETRA',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: NW.txt2,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1.2)),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+        builder: (ctx, setSheet) {
+          void set(VoidCallback fn) {
+            setState(fn);
+            setSheet(() {});
+          }
+
+          return SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _sizeBtn('A−', _nivel == 0 ? null : () {
-                    setState(() => _nivel--);
-                    setSheet(() {});
-                  }),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(_nivelLbls[_nivel],
-                        style: const TextStyle(
-                            color: NW.chord,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            fontFamily: NW.mono)),
+                  Text('Ajustes de vista', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _cTxt)),
+                  _ajLbl('TAMAÑO DE LETRA'),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _sizeBtn('A−', _nivel == 0 ? null : () => set(() => _nivel--)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(_nivelLbls[_nivel],
+                            style: const TextStyle(
+                                color: NW.chord, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: NW.mono)),
+                      ),
+                      _sizeBtn('A+', _nivel == 4 ? null : () => set(() => _nivel++)),
+                    ],
                   ),
-                  _sizeBtn('A+', _nivel == 4 ? null : () {
-                    setState(() => _nivel++);
-                    setSheet(() {});
-                  }),
+                  _ajLbl('TEMA'),
+                  Row(children: [
+                    _seg('🌙 Oscuro', !_claro, () => set(() => _claro = false)),
+                    const SizedBox(width: 6),
+                    _seg('☀️ Día', _claro, () => set(() => _claro = true)),
+                  ]),
+                  _ajLbl('MOSTRAR'),
+                  Row(children: [
+                    _seg('Ambos', _modo == 'ambos', () => set(() => _modo = 'ambos')),
+                    const SizedBox(width: 6),
+                    _seg('Solo acordes', _modo == 'acordes', () => set(() => _modo = 'acordes')),
+                    const SizedBox(width: 6),
+                    _seg('Solo letra', _modo == 'letra', () => set(() => _modo = 'letra')),
+                  ]),
+                  _ajLbl('COLOR DE ACORDES'),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    children: _coloresAcorde.entries.map((e) {
+                      final col = e.value ?? NW.chord;
+                      final sel = _colorAcorde == e.value;
+                      return GestureDetector(
+                        onTap: () => set(() => _colorAcorde = e.value),
+                        child: Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: col,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: sel ? _cTxt : _cLine, width: 2),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  _ajLbl('GROSOR DE ACORDES'),
+                  Row(children: [
+                    _seg('Fino', _grosor == 'fino', () => set(() => _grosor = 'fino')),
+                    const SizedBox(width: 6),
+                    _seg('Normal', _grosor == 'normal', () => set(() => _grosor = 'normal')),
+                    const SizedBox(width: 6),
+                    _seg('Grueso', _grosor == 'grueso', () => set(() => _grosor = 'grueso')),
+                  ]),
                 ],
               ),
-            ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _ajLbl(String t) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
+        child: Text(t,
+            style: TextStyle(
+                fontSize: 11, color: _cTxt2, fontWeight: FontWeight.w600, letterSpacing: 1.2)),
+      );
+
+  Widget _seg(String t, bool activo, VoidCallback onTap) {
+    return Expanded(
+      child: Material(
+        color: activo ? NW.chord : _cRaised,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          onTap: onTap,
+          child: Container(
+            height: 42,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: activo ? NW.chord : _cLine),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(t,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: activo ? Colors.black : _cTxt,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600)),
           ),
         ),
       ),
@@ -608,7 +681,7 @@ class _ChartScreenState extends State<ChartScreen> {
 
   Widget _sizeBtn(String t, VoidCallback? onTap) {
     return Material(
-      color: NW.raised,
+      color: _cRaised,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -617,15 +690,8 @@ class _ChartScreenState extends State<ChartScreen> {
           width: 64,
           height: 52,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
-            border: Border.all(color: NW.line),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(t,
-              style: TextStyle(
-                  color: onTap == null ? NW.txt3 : NW.txt,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20)),
+          decoration: BoxDecoration(border: Border.all(color: _cLine), borderRadius: BorderRadius.circular(12)),
+          child: Text(t, style: TextStyle(color: onTap == null ? _cTxt3 : _cTxt, fontWeight: FontWeight.bold, fontSize: 20)),
         ),
       ),
     );
