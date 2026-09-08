@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
 
 /// Cliente de la API de Neural Worship. Autentica con email+password,
@@ -18,25 +17,13 @@ class Api {
 
   Map<String, String> get _authHeaders => {'Authorization': 'Bearer ${token ?? ''}'};
 
-  Future<void> cargarSesion() async {
-    final sp = await SharedPreferences.getInstance();
-    token = sp.getString('nw_token');
-    orgNombre = sp.getString('nw_org') ?? '';
-    nombre = sp.getString('nw_nombre') ?? '';
-  }
+  // NOTA: por ahora la sesion se guarda solo en memoria (sin shared_preferences)
+  // para no requerir CocoaPods. Se reactivara la persistencia mas adelante.
+  Future<void> cargarSesion() async {}
 
-  Future<void> _guardarSesion() async {
-    final sp = await SharedPreferences.getInstance();
-    if (token != null) await sp.setString('nw_token', token!);
-    await sp.setString('nw_org', orgNombre);
-    await sp.setString('nw_nombre', nombre);
-  }
+  Future<void> _guardarSesion() async {}
 
   Future<void> logout() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.remove('nw_token');
-    await sp.remove('nw_org');
-    await sp.remove('nw_nombre');
     token = null;
     orgNombre = '';
     nombre = '';
