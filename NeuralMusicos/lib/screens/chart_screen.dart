@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
 import '../models.dart';
+import 'rehearsal_sheet.dart';
 
 const _nombres = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -464,7 +465,30 @@ class _ChartScreenState extends State<ChartScreen> {
         ),
         const SizedBox(width: 6),
         _iconBtn('›', _idx >= c.secciones.length - 1 ? null : () => _jump(_idx + 1)),
+        const SizedBox(width: 6),
+        _ensayoBtn(),
       ],
+    );
+  }
+
+  Widget _ensayoBtn() {
+    return Material(
+      color: NW.goldSoft,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => showRehearsal(context, numero: widget.numero, sem: _sem),
+        child: Container(
+          width: 44,
+          height: 46,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border.all(color: NW.chipBorder),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Text('🎧', style: TextStyle(fontSize: 19)),
+        ),
+      ),
     );
   }
 

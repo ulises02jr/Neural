@@ -95,6 +95,20 @@ class Api {
     }
   }
 
+  /// Pistas (stems) + secciones de una cancion a un tono, para el modo ensayo.
+  /// Devuelve el JSON crudo: {listo, hay_pistas, tempo, compas, stems:[...], secciones:[...]}
+  Future<Map<String, dynamic>?> pistas(int numero, int sem) async {
+    try {
+      final r = await http
+          .get(Uri.parse('$baseUrl/api/live/pistas/$numero?t=$sem'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) return null;
+      return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// URL de la portada de una cancion. La web la sirve como /static/<portada>.
   /// [ts] es portada_ts para cache-busting. Si no hay portada, devuelve el logo.
   String portadaUrl(String portada, {int? ts}) {
