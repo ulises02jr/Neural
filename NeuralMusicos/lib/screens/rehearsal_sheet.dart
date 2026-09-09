@@ -431,8 +431,18 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
           child: Slider(
             value: _dur > 0 ? _pos.clamp(0, _dur) : 0,
             max: _dur > 0 ? _dur : 1,
-            onChanged: _audioOk ? (v) => setState(() => _pos = v) : null,
-            onChangeEnd: _audioOk ? _seek : null,
+            onChanged: _audioOk
+                ? (v) => setState(() {
+                      _pos = v;
+                      AudioEngine.I.scrubPos = v; // el chart sigue el arrastre en vivo
+                    })
+                : null,
+            onChangeEnd: _audioOk
+                ? (v) {
+                    AudioEngine.I.scrubPos = null;
+                    _seek(v);
+                  }
+                : null,
           ),
         ),
       ),

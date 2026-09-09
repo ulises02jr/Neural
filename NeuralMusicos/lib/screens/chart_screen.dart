@@ -109,18 +109,20 @@ class _ChartScreenState extends State<ChartScreen> {
       if (_audioPlaying && mounted) setState(() => _audioPlaying = false);
       return;
     }
+    final scrub = ae.scrubPos;
     _syncBusy = true;
     late final bool playing;
     late final double p;
     try {
       playing = await ae.isPlaying();
-      p = await ae.position();
+      // Durante el arrastre usamos la posicion de la barra (sin esperar al audio).
+      p = scrub ?? await ae.position();
     } finally {
       _syncBusy = false;
     }
     if (!mounted) return;
-    // "Se mueve" = reproduciendo o la posicion cambio (el usuario esta desplazando).
-    final moving = playing || (p - _lastSyncPos).abs() > 0.05;
+    // "Se mueve" = reproduciendo, arrastrando, o la posicion cambio.
+    final moving = playing || scrub != null || (p - _lastSyncPos).abs() > 0.05;
     _lastSyncPos = p;
     if (moving != _audioPlaying) setState(() => _audioPlaying = moving);
     if (!moving) return; // en pausa quieto: no estorbar el scroll manual

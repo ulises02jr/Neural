@@ -57,6 +57,36 @@ class Api {
     }
   }
 
+  /// Registro de musico: se une a una organizacion con su codigo. Queda pendiente.
+  /// Devuelve {ok:bool, mensaje:String}
+  Future<Map<String, dynamic>> unirse({
+    required String codigo,
+    required String nombre,
+    required String apellido,
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final r = await http
+          .post(
+            Uri.parse('$baseUrl/api/auth/unirse'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'codigo': codigo,
+              'nombre': nombre,
+              'apellido': apellido,
+              'email': email,
+              'password': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      return {'ok': j['ok'] == true, 'mensaje': (j['mensaje'] ?? '').toString()};
+    } catch (e) {
+      return {'ok': false, 'mensaje': 'Sin conexión con el servidor'};
+    }
+  }
+
   /// Trae setlists + indice de canciones en una sola llamada.
   /// Devuelve {ok, songs: List<Song>, setlists: List<Setlist>}
   Future<Map<String, dynamic>> biblioteca() async {

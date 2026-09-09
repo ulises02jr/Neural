@@ -13,6 +13,8 @@ class AudioEngine {
   double loadedDur = 0;
   // Marcadores de seccion del audio: cada uno [tiempoSeg, indiceEnChart].
   List<List<double>> loadedSecs = [];
+  // Posicion mientras el usuario arrastra la barra (para que el chart siga en vivo).
+  double? scrubPos;
 
   bool loadedFor(int numero, int sem) => loadedNumero == numero && loadedSem == sem;
 
@@ -37,6 +39,7 @@ class AudioEngine {
     loadedSem = null;
     loadedDur = 0;
     loadedSecs = [];
+    scrubPos = null;
   }
 
   Future<double> position() async {

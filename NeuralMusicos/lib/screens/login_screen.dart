@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
 import 'home_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -141,6 +142,22 @@ class _LoginScreenState extends State<LoginScreen> {
                         : const Text('Ingresar',
                             style: TextStyle(
                                 fontWeight: FontWeight.w600, fontSize: 14, letterSpacing: 0.3)),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('¿No tenés cuenta? ',
+                          style: TextStyle(fontSize: 12, color: NW.txt3)),
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                        ),
+                        child: const Text('Crear una',
+                            style: TextStyle(
+                                fontSize: 12, color: NW.gold, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
                   ),
                 ],
               ),

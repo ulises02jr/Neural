@@ -2073,6 +2073,28 @@ def api_auth_login():
     })
 
 
+@app.route("/api/auth/unirse", methods=["POST"])
+def api_auth_unirse():
+    """Registro de musico desde la app: se une a una organizacion con su codigo. Queda pendiente."""
+    data = request.get_json(silent=True) or request.form
+    codigo = (data.get("codigo") or "").strip().upper()
+    nombre = (data.get("nombre") or "").strip()
+    apellido = (data.get("apellido") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    if not codigo or not nombre or not apellido or not email or not password:
+        return jsonify({"ok": False, "mensaje": "Completá todos los campos."}), 400
+    org = usuarios.buscar_org_por_codigo(codigo)
+    if not org:
+        return jsonify({"ok": False, "mensaje": "Código de organización inválido."}), 404
+    ok, res = usuarios.crear_usuario(nombre, apellido, email, password,
+                                     rol="musico", estado="pendiente", org_id=org["id"])
+    if not ok:
+        return jsonify({"ok": False, "mensaje": res}), 400
+    return jsonify({"ok": True,
+                    "mensaje": "Cuenta creada en «%s». Esperá la aprobación del administrador para ingresar." % org["nombre"]})
+
+
 @app.route("/api/live/plan")
 def api_live_plan():
     """NeuralPlay: plan y features de la organización, para gatear funciones. Token."""
