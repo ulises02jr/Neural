@@ -87,7 +87,7 @@ class _ChartScreenState extends State<ChartScreen> {
     _parseTono(widget.tonoBase);
     _cargar();
     // El chart sigue la musica del ensayo mientras suena (panel abierto o cerrado).
-    _syncTimer = Timer.periodic(const Duration(milliseconds: 200), (_) => _tickSync());
+    _syncTimer = Timer.periodic(const Duration(milliseconds: 300), (_) => _tickSync());
   }
 
   @override
@@ -118,7 +118,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final n = _chart?.secciones.length ?? 0;
     if (cur >= 0 && cur < n && cur != _syncIdx) {
       _syncIdx = cur;
-      _jump(cur);
+      _jump(cur, animate: false); // instantáneo, como NeuralPlay
     }
   }
 
@@ -173,16 +173,22 @@ class _ChartScreenState extends State<ChartScreen> {
     _cargar();
   }
 
-  void _jump(int i) {
+  void _jump(int i, {bool animate = true}) {
     final c = _chart;
     if (c == null || i < 0 || i >= c.secciones.length) return;
     setState(() => _idx = i);
     final ctx = _keys[i].currentContext;
-    if (ctx != null) {
+    if (ctx == null) return;
+    if (animate) {
       _scrollProgramatico = true;
       Scrollable.ensureVisible(ctx,
-              duration: const Duration(milliseconds: 300), alignment: 0.02, curve: Curves.easeInOut)
+              duration: const Duration(milliseconds: 250), alignment: 0.0, curve: Curves.easeInOut)
           .then((_) => _scrollProgramatico = false);
+    } else {
+      // Instantáneo (como NeuralPlay: scrollTop = offset), sin animación que tiemble.
+      _scrollProgramatico = true;
+      Scrollable.ensureVisible(ctx, duration: Duration.zero, alignment: 0.0);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollProgramatico = false);
     }
   }
 
