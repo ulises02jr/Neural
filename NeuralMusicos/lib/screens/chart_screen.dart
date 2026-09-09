@@ -477,7 +477,14 @@ class _ChartScreenState extends State<ChartScreen> {
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => showRehearsal(context, numero: widget.numero, sem: _sem),
+        onTap: () => showRehearsal(
+          context,
+          numero: widget.numero,
+          sem: _sem,
+          onSection: (idx) {
+            if (idx >= 0 && _chart != null && idx < _chart!.secciones.length) _jump(idx);
+          },
+        ),
         child: Container(
           width: 44,
           height: 46,
@@ -515,10 +522,13 @@ class _ChartScreenState extends State<ChartScreen> {
     final actualIdx = ((_origBase + _sem) % 12 + 12) % 12;
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: _cSurface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+      builder: (_) => SingleChildScrollView(
+        child: Padding(
+        padding: EdgeInsets.only(
+            left: 18, right: 18, top: 18, bottom: 28 + MediaQuery.of(context).padding.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -576,6 +586,7 @@ class _ChartScreenState extends State<ChartScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

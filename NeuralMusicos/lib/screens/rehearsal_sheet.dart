@@ -3,19 +3,24 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
 import '../audio_engine.dart';
+// Acento del reproductor = mismo del visor (para respetar la linea visual).
+const _acento = NW.chord; // gris-plata del visor
+const _acentoSoft = NW.chordSoft;
 
 const _orden = [
   'Voces', 'Guitarras', 'Teclados', 'Cuerdas', 'Metales',
   'Bajo', 'Percusión', 'Guía', 'Música original', 'Otros', 'Click'
 ];
 
-void showRehearsal(BuildContext context, {required int numero, required int sem}) {
+void showRehearsal(BuildContext context,
+    {required int numero, required int sem, void Function(int)? onSection}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
+    enableDrag: false, // como la web: no se cierra al desplazar; se scrollea adentro
     backgroundColor: NW.surface,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-    builder: (_) => _RehearsalBody(numero: numero, sem: sem),
+    builder: (_) => _RehearsalBody(numero: numero, sem: sem, onSection: onSection),
   );
 }
 
@@ -30,13 +35,15 @@ class _Stem {
 class _Sec {
   final double t;
   final String nombre;
-  _Sec(this.t, this.nombre);
+  final int i; // indice de la seccion en el chart (para sincronizar)
+  _Sec(this.t, this.nombre, this.i);
 }
 
 class _RehearsalBody extends StatefulWidget {
   final int numero;
   final int sem;
-  const _RehearsalBody({required this.numero, required this.sem});
+  final void Function(int)? onSection;
+  const _RehearsalBody({required this.numero, required this.sem, this.onSection});
 
   @override
   State<_RehearsalBody> createState() => _RehearsalBodyState();
@@ -58,6 +65,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   List<double>? _loopRange; // [inicio, fin]
   Timer? _timer;
   int _cacheBytes = 0;
+  int _lastChartIdx = -1;
 
   @override
   void initState() {
@@ -108,7 +116,11 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       ..clear()
       ..addAll(secs.map((s) {
         final m = Map<String, dynamic>.from(s as Map);
-        return _Sec((m['t'] is num) ? (m['t'] as num).toDouble() : 0, (m['nombre'] ?? '').toString());
+        return _Sec(
+          (m['t'] is num) ? (m['t'] as num).toDouble() : 0,
+          (m['nombre'] ?? '').toString(),
+          (m['i'] is num) ? (m['i'] as num).toInt() : -1,
+        );
       }));
     _secciones.sort((a, b) => a.t.compareTo(b.t));
 
@@ -169,7 +181,21 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         return;
       }
       setState(() => _pos = p);
+      _syncChart(p);
     });
+  }
+
+  /// Mueve el chart (detras del panel) a la seccion que va sonando.
+  void _syncChart(double p) {
+    if (widget.onSection == null || _secciones.isEmpty) return;
+    _Sec? cur;
+    for (final s in _secciones) {
+      if (s.t <= p + 0.03) { cur = s; } else { break; }
+    }
+    if (cur != null && cur.i >= 0 && cur.i != _lastChartIdx) {
+      _lastChartIdx = cur.i;
+      widget.onSection!(cur.i);
+    }
   }
 
   Future<void> _togglePlay() async {
@@ -357,9 +383,9 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         child: SliderTheme(
           data: const SliderThemeData(
             trackHeight: 5,
-            activeTrackColor: NW.gold,
+            activeTrackColor: _acento,
             inactiveTrackColor: NW.line,
-            thumbColor: NW.gold,
+            thumbColor: _acento,
             thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
             overlayShape: RoundSliderOverlayShape(overlayRadius: 14),
           ),
@@ -379,7 +405,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     final activa = _secActiva;
     return Container(
       height: 26,
-      decoration: BoxDecoration(color: const Color(0xFF0F0F0F), borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(color: NW.bg, borderRadius: BorderRadius.circular(6)),
       clipBehavior: Clip.antiAlias,
       child: Row(
         children: List.generate(_secciones.length, (i) {
@@ -397,7 +423,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
               },
               child: Container(
                 decoration: BoxDecoration(
-                  color: loop ? NW.gold : (cur ? const Color(0xFF3A3320) : const Color(0xFF1C1C1C)),
+                  color: loop ? _acento : (cur ? _acentoSoft : NW.raised),
                   border: Border(left: BorderSide(color: i == 0 ? Colors.transparent : NW.line)),
                 ),
                 alignment: Alignment.centerLeft,
@@ -405,7 +431,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
                 child: Text(_secciones[i].nombre,
                     maxLines: 1,
                     overflow: TextOverflow.clip,
-                    style: TextStyle(fontSize: 9, color: loop ? Colors.black : (cur ? NW.txt : const Color(0xFFB7B7B7)))),
+                    style: TextStyle(fontSize: 9, color: loop ? Colors.black : (cur ? NW.txt : NW.txt2))),
               ),
             ),
           );
@@ -433,7 +459,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     final size = play ? 50.0 : 42.0;
     final activo = play || on;
     return Material(
-      color: activo ? NW.gold : NW.raised,
+      color: activo ? _acento : NW.raised,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
@@ -442,7 +468,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
           width: size,
           height: size,
           alignment: Alignment.center,
-          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: activo ? NW.gold : NW.line)),
+          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: activo ? _acento : NW.line)),
           child: Text(glifo, style: TextStyle(color: activo ? Colors.black : NW.txt, fontSize: play ? 20 : 16)),
         ),
       ),
@@ -462,7 +488,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       children: fams.map((f) {
         final activa = f == _famActiva;
         return Material(
-          color: activa ? const Color(0xFF3A3320) : NW.raised,
+          color: activa ? _acentoSoft : NW.raised,
           borderRadius: BorderRadius.circular(9),
           child: InkWell(
             borderRadius: BorderRadius.circular(9),
@@ -470,7 +496,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
             child: Container(
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                border: Border.all(color: activa ? NW.gold : NW.line),
+                border: Border.all(color: activa ? _acento : NW.line),
                 borderRadius: BorderRadius.circular(9),
               ),
               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -496,9 +522,9 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         return Container(
           padding: const EdgeInsets.fromLTRB(12, 6, 7, 6),
           decoration: BoxDecoration(
-            color: on ? NW.goldSoft : Colors.transparent,
+            color: on ? _acentoSoft : Colors.transparent,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: on ? NW.gold : NW.line, width: 1.5),
+            border: Border.all(color: on ? _acento : NW.line, width: 1.5),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             GestureDetector(
@@ -520,8 +546,8 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: solo ? NW.gold : const Color(0xFF0A0A0A),
-                  border: Border.all(color: solo ? NW.gold : NW.line),
+                  color: solo ? _acento : NW.bg,
+                  border: Border.all(color: solo ? _acento : NW.line),
                 ),
                 child: Text('S', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: solo ? Colors.black : NW.txt2)),
               ),
