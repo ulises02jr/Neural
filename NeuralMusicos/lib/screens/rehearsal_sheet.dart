@@ -17,7 +17,8 @@ void showRehearsal(BuildContext context,
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    enableDrag: false, // como la web: no se cierra al desplazar; se scrollea adentro
+    enableDrag: false,     // no se cierra al arrastrar el panel
+    isDismissible: false,  // no se cierra al tocar afuera ni al desplazar; solo con la ×
     backgroundColor: NW.surface,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
     builder: (_) => _RehearsalBody(numero: numero, sem: sem, onSection: onSection),
