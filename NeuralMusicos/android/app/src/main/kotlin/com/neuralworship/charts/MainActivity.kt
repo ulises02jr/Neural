@@ -1,4 +1,4 @@
-package org.miiglesiainternacional.neural_musicos
+package com.neuralworship.charts
 
 import android.app.Activity
 import android.content.Intent
