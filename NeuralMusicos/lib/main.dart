@@ -18,7 +18,7 @@ class NeuralMusicosApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Neural Worship',
+      title: 'NeuralCharts',
       debugShowCheckedModeBanner: false,
       theme: NW.theme(),
       home: Api.I.logueado ? const HomeScreen() : const LoginScreen(),

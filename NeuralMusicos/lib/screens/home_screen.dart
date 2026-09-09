@@ -127,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(Api.I.orgNombre.isEmpty ? 'Neural Worship' : Api.I.orgNombre,
+            Text(Api.I.orgNombre.isEmpty ? 'NeuralCharts' : Api.I.orgNombre,
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             if (Api.I.nombre.isNotEmpty)

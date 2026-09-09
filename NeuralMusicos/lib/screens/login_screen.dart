@@ -89,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  const Text('Neural Worship',
+                  const Text('NeuralCharts',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 18, fontWeight: FontWeight.w600, letterSpacing: 0.3)),

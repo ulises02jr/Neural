@@ -19,7 +19,7 @@ class MainFlutterWindow: NSWindow {
     let win = NSWindow(contentRect: rect,
                        styleMask: [.titled, .closable, .resizable, .miniaturizable],
                        backing: .buffered, defer: false)
-    win.title = "Neural Worship · En vivo"
+    win.title = "NeuralCharts · En vivo"
     win.contentView = wv
     win.center()
     win.isReleasedWhenClosed = false
