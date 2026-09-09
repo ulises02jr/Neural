@@ -11,6 +11,8 @@ class AudioEngine {
   int? loadedNumero;
   int? loadedSem;
   double loadedDur = 0;
+  // Marcadores de seccion del audio: cada uno [tiempoSeg, indiceEnChart].
+  List<List<double>> loadedSecs = [];
 
   bool loadedFor(int numero, int sem) => loadedNumero == numero && loadedSem == sem;
 
@@ -34,6 +36,7 @@ class AudioEngine {
     loadedNumero = null;
     loadedSem = null;
     loadedDur = 0;
+    loadedSecs = [];
   }
 
   Future<double> position() async {

@@ -12,8 +12,7 @@ const _orden = [
   'Bajo', 'Percusión', 'Guía', 'Música original', 'Otros', 'Click'
 ];
 
-void showRehearsal(BuildContext context,
-    {required int numero, required int sem, void Function(int)? onSection}) {
+void showRehearsal(BuildContext context, {required int numero, required int sem}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -21,7 +20,7 @@ void showRehearsal(BuildContext context,
     isDismissible: false,  // no se cierra al tocar afuera ni al desplazar; solo con la ×
     backgroundColor: NW.surface,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-    builder: (_) => _RehearsalBody(numero: numero, sem: sem, onSection: onSection),
+    builder: (_) => _RehearsalBody(numero: numero, sem: sem),
   );
 }
 
@@ -43,8 +42,7 @@ class _Sec {
 class _RehearsalBody extends StatefulWidget {
   final int numero;
   final int sem;
-  final void Function(int)? onSection;
-  const _RehearsalBody({required this.numero, required this.sem, this.onSection});
+  const _RehearsalBody({required this.numero, required this.sem});
 
   @override
   State<_RehearsalBody> createState() => _RehearsalBodyState();
@@ -66,7 +64,6 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   List<double>? _loopRange; // [inicio, fin]
   Timer? _timer;
   int _cacheBytes = 0;
-  int _lastChartIdx = -1;
   double _dragAcc = 0;
 
   @override
@@ -126,6 +123,9 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         );
       }));
     _secciones.sort((a, b) => a.t.compareTo(b.t));
+    // Marcadores para que el chart siga la musica (los lee ChartScreen).
+    AudioEngine.I.loadedSecs =
+        _secciones.where((s) => s.i >= 0).map((s) => [s.t, s.i.toDouble()]).toList();
 
     if (_stems.isEmpty) {
       setState(() { _cargando = false; _status = 'No hay pistas para este tono.'; });
@@ -206,21 +206,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         return;
       }
       setState(() => _pos = p);
-      _syncChart(p);
     });
-  }
-
-  /// Mueve el chart (detras del panel) a la seccion que va sonando.
-  void _syncChart(double p) {
-    if (widget.onSection == null || _secciones.isEmpty) return;
-    _Sec? cur;
-    for (final s in _secciones) {
-      if (s.t <= p + 0.03) { cur = s; } else { break; }
-    }
-    if (cur != null && cur.i >= 0 && cur.i != _lastChartIdx) {
-      _lastChartIdx = cur.i;
-      widget.onSection!(cur.i);
-    }
   }
 
   Future<void> _togglePlay() async {

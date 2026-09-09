@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
@@ -47,6 +48,9 @@ class _ChartScreenState extends State<ChartScreen> {
   final _scroll = ScrollController();
   final List<GlobalKey> _keys = [];
   bool _scrollProgramatico = false;
+  Timer? _syncTimer;    // sigue la musica del modo ensayo
+  int _syncIdx = -1;
+  bool _audioPlaying = false;
 
   // Preferencias de vista (como la web)
   bool _claro = false; // tema dia
@@ -82,13 +86,40 @@ class _ChartScreenState extends State<ChartScreen> {
     _sem = widget.semInicial;
     _parseTono(widget.tonoBase);
     _cargar();
+    // El chart sigue la musica del ensayo mientras suena (panel abierto o cerrado).
+    _syncTimer = Timer.periodic(const Duration(milliseconds: 200), (_) => _tickSync());
   }
 
   @override
   void dispose() {
+    _syncTimer?.cancel();
     _scroll.dispose();
     AudioEngine.I.stop(); // al salir de la cancion, detener el audio del ensayo
     super.dispose();
+  }
+
+  /// Fuente de verdad = el audio: mueve el chart a la seccion que suena.
+  Future<void> _tickSync() async {
+    final ae = AudioEngine.I;
+    if (ae.loadedNumero != widget.numero || ae.loadedSecs.isEmpty) {
+      if (_audioPlaying && mounted) setState(() => _audioPlaying = false);
+      return;
+    }
+    final playing = await ae.isPlaying();
+    if (!mounted) return;
+    if (playing != _audioPlaying) setState(() => _audioPlaying = playing);
+    if (!playing) return;
+    final p = await ae.position();
+    if (!mounted) return;
+    int cur = -1;
+    for (final m in ae.loadedSecs) {
+      if (m[0] <= p + 0.03) { cur = m[1].toInt(); } else { break; }
+    }
+    final n = _chart?.secciones.length ?? 0;
+    if (cur >= 0 && cur < n && cur != _syncIdx) {
+      _syncIdx = cur;
+      _jump(cur);
+    }
   }
 
   void _parseTono(String t) {
@@ -323,6 +354,7 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   void _detectarActiva() {
+    if (_audioPlaying) return; // mientras suena, manda el audio (no el scroll)
     int cur = _idx;
     double mejor = double.infinity;
     for (var i = 0; i < _keys.length; i++) {
@@ -479,14 +511,7 @@ class _ChartScreenState extends State<ChartScreen> {
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => showRehearsal(
-          context,
-          numero: widget.numero,
-          sem: _sem,
-          onSection: (idx) {
-            if (idx >= 0 && _chart != null && idx < _chart!.secciones.length) _jump(idx);
-          },
-        ),
+        onTap: () => showRehearsal(context, numero: widget.numero, sem: _sem),
         child: Container(
           width: 44,
           height: 46,
