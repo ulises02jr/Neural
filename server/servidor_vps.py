@@ -1477,6 +1477,7 @@ def admin():
         usuarios_activos=[u for u in usuarios.listar_usuarios(estado="activo", org_id=org_actual()) if u.get("rol") != "admin"],
         org_info=usuarios.obtener_organizacion(org_actual()),
         paquetes=PAQUETES,
+        features=_features((usuarios.obtener_organizacion(org_actual()) or {}).get("paquete")),
         plan_activo=((usuarios.obtener_organizacion(org_actual()) or {}).get("estado_suscripcion") in ("activa", "prueba")),
         musicos_activos_n=usuarios.contar_musicos_activos(org_actual()),
         invitaciones_pendientes=usuarios.listar_invitaciones(org_actual(), "pendiente"),
@@ -2231,9 +2232,12 @@ def _uso_almacen_bytes(org_id):
 # nombre = etiqueta visible; la clave interna (basico/premium/ministerio) NO cambia
 # para no romper la base de datos. midi = habilita la sección MIDI y NeuralPlay completo.
 PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 10.0, "asientos": 3,  "gb": 20,  "midi": False, "salidas": 2},
-    "premium":    {"nombre": "Plus",    "precio": 20.0, "asientos": 5,  "gb": 50,  "midi": True,  "salidas": 32},
-    "ministerio": {"nombre": "Premium", "precio": 45.0, "asientos": 10, "gb": 100, "midi": True,  "salidas": 32},
+    "basico":     {"nombre": "Básico",  "precio": 10.0, "asientos": 3,  "gb": 20,  "midi": False, "salidas": 2,  "tipo": "iglesia"},
+    "premium":    {"nombre": "Plus",    "precio": 20.0, "asientos": 5,  "gb": 50,  "midi": True,  "salidas": 32, "tipo": "iglesia"},
+    "ministerio": {"nombre": "Premium", "precio": 45.0, "asientos": 10, "gb": 100, "midi": True,  "salidas": 32, "tipo": "iglesia"},
+    # Plan "solo reproductor": NeuralPlay completo para tocar en vivo con stems propios.
+    # Sin gestión de músicos, sin NeuralSync y sin charts (cifrado/letras).
+    "reproductor": {"nombre": "NeuralPlay", "precio": 10.0, "asientos": 1, "gb": 50, "midi": True, "salidas": 32, "tipo": "reproductor"},
 }
 
 
@@ -2241,11 +2245,17 @@ def _features(paquete):
     """Flags de funciones que la app (NeuralPlay) debe respetar según el plan."""
     p = PAQUETES.get(paquete, PAQUETES["basico"])
     full = bool(p.get("midi"))
+    repro = p.get("tipo") == "reproductor"   # plan solo-reproductor
     return {
         "midi": full,               # sección MIDI (mapping / MIDI OUT / controlador externo)
         "infinito": full,           # botón Reproductor Infinito (Plus+)
-        "neuralsync": full,         # puente con DAW
-        "export_pdf": full,         # exportar charts a PDF
+        "neuralsync": (full and not repro),   # puente con DAW (no en el plan reproductor)
+        "export_pdf": (full and not repro),   # exportar charts a PDF (sin charts => no)
+        "charts": (not repro),      # maneja charts: cifrado + letras (no en reproductor)
+        "usuarios": (not repro),    # gestión de músicos / Modo Músico (no en reproductor)
+        "stems_propios": repro,     # sube sus propios stems
+        "solo_reproductor": repro,
+        "tipo": p.get("tipo", "iglesia"),
         "salidas": p.get("salidas", 2),   # salidas de audio (2 estéreo en básico, 32 en Plus+)
         "asientos": p.get("asientos", 3),
         "gb": p.get("gb", 20),
@@ -3945,6 +3955,7 @@ def admin_editar(numero):
                       "t": _fmt_tiempo(guardadas_t[i]) if i in guardadas_t else ""})
     return render_template("admin_editar.html", numero=numero, titulo=cancion.get("titulo", ""),
                            stems=lista, familias=FAMILIAS, tonos=tonos, filas=filas,
+                           features=_features((usuarios.obtener_organizacion(org_actual()) or {}).get("paquete")),
                            midi=_leer_midi(numero),
                            cifrado=_cifrado_para_editor(cancion),
                            letras=_letras_por_seccion(cancion),

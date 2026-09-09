@@ -120,10 +120,10 @@
     <button class="tab" data-tab="info" onclick="tab('info')">Información de Canción</button>
     <button class="tab" data-tab="multitracks" onclick="tab('multitracks')">Tracks</button>
     <button class="tab" data-tab="tiempos" onclick="tab('tiempos')">Time de Secciones</button>
-    <button class="tab" data-tab="cifrado" onclick="tab('cifrado')">Cifrado</button>
+    {% if features.charts %}<button class="tab" data-tab="cifrado" onclick="tab('cifrado')">Cifrado</button>{% endif %}
     <button class="tab" data-tab="transposicion" onclick="tab('transposicion')">Transposición</button>
     <button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>
-    <button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>
+    {% if features.charts %}<button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>{% endif %}
     <button class="tab" data-tab="eliminar" onclick="tab('eliminar')">Eliminar Canción</button>
   </div>
 
@@ -410,7 +410,7 @@
 </div>
 
 <script>
-const TABS = ['info','multitracks','tiempos','cifrado','transposicion','midi','letras','eliminar'];
+const TABS = {{ (['info','multitracks','tiempos','cifrado','transposicion','midi','letras','eliminar'] if features.charts else ['info','multitracks','tiempos','transposicion','midi','eliminar'])|tojson }};
 let tabActual = 'multitracks';
 function uiGenerando(form){ var b=form.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='Generando…'; } return true; }
 document.addEventListener('DOMContentLoaded', function(){

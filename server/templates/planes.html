@@ -72,6 +72,34 @@
   </div>
   {% endfor %}
 
+  <h1 style="font-size:18px;margin-top:26px">¿Solo querés reproducir?</h1>
+  <p class="sub">Cargá tus propios stems y tocá en vivo con NeuralPlay. Sin gestión de músicos ni charts.</p>
+  {% set p = paquetes['reproductor'] %}
+  <div class="plan">
+    <div style="min-width:150px">
+      <div class="nom">{{ p.nombre }}</div>
+      <div class="price">${{ '%.0f'|format(p.precio) }}<small> /mes</small></div>
+    </div>
+    <div class="feats">
+      <b>{{ p.gb }} GB para tus stems propios</b><br>
+      NeuralPlay completo · Sección MIDI · Salidas múltiples · Reproductor infinito<br>
+      <span style="color:var(--txt3)">Sin músicos · Sin NeuralSync · Sin charts</span>
+    </div>
+    <div class="col">
+      {% if actual == 'reproductor' and estado in ('activa','prueba') %}
+        <span class="actual">✓ Activo</span>
+      {% elif es_operador %}
+        <button class="sec" disabled style="opacity:.5;cursor:not-allowed">No disponible</button>
+      {% else %}
+        <form method="POST" action="{{ url_for('admin_planes_elegir') }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="paquete" value="reproductor">
+          <button type="submit">Elegir NeuralPlay</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
   <p class="note">El pago se procesará de forma segura en la web (próximamente). Por ahora, al elegir un plan queda activo de inmediato.</p>
 </body>
 </html>
