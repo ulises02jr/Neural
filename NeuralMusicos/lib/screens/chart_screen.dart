@@ -214,7 +214,7 @@ class _ChartScreenState extends State<ChartScreen> {
       backgroundColor: _cBg,
       body: SafeArea(
         child: _cargando
-            ? const Center(child: CircularProgressIndicator(color: NW.gold))
+            ? const Center(child: CircularProgressIndicator(color: NW.chord))
             : _error || c == null
                 ? _errorView()
                 : Padding(
@@ -365,14 +365,17 @@ class _ChartScreenState extends State<ChartScreen> {
         if (!_scrollProgramatico && n is ScrollUpdateNotification) _detectarActiva();
         return false;
       },
-      // ListView normal (no .builder): arma TODAS las secciones para poder saltar
-      // a cualquiera al instante, como NeuralPlay (que tiene el chart completo en el DOM).
-      child: ListView(
+      // SingleChildScrollView + Column: arma TODAS las secciones (sin virtualizar),
+      // como el DOM de la web, para poder saltar a cualquiera al instante sin atorarse.
+      child: SingleChildScrollView(
         controller: _scroll,
         padding: const EdgeInsets.only(top: 2, bottom: 4),
-        children: [
-          for (var i = 0; i < c.secciones.length; i++) _seccionCard(c.secciones[i], i),
-        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < c.secciones.length; i++) _seccionCard(c.secciones[i], i),
+          ],
+        ),
       ),
     );
   }
@@ -531,7 +534,7 @@ class _ChartScreenState extends State<ChartScreen> {
 
   Widget _ensayoBtn() {
     return Material(
-      color: NW.goldSoft,
+      color: NW.chordSoft,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),

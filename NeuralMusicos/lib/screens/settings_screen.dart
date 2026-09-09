@@ -89,7 +89,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.download_done, size: 18, color: NW.gold),
+                    const Icon(Icons.download_done, size: 18, color: NW.chord),
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text('Pistas guardadas para ensayar sin internet',

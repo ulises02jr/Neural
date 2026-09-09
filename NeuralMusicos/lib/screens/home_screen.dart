@@ -68,6 +68,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  String _fechaLinda(String iso) {
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(iso);
+    if (m == null) return iso;
+    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    final mo = int.parse(m.group(2)!);
+    if (mo < 1 || mo > 12) return iso;
+    return '${int.parse(m.group(3)!)} ${meses[mo - 1]} ${m.group(1)}';
+  }
+
   void _abrir(Song s, int sem) {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ChartScreen(
@@ -82,14 +91,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 16,
+        centerTitle: true,
         title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(Api.I.orgNombre.isEmpty ? 'Neural Worship' : Api.I.orgNombre,
+                textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             if (Api.I.nombre.isNotEmpty)
               Text('Bienvenido ${Api.I.nombre}',
+                  textAlign: TextAlign.center,
                   style: const TextStyle(
                       fontSize: 11, color: NW.txt3, fontWeight: FontWeight.normal)),
           ],
@@ -113,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ],
         bottom: TabBar(
           controller: _tabs,
-          indicatorColor: NW.gold,
+          indicatorColor: NW.chord,
           labelColor: NW.txt,
           unselectedLabelColor: NW.txt3,
           tabs: [
@@ -123,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       ),
       body: _cargando
-          ? const Center(child: CircularProgressIndicator(color: NW.gold))
+          ? const Center(child: CircularProgressIndicator(color: NW.chord))
           : _error != null
               ? _errorView()
               : TabBarView(
@@ -167,7 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         Expanded(
           child: RefreshIndicator(
-            color: NW.gold,
+            color: NW.chord,
             onRefresh: _cargar,
             child: lista.isEmpty
                 ? ListView(children: const [
@@ -200,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _setlistsTab() {
     if (_setlists.isEmpty) {
       return RefreshIndicator(
-        color: NW.gold,
+        color: NW.chord,
         onRefresh: _cargar,
         child: ListView(children: const [
           Padding(
@@ -213,7 +225,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       );
     }
     return RefreshIndicator(
-      color: NW.gold,
+      color: NW.chord,
       onRefresh: _cargar,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
@@ -224,22 +236,44 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                margin: const EdgeInsets.only(bottom: 10, top: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: const BoxDecoration(
-                  color: NW.goldSoft,
-                  border: Border(left: BorderSide(color: NW.gold, width: 3)),
-                  borderRadius: BorderRadius.all(Radius.circular(6)),
+                margin: const EdgeInsets.only(bottom: 12, top: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: NW.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: NW.line),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Text(sl.nombre.isEmpty ? 'Setlist' : sl.nombre,
-                        style: const TextStyle(fontWeight: FontWeight.w600, color: NW.txt)),
-                    if (sl.fecha.isNotEmpty)
-                      Text('📅 ${sl.fecha}',
-                          style: const TextStyle(
-                              fontSize: 11, color: NW.txt2, fontFamily: NW.mono)),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: NW.raised,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.calendar_month_outlined, size: 20, color: NW.txt2),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(sl.nombre.isEmpty ? 'Repertorio' : sl.nombre,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 15, color: NW.txt)),
+                          if (sl.fecha.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(_fechaLinda(sl.fecha),
+                                  style: const TextStyle(fontSize: 12, color: NW.txt2)),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Text('${sl.canciones.length} ${sl.canciones.length == 1 ? "tema" : "temas"}',
+                        style: const TextStyle(fontSize: 11, color: NW.txt3)),
                   ],
                 ),
               ),
@@ -307,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 width: 30,
                 child: Text(numLabel,
                     style: TextStyle(
-                        color: setlist ? NW.gold : NW.txt3,
+                        color: setlist ? NW.chord : NW.txt3,
                         fontFamily: NW.mono,
                         fontSize: 13,
                         fontWeight: FontWeight.w500)),
@@ -330,12 +364,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
                             decoration: BoxDecoration(
-                              color: NW.goldSoft,
+                              color: NW.chordSoft,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(tonoText,
                                 style: const TextStyle(
-                                    color: NW.gold,
+                                    color: NW.chord,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                     fontFamily: NW.mono)),

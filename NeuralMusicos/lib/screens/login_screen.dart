@@ -82,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           '${Api.baseUrl}/static/logo.png',
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.graphic_eq, color: NW.gold, size: 40),
+                              const Icon(Icons.graphic_eq, color: NW.chord, size: 40),
                         ),
                       ),
                     ),
@@ -155,7 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         child: const Text('Crear una',
                             style: TextStyle(
-                                fontSize: 12, color: NW.gold, fontWeight: FontWeight.w600)),
+                                fontSize: 12, color: NW.chord, fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),
