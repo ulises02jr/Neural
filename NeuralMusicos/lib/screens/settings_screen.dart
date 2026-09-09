@@ -77,7 +77,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 _fila('Organización', Api.I.orgNombre.isEmpty ? '—' : Api.I.orgNombre),
                 const Divider(color: NW.line, height: 20),
-                _fila('Usuario', Api.I.nombre.isEmpty ? '—' : Api.I.nombre),
+                _fila('Usuario', Api.I.nombreCompleto.isEmpty ? '—' : Api.I.nombreCompleto),
               ],
             ),
           ),

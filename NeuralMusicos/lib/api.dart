@@ -10,7 +10,10 @@ class Api {
   String? token;
   String orgNombre = '';
   String nombre = '';
+  String apellido = '';
   Map<String, dynamic> features = {};
+
+  String get nombreCompleto => [nombre, apellido].where((s) => s.isNotEmpty).join(' ');
 
   static final Api I = Api._();
   Api._();
@@ -27,6 +30,7 @@ class Api {
     token = null;
     orgNombre = '';
     nombre = '';
+    apellido = '';
     features = {};
   }
 
@@ -47,6 +51,7 @@ class Api {
         token = j['token']?.toString();
         orgNombre = (j['org_nombre'] ?? '').toString();
         nombre = (j['nombre'] ?? '').toString();
+        apellido = (j['apellido'] ?? '').toString();
         features = Map<String, dynamic>.from(j['features'] ?? {});
         await _guardarSesion();
         return {'ok': true};
