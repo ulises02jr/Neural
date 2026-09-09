@@ -127,14 +127,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(Api.I.orgNombre.isEmpty ? 'NeuralCharts' : Api.I.orgNombre,
+            const Text('NeuralCharts',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            if (Api.I.nombre.isNotEmpty)
-              Text('Bienvenido ${Api.I.nombre}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 11, color: NW.txt3, fontWeight: FontWeight.normal)),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            Text(
+                Api.I.orgNombre.isNotEmpty
+                    ? Api.I.orgNombre
+                    : (Api.I.nombre.isNotEmpty ? 'Bienvenido ${Api.I.nombre}' : ''),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 11, color: NW.txt3, fontWeight: FontWeight.normal)),
           ],
         ),
         actions: [
