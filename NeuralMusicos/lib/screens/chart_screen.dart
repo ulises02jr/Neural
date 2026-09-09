@@ -51,6 +51,7 @@ class _ChartScreenState extends State<ChartScreen> {
   Timer? _syncTimer;    // sigue la musica del modo ensayo
   int _syncIdx = -1;
   bool _audioPlaying = false;
+  double _lastSyncPos = -1;
 
   // Preferencias de vista (como la web)
   bool _claro = false; // tema dia
@@ -87,7 +88,7 @@ class _ChartScreenState extends State<ChartScreen> {
     _parseTono(widget.tonoBase);
     _cargar();
     // El chart sigue la musica del ensayo mientras suena (panel abierto o cerrado).
-    _syncTimer = Timer.periodic(const Duration(milliseconds: 300), (_) => _tickSync());
+    _syncTimer = Timer.periodic(const Duration(milliseconds: 150), (_) => _tickSync());
   }
 
   @override
@@ -98,19 +99,31 @@ class _ChartScreenState extends State<ChartScreen> {
     super.dispose();
   }
 
-  /// Fuente de verdad = el audio: mueve el chart a la seccion que suena.
+  /// Fuente de verdad = el audio: mueve el chart a la seccion que suena
+  /// (mientras reproduce O mientras se mueve la barra, aunque este en pausa).
+  bool _syncBusy = false;
   Future<void> _tickSync() async {
+    if (_syncBusy) return;
     final ae = AudioEngine.I;
     if (ae.loadedNumero != widget.numero || ae.loadedSecs.isEmpty) {
       if (_audioPlaying && mounted) setState(() => _audioPlaying = false);
       return;
     }
-    final playing = await ae.isPlaying();
+    _syncBusy = true;
+    late final bool playing;
+    late final double p;
+    try {
+      playing = await ae.isPlaying();
+      p = await ae.position();
+    } finally {
+      _syncBusy = false;
+    }
     if (!mounted) return;
-    if (playing != _audioPlaying) setState(() => _audioPlaying = playing);
-    if (!playing) return;
-    final p = await ae.position();
-    if (!mounted) return;
+    // "Se mueve" = reproduciendo o la posicion cambio (el usuario esta desplazando).
+    final moving = playing || (p - _lastSyncPos).abs() > 0.05;
+    _lastSyncPos = p;
+    if (moving != _audioPlaying) setState(() => _audioPlaying = moving);
+    if (!moving) return; // en pausa quieto: no estorbar el scroll manual
     int cur = -1;
     for (final m in ae.loadedSecs) {
       if (m[0] <= p + 0.03) { cur = m[1].toInt(); } else { break; }
@@ -350,11 +363,14 @@ class _ChartScreenState extends State<ChartScreen> {
         if (!_scrollProgramatico && n is ScrollUpdateNotification) _detectarActiva();
         return false;
       },
-      child: ListView.builder(
+      // ListView normal (no .builder): arma TODAS las secciones para poder saltar
+      // a cualquiera al instante, como NeuralPlay (que tiene el chart completo en el DOM).
+      child: ListView(
         controller: _scroll,
         padding: const EdgeInsets.only(top: 2, bottom: 4),
-        itemCount: c.secciones.length,
-        itemBuilder: (_, i) => _seccionCard(c.secciones[i], i),
+        children: [
+          for (var i = 0; i < c.secciones.length; i++) _seccionCard(c.secciones[i], i),
+        ],
       ),
     );
   }
