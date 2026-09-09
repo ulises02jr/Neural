@@ -23,13 +23,21 @@ class ChartScreen extends StatefulWidget {
   final int numero;
   final int semInicial;
   final String tonoBase;
+  final String? liveBase; // si != null: modo EN VIVO (http://ip:5050)
 
   const ChartScreen({
     super.key,
     required this.numero,
     required this.semInicial,
     required this.tonoBase,
+    this.liveBase,
   });
+
+  /// Constructor para el modo EN VIVO (sigue al operador por LAN).
+  const ChartScreen.live({super.key, required this.liveBase})
+      : numero = 0,
+        semInicial = 0,
+        tonoBase = 'C';
 
   @override
   State<ChartScreen> createState() => _ChartScreenState();
@@ -53,6 +61,11 @@ class _ChartScreenState extends State<ChartScreen> {
   int _syncIdx = -1;
   bool _audioPlaying = false;
   double _lastSyncPos = -1;
+  bool get _live => widget.liveBase != null;
+  Timer? _liveTimer;    // modo EN VIVO: sigue al operador por LAN
+  int _liveVer = -1;
+  bool _liveBusy = false;
+  bool _liveOffline = false;
 
   // Preferencias de vista (como la web)
   bool _claro = false; // tema dia
@@ -89,16 +102,54 @@ class _ChartScreenState extends State<ChartScreen> {
     _parseTono(widget.tonoBase);
     _cargarVista();
     _cargar();
-    // El chart sigue la musica del ensayo mientras suena (panel abierto o cerrado).
-    _syncTimer = Timer.periodic(const Duration(milliseconds: 150), (_) => _tickSync());
+    if (_live) {
+      // Modo EN VIVO: seguimos al operador consultando /state por LAN.
+      _liveTimer = Timer.periodic(const Duration(milliseconds: 400), (_) => _tickLive());
+    } else {
+      // El chart sigue la musica del ensayo mientras suena (panel abierto o cerrado).
+      _syncTimer = Timer.periodic(const Duration(milliseconds: 150), (_) => _tickSync());
+    }
   }
 
   @override
   void dispose() {
     _syncTimer?.cancel();
+    _liveTimer?.cancel();
     _scroll.dispose();
-    AudioEngine.I.stop(); // al salir de la cancion, detener el audio del ensayo
+    if (!_live) AudioEngine.I.stop(); // al salir de la cancion, detener el audio del ensayo
     super.dispose();
+  }
+
+  /// Modo EN VIVO: consulta /state; si cambio la cancion recarga, y salta a la seccion.
+  Future<void> _tickLive() async {
+    if (_liveBusy) return;
+    _liveBusy = true;
+    Map<String, dynamic>? s;
+    try {
+      s = await Api.I.liveState(widget.liveBase!);
+    } finally {
+      _liveBusy = false;
+    }
+    if (!mounted) return;
+    if (s == null) {
+      if (!_liveOffline) setState(() { _liveOffline = true; _audioPlaying = false; });
+      return;
+    }
+    if (_liveOffline) setState(() => _liveOffline = false);
+    final ver = s['ver'] as int;
+    if (ver != _liveVer) {
+      _liveVer = ver;
+      await _cargar(); // cambio de cancion en vivo
+      if (!mounted) return;
+    }
+    final playing = s['playing'] == true;
+    if (playing != _audioPlaying) setState(() => _audioPlaying = playing);
+    final idx = s['idx'] as int;
+    final n = _chart?.secciones.length ?? 0;
+    if (idx >= 0 && idx < n && idx != _syncIdx) {
+      _syncIdx = idx;
+      _jump(idx, animate: false);
+    }
   }
 
   /// Fuente de verdad = el audio: mueve el chart a la seccion que suena
@@ -189,13 +240,20 @@ class _ChartScreenState extends State<ChartScreen> {
       _cargando = true;
       _error = false;
     });
-    final c = await Api.I.chart(widget.numero, _sem);
+    final c = _live
+        ? await Api.I.liveSong(widget.liveBase!)
+        : await Api.I.chart(widget.numero, _sem);
     if (!mounted) return;
     setState(() {
       _chart = c;
-      _error = c == null;
+      _error = c == null && !_live; // en vivo, "sin cancion" no es error (esperando)
       _cargando = false;
+      _syncIdx = -1;
       if (c != null) {
+        if (_live) {
+          _sem = 0;
+          _parseTono(c.tono); // el tono llega ya fijado por el operador
+        }
         _keys
           ..clear()
           ..addAll(List.generate(c.secciones.length, (_) => GlobalKey()));
@@ -238,7 +296,9 @@ class _ChartScreenState extends State<ChartScreen> {
       body: SafeArea(
         child: _cargando
             ? const Center(child: CircularProgressIndicator(color: NW.chord))
-            : _error || c == null
+            : (_live && c == null)
+                ? _esperandoView()
+                : _error || c == null
                 ? _errorView()
                 : Padding(
                     padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
@@ -266,6 +326,17 @@ class _ChartScreenState extends State<ChartScreen> {
         ]),
       );
 
+  Widget _esperandoView() => Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.wifi_tethering, size: 40, color: NW.chord),
+          const SizedBox(height: 14),
+          Text(_liveOffline ? 'Esperando al reproductor…' : 'Sin canción activa todavía',
+              style: TextStyle(color: _cTxt2, fontSize: 14)),
+          const SizedBox(height: 6),
+          Text('En vivo · seguí al operador', style: TextStyle(color: _cTxt3, fontSize: 12)),
+        ]),
+      );
+
   Widget _topbar(Chart c) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,6 +352,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 children: [
                   Text(c.titulo, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: _cTxt)),
                   _tonoChip(c),
+                  if (_live) _liveTag(),
                 ],
               ),
               const SizedBox(height: 3),
@@ -313,17 +385,30 @@ class _ChartScreenState extends State<ChartScreen> {
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
-        onTap: _abrirTono,
+        onTap: _live ? null : _abrirTono, // en vivo el tono lo fija el operador
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Text(_nombreTono(_sem),
                 style: const TextStyle(
                     color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14, fontFamily: NW.mono)),
-            const Text(' ▾', style: TextStyle(color: Colors.black54, fontSize: 10, fontWeight: FontWeight.bold)),
+            if (!_live)
+              const Text(' ▾', style: TextStyle(color: Colors.black54, fontSize: 10, fontWeight: FontWeight.bold)),
           ]),
         ),
       ),
+    );
+  }
+
+  Widget _liveTag() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: const Color(0x22FF3B50), borderRadius: BorderRadius.circular(5)),
+      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+        SizedBox(width: 7, height: 7, child: DecoratedBox(decoration: BoxDecoration(color: NW.live, shape: BoxShape.circle))),
+        SizedBox(width: 5),
+        Text('EN VIVO', style: TextStyle(color: NW.live, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+      ]),
     );
   }
 
@@ -549,8 +634,10 @@ class _ChartScreenState extends State<ChartScreen> {
         ),
         const SizedBox(width: 6),
         _iconBtn('›', _idx >= c.secciones.length - 1 ? null : () => _jump(_idx + 1)),
-        const SizedBox(width: 6),
-        _ensayoBtn(),
+        if (!_live) ...[
+          const SizedBox(width: 6),
+          _ensayoBtn(),
+        ],
       ],
     );
   }

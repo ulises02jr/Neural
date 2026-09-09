@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
-import '../app_channel.dart';
 import '../models.dart';
 import 'login_screen.dart';
 import 'chart_screen.dart';
@@ -219,7 +218,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
               ),
-              onPressed: () => AppChannel.I.openLive('http://$_liveIp:5050'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChartScreen.live(liveBase: 'http://$_liveIp:5050'),
+                ),
+              ),
               child: const Text('Entrar →', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             ),
         ],

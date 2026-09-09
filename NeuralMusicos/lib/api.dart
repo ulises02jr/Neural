@@ -176,6 +176,34 @@ class Api {
     }
   }
 
+  /// Sistema en vivo por LAN (NeuralPlay :5050): chart actual. base = http://ip:5050
+  Future<Chart?> liveSong(String base) async {
+    try {
+      final r = await http.get(Uri.parse('$base/song')).timeout(const Duration(seconds: 6));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      final secs = j['secciones'];
+      if (secs is! List || secs.isEmpty) return null;
+      return Chart.fromJson(j);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Estado del sistema en vivo: {idx, ver, playing}. null si no responde (offline).
+  Future<Map<String, dynamic>?> liveState(String base) async {
+    try {
+      final r = await http.get(Uri.parse('$base/state')).timeout(const Duration(seconds: 6));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      return {
+        'idx': (j['idx'] is num) ? (j['idx'] as num).toInt() : 0,
+        'ver': (j['ver'] is num) ? (j['ver'] as num).toInt() : 0,
+        'playing': j['playing'] == true,
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Estado del culto en vivo: {activo:bool, ip:String?}.
   Future<Map<String, dynamic>> liveStatus() async {
     try {
