@@ -5,6 +5,7 @@ import '../api.dart';
 import '../models.dart';
 import 'rehearsal_sheet.dart';
 import '../audio_engine.dart';
+import '../app_channel.dart';
 
 const _nombres = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -86,6 +87,7 @@ class _ChartScreenState extends State<ChartScreen> {
     super.initState();
     _sem = widget.semInicial;
     _parseTono(widget.tonoBase);
+    _cargarVista();
     _cargar();
     // El chart sigue la musica del ensayo mientras suena (panel abierto o cerrado).
     _syncTimer = Timer.periodic(const Duration(milliseconds: 150), (_) => _tickSync());
@@ -135,6 +137,27 @@ class _ChartScreenState extends State<ChartScreen> {
       _syncIdx = cur;
       _jump(cur, animate: false); // instantáneo, como NeuralPlay
     }
+  }
+
+  void _cargarVista() {
+    final a = AppChannel.I;
+    final niv = a.get('v_nivel', 2);
+    _nivel = (niv is int) ? niv.clamp(0, 4) : 2;
+    _claro = a.get('v_claro', false) == true;
+    _modo = (a.get('v_modo', 'ambos') ?? 'ambos').toString();
+    final c = a.get('v_color');
+    _colorAcorde = (c is int) ? Color(c) : null;
+    _grosor = (a.get('v_grosor', 'normal') ?? 'normal').toString();
+  }
+
+  void _guardarVista() {
+    AppChannel.I.setAll({
+      'v_nivel': _nivel,
+      'v_claro': _claro,
+      'v_modo': _modo,
+      'v_color': _colorAcorde?.toARGB32(),
+      'v_grosor': _grosor,
+    });
   }
 
   void _parseTono(String t) {
@@ -657,6 +680,7 @@ class _ChartScreenState extends State<ChartScreen> {
           void set(VoidCallback fn) {
             setState(fn);
             setSheet(() {});
+            _guardarVista();
           }
 
           return SingleChildScrollView(

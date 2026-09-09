@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'theme.dart';
 import 'api.dart';
+import 'app_channel.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppChannel.I.load();
   await Api.I.cargarSesion();
   runApp(const NeuralMusicosApp());
 }

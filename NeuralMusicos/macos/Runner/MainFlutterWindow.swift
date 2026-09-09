@@ -55,7 +55,37 @@ class MainFlutterWindow: NSWindow {
       }
     }
 
+    // Canal general de la app: abrir URLs (EN VIVO) y guardar preferencias/sesion.
+    let appCh = FlutterMethodChannel(
+      name: "neural/app",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    appCh.setMethodCallHandler { call, result in
+      let args = call.arguments as? [String: Any] ?? [:]
+      switch call.method {
+      case "openUrl":
+        if let u = args["url"] as? String, let url = URL(string: u) {
+          NSWorkspace.shared.open(url)
+        }
+        result(nil)
+      case "prefsGet":
+        result((try? String(contentsOf: MainFlutterWindow.prefsFile, encoding: .utf8)) ?? "{}")
+      case "prefsSet":
+        if let s = args["json"] as? String {
+          try? s.write(to: MainFlutterWindow.prefsFile, atomically: true, encoding: .utf8)
+        }
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     super.awakeFromNib()
+  }
+
+  static var prefsFile: URL {
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+    return base.appendingPathComponent("neural_prefs.json")
   }
 }
 

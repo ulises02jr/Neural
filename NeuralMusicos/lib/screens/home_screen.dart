@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
+import '../app_channel.dart';
 import '../models.dart';
 import 'login_screen.dart';
 import 'chart_screen.dart';
@@ -21,18 +23,48 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool _cargando = true;
   String? _error;
   String _busca = '';
+  bool _liveActivo = false;
+  String? _liveIp;
+  Timer? _autoTimer;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
     _cargar();
+    _refrescarLive();
+    // Auto-refresco: detecta cambios de setlist y del EN VIVO sin deslizar.
+    _autoTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _refrescarLive();
+      _cargarSilencioso();
+    });
   }
 
   @override
   void dispose() {
+    _autoTimer?.cancel();
     _tabs.dispose();
     super.dispose();
+  }
+
+  Future<void> _refrescarLive() async {
+    final r = await Api.I.liveStatus();
+    if (!mounted) return;
+    setState(() {
+      _liveActivo = r['activo'] == true;
+      _liveIp = r['ip'] as String?;
+    });
+  }
+
+  Future<void> _cargarSilencioso() async {
+    final r = await Api.I.biblioteca();
+    if (!mounted || r['ok'] != true) return;
+    final songs = (r['songs'] as List).cast<Song>();
+    setState(() {
+      _songs = songs;
+      _setlists = (r['setlists'] as List).cast<Setlist>();
+      _porId = {for (final s in songs) s.id: s};
+    });
   }
 
   Future<void> _cargar() async {
@@ -134,14 +166,64 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
-      body: _cargando
-          ? const Center(child: CircularProgressIndicator(color: NW.chord))
-          : _error != null
-              ? _errorView()
-              : TabBarView(
-                  controller: _tabs,
-                  children: [_setlistsTab(), _bibliotecaTab()],
-                ),
+      body: Column(
+        children: [
+          if (_liveActivo) _liveBanner(),
+          Expanded(
+            child: _cargando
+                ? const Center(child: CircularProgressIndicator(color: NW.chord))
+                : _error != null
+                    ? _errorView()
+                    : TabBarView(
+                        controller: _tabs,
+                        children: [_setlistsTab(), _bibliotecaTab()],
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _liveBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF3A1015), Color(0xFF5A1620)]),
+        border: Border.all(color: const Color(0xFF7A2030)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 11, height: 11,
+            decoration: const BoxDecoration(color: NW.live, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('EN VIVO',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14, letterSpacing: 0.5)),
+                Text('El culto está activo · Entrá al sistema local',
+                    style: TextStyle(color: Color(0xFFE5B5BD), fontSize: 11)),
+              ],
+            ),
+          ),
+          if (_liveIp != null && _liveIp!.isNotEmpty)
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              ),
+              onPressed: () => AppChannel.I.openUrl('http://$_liveIp:5050'),
+              child: const Text('Entrar →', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            ),
+        ],
+      ),
     );
   }
 

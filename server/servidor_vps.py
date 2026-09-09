@@ -2095,6 +2095,40 @@ def api_auth_unirse():
                     "mensaje": "Cuenta creada en «%s». Esperá la aprobación del administrador para ingresar." % org["nombre"]})
 
 
+@app.route("/api/auth/olvide", methods=["POST"])
+def api_auth_olvide():
+    """App: solicitar codigo de reset por email. Respuesta generica (no revela si existe)."""
+    data = request.get_json(silent=True) or request.form
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "mensaje": "Ingresá tu email."}), 400
+    try:
+        u = usuarios.buscar_por_email(email)
+        if u and u.get("estado") == "activo":
+            codigo = usuarios.crear_codigo_reset(u["id"])
+            nombre_completo = "%s %s" % (u.get("nombre", ""), u.get("apellido", ""))
+            emails_module.enviar_email_codigo_reset(u["email"], nombre_completo.strip(), codigo)
+    except Exception as e:
+        logging.error("olvide %s: %s", email, e)
+    return jsonify({"ok": True,
+                    "mensaje": "Si el email existe, te enviamos un código de verificación."})
+
+
+@app.route("/api/auth/reset", methods=["POST"])
+def api_auth_reset():
+    """App: canjear codigo + nueva contraseña."""
+    data = request.get_json(silent=True) or request.form
+    email = (data.get("email") or "").strip().lower()
+    codigo = (data.get("codigo") or "").strip()
+    nueva = data.get("password") or ""
+    if not email or not codigo or not nueva:
+        return jsonify({"ok": False, "mensaje": "Completá todos los campos."}), 400
+    ok, msg = usuarios.usar_codigo_y_cambiar_password(email, codigo, nueva)
+    if not ok:
+        return jsonify({"ok": False, "mensaje": msg}), 400
+    return jsonify({"ok": True, "mensaje": "Contraseña cambiada. Ya podés ingresar."})
+
+
 @app.route("/api/live/plan")
 def api_live_plan():
     """NeuralPlay: plan y features de la organización, para gatear funciones. Token."""

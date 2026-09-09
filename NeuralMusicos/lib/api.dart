@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'models.dart';
+import 'app_channel.dart';
 
 /// Cliente de la API de Neural Worship. Autentica con email+password,
 /// guarda el token de la organizacion y lo usa en las llamadas /api/live/*.
@@ -20,11 +21,25 @@ class Api {
 
   Map<String, String> get _authHeaders => {'Authorization': 'Bearer ${token ?? ''}'};
 
-  // NOTA: por ahora la sesion se guarda solo en memoria (sin shared_preferences)
-  // para no requerir CocoaPods. Se reactivara la persistencia mas adelante.
-  Future<void> cargarSesion() async {}
+  // Sesion persistente via el archivo de preferencias nativo (neural/app).
+  Future<void> cargarSesion() async {
+    token = AppChannel.I.get('token');
+    orgNombre = (AppChannel.I.get('org', '') ?? '').toString();
+    nombre = (AppChannel.I.get('nombre', '') ?? '').toString();
+    apellido = (AppChannel.I.get('apellido', '') ?? '').toString();
+    final f = AppChannel.I.get('features');
+    if (f is Map) features = Map<String, dynamic>.from(f);
+  }
 
-  Future<void> _guardarSesion() async {}
+  Future<void> _guardarSesion() async {
+    await AppChannel.I.setAll({
+      'token': token,
+      'org': orgNombre,
+      'nombre': nombre,
+      'apellido': apellido,
+      'features': features,
+    });
+  }
 
   Future<void> logout() async {
     token = null;
@@ -32,6 +47,7 @@ class Api {
     nombre = '';
     apellido = '';
     features = {};
+    await AppChannel.I.remove(['token', 'org', 'nombre', 'apellido', 'features']);
   }
 
   bool get logueado => token != null && token!.isNotEmpty;
@@ -92,6 +108,36 @@ class Api {
     }
   }
 
+  /// Solicita un código de reset al correo. Respuesta genérica.
+  Future<Map<String, dynamic>> olvide(String email) async {
+    try {
+      final r = await http
+          .post(Uri.parse('$baseUrl/api/auth/olvide'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'email': email}))
+          .timeout(const Duration(seconds: 20));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      return {'ok': j['ok'] == true, 'mensaje': (j['mensaje'] ?? '').toString()};
+    } catch (e) {
+      return {'ok': false, 'mensaje': 'Sin conexión con el servidor'};
+    }
+  }
+
+  /// Canjea código + nueva contraseña.
+  Future<Map<String, dynamic>> reset(String email, String codigo, String password) async {
+    try {
+      final r = await http
+          .post(Uri.parse('$baseUrl/api/auth/reset'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'email': email, 'codigo': codigo, 'password': password}))
+          .timeout(const Duration(seconds: 20));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      return {'ok': j['ok'] == true, 'mensaje': (j['mensaje'] ?? '').toString()};
+    } catch (e) {
+      return {'ok': false, 'mensaje': 'Sin conexión con el servidor'};
+    }
+  }
+
   /// Trae setlists + indice de canciones en una sola llamada.
   /// Devuelve {ok, songs: List<Song>, setlists: List<Setlist>}
   Future<Map<String, dynamic>> biblioteca() async {
@@ -127,6 +173,19 @@ class Api {
       return Chart.fromJson(j);
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Estado del culto en vivo: {activo:bool, ip:String?}.
+  Future<Map<String, dynamic>> liveStatus() async {
+    try {
+      final r = await http
+          .get(Uri.parse('$baseUrl/api/live_status'))
+          .timeout(const Duration(seconds: 10));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      return {'activo': j['activo'] == true, 'ip': j['ip']?.toString()};
+    } catch (e) {
+      return {'activo': false, 'ip': null};
     }
   }
 
