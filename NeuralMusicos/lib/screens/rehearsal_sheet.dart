@@ -119,13 +119,16 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
 
     // Cargar audio nativo.
     try {
-      final list = _stems
-          .map((s) => {
-                'id': s.id,
-                'url': Api.I.stemDownloadUrl(widget.numero, s.id, widget.sem),
-                'key': '${widget.numero}_t${widget.sem}_${s.id.replaceAll('/', '_')}',
-              })
-          .toList();
+      // Usar los proxys MP3 (web/<base>.mp3): ~decenas de veces mas livianos que los WAV.
+      final list = _stems.map((s) {
+        final base = s.id.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
+        final proxy = 'web/$base.mp3';
+        return {
+          'id': s.id,
+          'url': Api.I.stemDownloadUrl(widget.numero, proxy, widget.sem),
+          'key': '${widget.numero}_t${widget.sem}_$base.mp3',
+        };
+      }).toList();
       setState(() => _status = 'Descargando pistas…');
       final dur = await AudioEngine.I.load(list);
       if (!mounted) return;

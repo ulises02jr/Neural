@@ -4,6 +4,7 @@ import '../api.dart';
 import '../models.dart';
 import 'login_screen.dart';
 import 'chart_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -95,9 +96,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         actions: [
           IconButton(
-            tooltip: 'Salir',
-            icon: const Icon(Icons.logout, size: 20, color: NW.txt3),
-            onPressed: _salir,
+            tooltip: 'Configuración',
+            icon: const Icon(Icons.settings_outlined, size: 22, color: NW.txt2),
+            onPressed: () async {
+              final nav = Navigator.of(context);
+              await nav.push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+              if (mounted && !Api.I.logueado) {
+                nav.pushReplacement(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                );
+              }
+            },
           ),
         ],
         bottom: TabBar(

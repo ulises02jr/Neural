@@ -70,22 +70,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo circular (como la web). Si no carga, muestra un icono.
+                  // Logo circular limpio (recorte a circulo, llena el area).
                   Center(
-                    child: Container(
-                      width: 90,
-                      height: 90,
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Image.network(
-                        '${Api.baseUrl}/static/logo.png',
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.graphic_eq, color: Colors.black, size: 40),
+                    child: ClipOval(
+                      child: Container(
+                        width: 90,
+                        height: 90,
+                        color: NW.raised,
+                        child: Image.network(
+                          '${Api.baseUrl}/static/logo.png',
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.graphic_eq, color: NW.gold, size: 40),
+                        ),
                       ),
                     ),
                   ),
