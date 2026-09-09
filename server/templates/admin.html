@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin · {{ org_nombre }}</title>
+<title>Admin · NeuralWorship</title>
 <style>
   :root{
     --bg:#0a0a0a; --surface:#141414; --raised:#1f1f1f; --line:#2a2a2a;
@@ -175,8 +175,8 @@
     <div class="brand">
       <img src="{{ url_for('static', filename='logo.png') }}?v={{ logo_ver }}" alt="">
       <div class="brand-text">
-        <h1>{{ org_nombre }}</h1>
-        <div class="sub">Panel de Administración</div>
+        <h1>NeuralWorship</h1>
+        <div class="sub">Panel de Administración · {{ org_info.nombre }}</div>
       </div>
     </div>
     <div class="links">
