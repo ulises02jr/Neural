@@ -53,4 +53,13 @@ class AppChannel {
       await _ch.invokeMethod('openUrl', {'url': url});
     } catch (_) {}
   }
+
+  /// Abre el sistema en vivo (LAN) DENTRO de la app (ventana WebView nativa).
+  Future<void> openLive(String url) async {
+    try {
+      await _ch.invokeMethod('openLive', {'url': url});
+    } catch (_) {
+      await openUrl(url); // respaldo: navegador externo
+    }
+  }
 }

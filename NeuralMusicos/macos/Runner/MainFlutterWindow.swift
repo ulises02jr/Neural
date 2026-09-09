@@ -1,9 +1,32 @@
 import Cocoa
 import FlutterMacOS
 import AVFoundation
+import WebKit
 
 class MainFlutterWindow: NSWindow {
   private let audio = MultiTrackAudio()
+  private var liveWindow: NSWindow?
+
+  /// Abre el sistema en vivo (LAN) en una ventana WebView DENTRO de la app.
+  func mostrarLive(_ url: URL) {
+    if let win = liveWindow {
+      (win.contentView as? WKWebView)?.load(URLRequest(url: url))
+      win.makeKeyAndOrderFront(nil)
+      return
+    }
+    let rect = NSRect(x: 0, y: 0, width: 1040, height: 720)
+    let wv = WKWebView(frame: rect)
+    let win = NSWindow(contentRect: rect,
+                       styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                       backing: .buffered, defer: false)
+    win.title = "Neural Worship · En vivo"
+    win.contentView = wv
+    win.center()
+    win.isReleasedWhenClosed = false
+    liveWindow = win
+    wv.load(URLRequest(url: url))
+    win.makeKeyAndOrderFront(nil)
+  }
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -59,12 +82,17 @@ class MainFlutterWindow: NSWindow {
     let appCh = FlutterMethodChannel(
       name: "neural/app",
       binaryMessenger: flutterViewController.engine.binaryMessenger)
-    appCh.setMethodCallHandler { call, result in
+    appCh.setMethodCallHandler { [weak self] call, result in
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
       case "openUrl":
         if let u = args["url"] as? String, let url = URL(string: u) {
           NSWorkspace.shared.open(url)
+        }
+        result(nil)
+      case "openLive":
+        if let u = args["url"] as? String, let url = URL(string: u) {
+          self?.mostrarLive(url)
         }
         result(nil)
       case "prefsGet":
