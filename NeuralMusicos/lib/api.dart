@@ -70,7 +70,7 @@ class Api {
       final songs = <Song>[];
       final idx = Map<String, dynamic>.from(j['canciones'] ?? {});
       idx.forEach((k, v) => songs.add(Song.fromIndex(k, Map<String, dynamic>.from(v as Map))));
-      songs.sort((a, b) => a.titulo.toLowerCase().compareTo(b.titulo.toLowerCase()));
+      songs.sort((a, b) => a.id.compareTo(b.id)); // por numero de pista
       final setlists = <Setlist>[];
       for (final s in (j['setlists'] as List? ?? [])) {
         setlists.add(Setlist.fromJson(Map<String, dynamic>.from(s as Map)));

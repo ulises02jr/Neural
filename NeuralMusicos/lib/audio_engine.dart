@@ -7,10 +7,20 @@ class AudioEngine {
   static final AudioEngine I = AudioEngine._();
   AudioEngine._();
 
+  // Sesion cargada actualmente (para no re-descargar al reabrir el panel).
+  int? loadedNumero;
+  int? loadedSem;
+  double loadedDur = 0;
+
+  bool loadedFor(int numero, int sem) => loadedNumero == numero && loadedSem == sem;
+
   /// Carga los stems: cada uno {id, url}. Devuelve la duracion en segundos.
-  Future<double> load(List<Map<String, String>> stems) async {
+  Future<double> load(List<Map<String, String>> stems, {int? numero, int? sem}) async {
     final d = await _ch.invokeMethod('load', {'stems': stems});
-    return (d as num?)?.toDouble() ?? 0;
+    loadedDur = (d as num?)?.toDouble() ?? 0;
+    loadedNumero = numero;
+    loadedSem = sem;
+    return loadedDur;
   }
 
   Future<void> play(double offset) => _ch.invokeMethod('play', {'offset': offset});
@@ -18,11 +28,22 @@ class AudioEngine {
   Future<void> seek(double offset) => _ch.invokeMethod('seek', {'offset': offset});
   Future<void> setVolume(String id, double value) =>
       _ch.invokeMethod('setVolume', {'id': id, 'value': value});
-  Future<void> stop() => _ch.invokeMethod('stop');
+
+  Future<void> stop() async {
+    await _ch.invokeMethod('stop');
+    loadedNumero = null;
+    loadedSem = null;
+    loadedDur = 0;
+  }
 
   Future<double> position() async {
     final p = await _ch.invokeMethod('position');
     return (p as num?)?.toDouble() ?? 0;
+  }
+
+  Future<bool> isPlaying() async {
+    final b = await _ch.invokeMethod('isPlaying');
+    return b == true;
   }
 
   /// Bytes ocupados por las pistas guardadas offline.

@@ -3,6 +3,7 @@ import '../theme.dart';
 import '../api.dart';
 import '../models.dart';
 import 'rehearsal_sheet.dart';
+import '../audio_engine.dart';
 
 const _nombres = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -86,6 +87,7 @@ class _ChartScreenState extends State<ChartScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    AudioEngine.I.stop(); // al salir de la cancion, detener el audio del ensayo
     super.dispose();
   }
 

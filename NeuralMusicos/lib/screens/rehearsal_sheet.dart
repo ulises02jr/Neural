@@ -78,7 +78,8 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   @override
   void dispose() {
     _timer?.cancel();
-    if (_audioOk) AudioEngine.I.stop();
+    // No detenemos el audio al cerrar el panel: sigue sonando (como en la web).
+    // Se detiene al salir de la cancion (ChartScreen.dispose).
     super.dispose();
   }
 
@@ -131,6 +132,28 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       return;
     }
 
+    // Si ya esta cargada esta cancion+tono, reconectar sin re-descargar (sigue sonando).
+    if (AudioEngine.I.loadedFor(widget.numero, widget.sem)) {
+      try {
+        final pos = await AudioEngine.I.position();
+        final playing = await AudioEngine.I.isPlaying();
+        final bytes = await AudioEngine.I.cacheSize();
+        if (!mounted) return;
+        setState(() {
+          _dur = AudioEngine.I.loadedDur;
+          _pos = pos;
+          _playing = playing;
+          _audioOk = true;
+          _cargando = false;
+          _status = null;
+          _cacheBytes = bytes;
+        });
+        _aplicarGanancias(); // el mixer vuelve a todas las pistas activas
+        if (playing) _startTimer();
+        return;
+      } catch (_) {/* si falla, cae a recarga normal */}
+    }
+
     // Cargar audio nativo.
     try {
       // Usar los proxys MP3 (web/<base>.mp3): ~decenas de veces mas livianos que los WAV.
@@ -144,7 +167,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         };
       }).toList();
       setState(() => _status = 'Descargando pistas…');
-      final dur = await AudioEngine.I.load(list);
+      final dur = await AudioEngine.I.load(list, numero: widget.numero, sem: widget.sem);
       if (!mounted) return;
       final bytes = await AudioEngine.I.cacheSize();
       if (!mounted) return;

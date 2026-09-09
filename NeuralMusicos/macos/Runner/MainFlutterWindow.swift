@@ -42,6 +42,8 @@ class MainFlutterWindow: NSWindow {
         result(nil)
       case "position":
         result(self.audio.positionSec())
+      case "isPlaying":
+        result(self.audio.isPlaying)
       case "stop":
         self.audio.stop(); result(nil)
       case "cacheSize":
@@ -203,6 +205,8 @@ class MultiTrackAudio {
     }
     return startOffsetSec
   }
+
+  var isPlaying: Bool { playing }
 
   // MARK: - Cache persistente (offline)
 
