@@ -272,8 +272,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         ],
                       ),
                     ),
-                    Text('${sl.canciones.length} ${sl.canciones.length == 1 ? "tema" : "temas"}',
-                        style: const TextStyle(fontSize: 11, color: NW.txt3)),
                   ],
                 ),
               ),
