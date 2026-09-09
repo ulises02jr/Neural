@@ -109,6 +109,17 @@ class Api {
     }
   }
 
+  /// URL de descarga de un stem para el motor de audio nativo.
+  /// El token va en el query (no como header) para que el redirect 302 a Spaces
+  /// no arrastre el header Authorization (Spaces lo rechaza).
+  String stemDownloadUrl(int numero, String file, int sem) {
+    final u = Uri.parse(baseUrl).replace(
+      pathSegments: ['api', 'live', 'pista', '$numero', ...file.split('/')],
+      queryParameters: {'t': '$sem', if (token != null) 'token': token!},
+    );
+    return u.toString();
+  }
+
   /// URL de la portada de una cancion. La web la sirve como /static/<portada>.
   /// [ts] es portada_ts para cache-busting. Si no hay portada, devuelve el logo.
   String portadaUrl(String portada, {int? ts}) {
