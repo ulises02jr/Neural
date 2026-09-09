@@ -582,9 +582,11 @@ def contar_usuarios(org_id):
         return conn.execute("SELECT COUNT(*) FROM usuarios WHERE org_id = ?", (org_id,)).fetchone()[0]
 
 
-def actualizar_organizacion(org_id, paquete=None, max_musicos=None, almacen_gb=None, estado_suscripcion=None):
+def actualizar_organizacion(org_id, paquete=None, max_musicos=None, almacen_gb=None, estado_suscripcion=None, nombre=None):
     """Actualiza campos de una organización (para el súper-admin)."""
     sets, params = [], []
+    if nombre is not None:
+        sets.append("nombre = ?"); params.append(nombre)
     if paquete is not None:
         sets.append("paquete = ?"); params.append(paquete)
     if max_musicos is not None:

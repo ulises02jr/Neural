@@ -1902,6 +1902,27 @@ def admin_org_logo():
     return redirect(url_for("admin"))
 
 
+@app.route("/admin/organizacion", methods=["POST"])
+@login_required("admin")
+def admin_organizacion():
+    """El admin edita el nombre de su organización."""
+    nombre = (request.form.get("org_nombre", "") or "").strip()
+    if not nombre:
+        flash("El nombre de la organización no puede estar vacío.", "error")
+        return redirect(url_for("admin"))
+    usuarios.actualizar_organizacion(org_actual(), nombre=nombre)
+    # Mantener sincronizado el nombre visible en config si es la org operadora.
+    try:
+        if int(org_actual()) == OPERADOR_ORG_ID:
+            cfg = get_config()
+            cfg["org_nombre"] = nombre
+            guardar_config(cfg)
+    except Exception:
+        pass
+    flash("✓ Nombre de la organización actualizado", "success")
+    return redirect(url_for("admin"))
+
+
 @app.route("/admin/perfil", methods=["POST"])
 @login_required("admin")
 def admin_perfil():

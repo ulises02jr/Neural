@@ -381,6 +381,25 @@
   <div class="card sec-card" id="organizacion">
     <h2>Información de Organización</h2>
 
+    <div style="margin-bottom:18px">
+      <div class="col-h"><span>Organización</span></div>
+      <form method="POST" action="{{ url_for('admin_organizacion') }}">
+<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="text" name="org_nombre" value="{{ org_info.nombre }}" placeholder="Nombre de la organización" required maxlength="60" style="margin-bottom:8px">
+        <button type="submit" class="primary">Guardar nombre</button>
+      </form>
+      <div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:14px">
+        <div>
+          <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">ID de organización</div>
+          <div style="font-size:16px;font-weight:700;color:var(--txt);font-family:ui-monospace,Menlo,monospace">{{ org_info.id }}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Código para invitar músicos</div>
+          <div style="font-size:16px;font-weight:800;letter-spacing:3px;color:var(--gold);font-family:ui-monospace,Menlo,monospace">{{ org_info.codigo }}</div>
+        </div>
+      </div>
+    </div>
+
     <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
       <div class="col-h"><span>Mi perfil de administrador</span></div>
       {% if usuario_actual %}
