@@ -67,6 +67,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   Timer? _timer;
   int _cacheBytes = 0;
   int _lastChartIdx = -1;
+  double _dragAcc = 0;
 
   @override
   void initState() {
@@ -281,6 +282,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _handle(),
             _header(),
             const SizedBox(height: 8),
             Flexible(
@@ -292,6 +294,33 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
                         : _contenido(),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _handle() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).pop(),
+      onVerticalDragUpdate: (d) => _dragAcc += d.delta.dy,
+      onVerticalDragEnd: (_) {
+        if (_dragAcc > 45) Navigator.of(context).pop(); // jalar hacia abajo = cerrar
+        _dragAcc = 0;
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.only(top: 2, bottom: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: NW.line, borderRadius: BorderRadius.circular(2)),
+            ),
+            const Icon(Icons.keyboard_arrow_down, size: 20, color: NW.txt3),
           ],
         ),
       ),
