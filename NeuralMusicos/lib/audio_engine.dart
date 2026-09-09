@@ -24,4 +24,13 @@ class AudioEngine {
     final p = await _ch.invokeMethod('position');
     return (p as num?)?.toDouble() ?? 0;
   }
+
+  /// Bytes ocupados por las pistas guardadas offline.
+  Future<int> cacheSize() async {
+    final n = await _ch.invokeMethod('cacheSize');
+    return (n as num?)?.toInt() ?? 0;
+  }
+
+  /// Borra las pistas guardadas para liberar espacio.
+  Future<void> clearCache() => _ch.invokeMethod('clearCache');
 }

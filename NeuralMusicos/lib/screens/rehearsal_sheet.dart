@@ -57,6 +57,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   bool _loop = false;
   List<double>? _loopRange; // [inicio, fin]
   Timer? _timer;
+  int _cacheBytes = 0;
 
   @override
   void initState() {
@@ -119,16 +120,23 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     // Cargar audio nativo.
     try {
       final list = _stems
-          .map((s) => {'id': s.id, 'url': Api.I.stemDownloadUrl(widget.numero, s.id, widget.sem)})
+          .map((s) => {
+                'id': s.id,
+                'url': Api.I.stemDownloadUrl(widget.numero, s.id, widget.sem),
+                'key': '${widget.numero}_t${widget.sem}_${s.id.replaceAll('/', '_')}',
+              })
           .toList();
       setState(() => _status = 'Descargando pistas…');
       final dur = await AudioEngine.I.load(list);
+      if (!mounted) return;
+      final bytes = await AudioEngine.I.cacheSize();
       if (!mounted) return;
       setState(() {
         _dur = dur;
         _audioOk = true;
         _cargando = false;
         _status = null;
+        _cacheBytes = bytes;
       });
     } catch (e) {
       if (!mounted) return;
@@ -295,7 +303,48 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       const SizedBox(height: 14),
       _familiaGrid(),
       if (_famActiva != null) ...[const SizedBox(height: 10), _chips()],
+      if (_cacheBytes > 0) ...[const SizedBox(height: 14), _cacheRow()],
     ]);
+  }
+
+  String _fmtMB(int bytes) {
+    final mb = bytes / (1024 * 1024);
+    if (mb < 1) return '${(bytes / 1024).round()} KB';
+    return '${mb.toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _liberar() async {
+    await AudioEngine.I.clearCache();
+    if (!mounted) return;
+    setState(() {
+      _cacheBytes = 0;
+      _playing = false;
+      _pos = 0;
+    });
+    _timer?.cancel();
+  }
+
+  Widget _cacheRow() {
+    return Row(
+      children: [
+        const Icon(Icons.download_done, size: 15, color: NW.txt3),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text('Guardado offline · ${_fmtMB(_cacheBytes)}',
+              style: const TextStyle(fontSize: 11, color: NW.txt3)),
+        ),
+        TextButton(
+          onPressed: _liberar,
+          style: TextButton.styleFrom(
+            foregroundColor: NW.txt2,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text('Liberar espacio', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+    );
   }
 
   Widget _transport() {

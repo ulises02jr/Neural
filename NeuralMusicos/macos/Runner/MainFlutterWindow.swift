@@ -44,6 +44,10 @@ class MainFlutterWindow: NSWindow {
         result(self.audio.positionSec())
       case "stop":
         self.audio.stop(); result(nil)
+      case "cacheSize":
+        result(self.audio.cacheBytes())
+      case "clearCache":
+        self.audio.clearCache(); result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -74,31 +78,42 @@ class MultiTrackAudio {
     players.removeAll(); files.removeAll(); volumes.removeAll()
     durationSec = 0
 
-    let tmpDir = FileManager.default.temporaryDirectory
+    let dir = cacheDir
     let group = DispatchGroup()
     var firstError: Error? = nil
     let lock = NSLock()
 
+    func usar(_ id: String, _ fileURL: URL) throws {
+      let file = try AVAudioFile(forReading: fileURL)
+      lock.lock()
+      self.files[id] = file
+      self.volumes[id] = 1.0
+      let dur = Double(file.length) / file.processingFormat.sampleRate
+      if dur > self.durationSec { self.durationSec = dur }
+      lock.unlock()
+    }
+
     for stem in stems {
       guard let id = stem["id"] as? String, let urlStr = stem["url"] as? String,
             let url = URL(string: urlStr) else { continue }
+      let key = (stem["key"] as? String) ?? id
+      let dest = dir.appendingPathComponent(key)
+
+      // Si ya esta en cache, usarla sin descargar.
+      if FileManager.default.fileExists(atPath: dest.path) {
+        do { try usar(id, dest) } catch { lock.lock(); firstError = firstError ?? error; lock.unlock() }
+        continue
+      }
       group.enter()
       URLSession.shared.dataTask(with: url) { data, _, err in
         defer { group.leave() }
         if let err = err { lock.lock(); firstError = firstError ?? err; lock.unlock(); return }
         guard let data = data else { return }
         do {
-          let ext = url.pathExtension.isEmpty ? "wav" : url.pathExtension
-          let tmp = tmpDir.appendingPathComponent(UUID().uuidString + "." + ext)
-          try data.write(to: tmp)
-          let file = try AVAudioFile(forReading: tmp)
-          lock.lock()
-          self.files[id] = file
-          self.volumes[id] = 1.0
-          let dur = Double(file.length) / file.processingFormat.sampleRate
-          if dur > self.durationSec { self.durationSec = dur }
-          lock.unlock()
+          try data.write(to: dest)
+          try usar(id, dest)
         } catch {
+          try? FileManager.default.removeItem(at: dest)
           lock.lock(); firstError = firstError ?? error; lock.unlock()
         }
       }.resume()
@@ -187,5 +202,35 @@ class MultiTrackAudio {
       return min(startOffsetSec + Date().timeIntervalSince(s), durationSec)
     }
     return startOffsetSec
+  }
+
+  // MARK: - Cache persistente (offline)
+
+  /// Carpeta de la app donde quedan guardadas las pistas descargadas.
+  private var cacheDir: URL {
+    let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    let dir = base.appendingPathComponent("ensayo_cache", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+  }
+
+  /// Bytes totales ocupados por las pistas guardadas.
+  func cacheBytes() -> Int {
+    let fm = FileManager.default
+    guard let items = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+    var total = 0
+    for u in items {
+      if let sz = (try? u.resourceValues(forKeys: [.fileSizeKey]))?.fileSize { total += sz }
+    }
+    return total
+  }
+
+  /// Borra todas las pistas guardadas para liberar espacio.
+  func clearCache() {
+    stop()
+    let fm = FileManager.default
+    if let items = try? fm.contentsOfDirectory(at: cacheDir, includingPropertiesForKeys: nil) {
+      for u in items { try? fm.removeItem(at: u) }
+    }
   }
 }
