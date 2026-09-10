@@ -4326,7 +4326,20 @@ private:
             juce::MessageManager::callAsync ([sp, v]
             {
                 if (sp == nullptr) return;
-                sp->aplicarPlan (v.getProperty ("features", juce::var()));
+                auto feats = v.getProperty ("features", juce::var());
+                if (! sp->planIncluyeNeuralPlay (feats))   // el plan cambio a "sync": cerrar sesion
+                {
+                    const auto msg = sp->msgPlanSinNeuralPlay (feats);
+                    sp->serverToken.clear();
+                    sp->guardarConfigCuenta();
+                    sp->connStatus.setText (msg, juce::dontSendNotification);
+                    sp->mostrarLoginDialog();
+                   #if JUCE_IOS || JUCE_ANDROID
+                    if (sp->loginOverlay != nullptr) sp->loginOverlay->showError (msg);
+                   #endif
+                    return;
+                }
+                sp->aplicarPlan (feats);
             });
         });
     }
@@ -4367,9 +4380,24 @@ private:
                 auto v = juce::JSON::parse (resp);
                 if ((bool) v.getProperty ("ok", false))
                 {
+                    auto feats = v.getProperty ("features", juce::var());
+                    if (! sp->planIncluyeNeuralPlay (feats))   // plan "sync": no entra a NeuralPlay
+                    {
+                        const auto msg = sp->msgPlanSinNeuralPlay (feats);
+                        sp->serverToken.clear();
+                        sp->connStatus.setText (msg, juce::dontSendNotification);
+                       #if JUCE_IOS || JUCE_ANDROID
+                        if (sp->loginOverlay != nullptr && sp->loginOverlay->isVisible())
+                            sp->loginOverlay->showError (msg);
+                        else
+                       #endif
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                            juce::String::fromUTF8 ("Plan sin NeuralPlay"), msg);
+                        return;
+                    }
                     sp->serverUrl   = url;
                     sp->serverToken = v.getProperty ("token", "").toString();
-                    sp->aplicarPlan (v.getProperty ("features", juce::var()));
+                    sp->aplicarPlan (feats);
                     sp->guardarConfigCuenta();
                     sp->fetchPadPacks();
                     sp->fetchPerfiles();
@@ -6896,6 +6924,22 @@ private:
         resized();
         repaint();
     }
+    // ── Gating de acceso a NeuralPlay por plan ──
+    // El plan "sync" (para DAW) NO incluye NeuralPlay: dispara desde su propio DAW.
+    bool planIncluyeNeuralPlay (const juce::var& fs)
+    {
+        return ! fs.isObject() || (bool) fs.getProperty ("neuralplay", true);
+    }
+    juce::String msgPlanSinNeuralPlay (const juce::var& fs)
+    {
+        const juce::String pn = fs.getProperty ("nombre", "").toString();
+        return juce::String::fromUTF8 ("Tu plan ")
+             + (pn.isNotEmpty() ? (juce::String::fromUTF8 ("\xc2\xab") + pn + juce::String::fromUTF8 ("\xc2\xbb "))
+                                : juce::String())
+             + juce::String::fromUTF8 ("no incluye NeuralPlay: ese plan dispara desde tu propio DAW. "
+                                       "Us\xc3\xa1 NeuralCharts para los m\xc3\xbasicos.");
+    }
+
     void aplicarPlan (const juce::var& fs)   // aplica TODAS las features del plan (MIDI, salidas, infinito)
     {
         if (! fs.isObject()) return;
