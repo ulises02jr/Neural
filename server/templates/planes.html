@@ -133,11 +133,7 @@
       {% if es_sync %}<span class="badge sync">PARA TU DAW</span>{% endif %}
       <div class="nom">{{ p.nombre }}</div>
       <div class="price">${{ '%.0f'|format(p.precio) }}<small> /mes</small></div>
-      {% if es_repro %}
-        <div class="meta">Cargá tus propios stems</div>
-      {% else %}
-        <div class="meta">{{ p.asientos }} asientos · {{ p.gb }} GB</div>
-      {% endif %}
+      <div class="meta">Prueba gratis de 7 días</div>
       <div class="hr"></div>
 
       {# ── Acceso por app segun el plan ── #}
