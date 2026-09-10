@@ -172,14 +172,14 @@
         {{ row(hasPlayAny,  'Cambio de Tono/Tempo fuera de línea a los 12 tonos') }}
         {{ row(hasPlayAny,  'Crea y guarda varios repertorios') }}
         {{ row(hasPlayAny,  'Sincronización en vivo en NeuralCharts') }}
-        {{ row(hasPlayAny,  'Ajusta tiempo inicial y final') }}
+        {{ row(hasPlayFull, 'Ajusta tiempo inicial y final') }}
         {{ row(hasPlayAny,  'Reproduce pads ambientales con canciones') }}
         {{ row(hasPlayFull, 'Repite secciones con Loop/Loop Infinito') }}
         {{ row(hasPlayFull, 'Asignación MIDI/Teclado/Controlador') }}
         {{ row(hasPlayAny,  'NeuralPlay para Mac / iPad') }}
-        {{ row(hasPlayAny,  'Interfaz avanzada de Pad Player') }}
-        {{ row(hasPlayFull, 'Hasta 32 MultiOuts® con buses') }}
-        {{ row(hasPlayAny,  'Añadir sección de clicks a las canciones al final') }}
+        {{ row(hasPlayFull, 'Interfaz avanzada de Pad Player') }}
+        {{ row(hasPlayAny, 'Hasta 32 MultiOuts® con buses' if not (hasPlayAny and not hasPlayFull) else '2 salidas') }}
+        {{ row(hasPlayFull, 'Añadir sección de clicks a las canciones al final') }}
         {{ row(hasPlayFull, 'Reproductor de Notas MIDI en Sincronización') }}
         {{ row(hasPlayFull, 'Múltiples Salidas MIDI para Lyrics/Luces y Efectos') }}
         {{ row(hasPlayFull, 'MIDI Clock') }}
