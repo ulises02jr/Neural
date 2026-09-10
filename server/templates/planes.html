@@ -53,6 +53,17 @@
     color:var(--live);background:rgba(134,179,106,.14);border:1px solid rgba(134,179,106,.32);border-radius:999px}
   .note{font-size:11px;color:var(--txt3);margin-top:22px;text-align:center;line-height:1.6}
 
+  /* ── Ampliaciones (add-ons) ── */
+  .extras-h{font-size:17px;font-weight:800;margin-top:30px}
+  .extras{display:grid;grid-template-columns:repeat(2,1fr);gap:13px;margin-top:14px}
+  .xcard{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;padding:16px 18px}
+  .xinfo{flex:1}
+  .xnom{font-size:14px;font-weight:800}
+  .xsub{font-size:11.5px;color:var(--txt3);margin-top:3px}
+  .xprice{font-size:23px;font-weight:900;color:var(--gold);white-space:nowrap}
+  .xprice small{font-size:11px;color:var(--txt2);font-weight:600}
+
   /* ── Sección de herramientas del sistema (Neural INC) ── */
   .tools-sep{height:1px;background:var(--line);margin:40px 0 0}
   .tools-h{font-size:21px;font-weight:800;margin-top:32px}
@@ -174,6 +185,25 @@
       </div>
     </div>
     {% endfor %}
+  </div>
+
+  <h2 class="extras-h">Ampliaciones</h2>
+  <p class="sub">Ampliá sin cambiar de plan. Se agregan desde el admin cuando ya tenés un plan activo.</p>
+  <div class="extras">
+    <div class="xcard">
+      <div class="xinfo">
+        <div class="xnom">+25 GB de almacenamiento</div>
+        <div class="xsub">Para cualquier plan · incluido NeuralPlay</div>
+      </div>
+      <div class="xprice">$5<small> /mes</small></div>
+    </div>
+    <div class="xcard">
+      <div class="xinfo">
+        <div class="xnom">+1 asiento de músico</div>
+        <div class="xsub">Solo planes de iglesia · Básico, Plus, Premium</div>
+      </div>
+      <div class="xprice">$2<small> /mes</small></div>
+    </div>
   </div>
 
   <p class="note">El pago se procesará de forma segura en la web (próximamente).<br>Por ahora, al elegir un plan queda activo de inmediato.</p>
