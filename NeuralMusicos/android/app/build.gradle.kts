@@ -7,7 +7,8 @@ plugins {
 android {
     namespace = "com.neuralworship.charts"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // ndkVersion no se define: la app no tiene codigo nativo C++ (solo Kotlin: MediaPlayer + WebView),
+    // asi evitamos descargar el NDK (~700MB) en cada maquina limpia.
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

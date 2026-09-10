@@ -144,7 +144,7 @@ class MultiTrackAudio(private val ctx: android.content.Context) {
         conn.connectTimeout = 20000
         conn.readTimeout = 20000
         conn.inputStream.use { input ->
-            dest.outputStream.use { out -> input.copyTo(out) }
+            dest.outputStream().use { out -> input.copyTo(out) }
         }
         conn.disconnect()
     }

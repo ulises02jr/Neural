@@ -879,6 +879,10 @@ struct RepertoireLoader : public juce::Thread
         for (int i = 0; i < out.size() && ! threadShouldExit(); ++i)
         {
             auto& e = out.getReference (i);
+            // Limpiar temporales huerfanos de descargas cortadas (evita acumular basura).
+            if (e.folder.isDirectory())
+                for (auto& orphan : e.folder.findChildFiles (juce::File::findFiles, false, "*_temp*"))
+                    orphan.deleteFile();
             const int N = juce::jmax (1, e.famFiles.size());
             for (int k = 0; k < e.famFiles.size(); ++k)
             {
@@ -2588,6 +2592,161 @@ struct PadPanel : public juce::Component
     }
 };
 
+// TextEditor que avisa cuando gana/pierde el foco (para subir la tarjeta y que el
+// teclado en pantalla del iPad no tape el boton "Entrar").
+struct FocusTextEditor : public juce::TextEditor
+{
+    std::function<void()> onFocus, onBlur;
+    void focusGained (FocusChangeType t) override { juce::TextEditor::focusGained (t); if (onFocus) onFocus(); }
+    void focusLost   (FocusChangeType t) override { juce::TextEditor::focusLost (t);   if (onBlur)  onBlur();  }
+};
+
+// ───────── Panel de login para tactil (iOS/iPad): tarjeta centrada ─────────
+// Reemplaza al AlertWindow (que en pantalla completa se estira feo) por una
+// tarjeta propia con estilo NeuralPlay. En escritorio no se usa.
+class NeuralLoginOverlay : public juce::Component
+{
+public:
+    std::function<void (juce::String, juce::String)> onSubmit;
+
+    NeuralLoginOverlay()
+    {
+        setInterceptsMouseClicks (true, true);
+
+        title.setText (juce::String::fromUTF8 ("NeuralWorship"), juce::dontSendNotification);
+        title.setJustificationType (juce::Justification::centred);
+        title.setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
+        title.setFont (juce::Font (30.0f, juce::Font::bold));
+        addAndMakeVisible (title);
+
+        subtitle.setText (juce::String::fromUTF8 ("Entra con tu cuenta para cargar tu organizacion."),
+                          juce::dontSendNotification);
+        subtitle.setJustificationType (juce::Justification::centred);
+        subtitle.setColour (juce::Label::textColourId, juce::Colour (0xff9aa0a6));
+        subtitle.setFont (juce::Font (15.0f));
+        addAndMakeVisible (subtitle);
+
+        auto styleField = [] (juce::TextEditor& t, const juce::String& ph, bool pass)
+        {
+            t.setColour (juce::TextEditor::backgroundColourId,       juce::Colour (0xff202227));
+            t.setColour (juce::TextEditor::textColourId,            juce::Colour (0xfff2f2f2));
+            t.setColour (juce::TextEditor::outlineColourId,         juce::Colour (0xff34363c));
+            t.setColour (juce::TextEditor::focusedOutlineColourId,  juce::Colour (0xff7c8794));
+            t.setColour (juce::CaretComponent::caretColourId,       juce::Colour (0xfff2f2f2));
+            t.setFont (juce::Font (18.0f));
+            t.setTextToShowWhenEmpty (ph, juce::Colour (0xff6b7280));
+            t.setJustification (juce::Justification::centredLeft);
+            t.setIndents (12, 10);
+            if (pass) t.setPasswordCharacter ((juce_wchar) 0x2022);
+        };
+        styleField (email, juce::String::fromUTF8 ("Email"), false);
+        addAndMakeVisible (email);
+        styleField (pass, juce::String::fromUTF8 ("Contrasena"), true);
+        pass.onReturnKey = [this] { submit(); };
+        addAndMakeVisible (pass);
+
+        // Subir la tarjeta cuando cualquiera de los campos toma foco (teclado en pantalla),
+        // y devolverla al centro cuando ninguno queda enfocado.
+        auto onFocus = [this] { if (! kbShown) { kbShown = true; resized(); repaint(); } };
+        auto onBlur  = [this]
+        {
+            juce::Component::SafePointer<NeuralLoginOverlay> sp (this);
+            juce::MessageManager::callAsync ([sp]
+            {
+                if (sp == nullptr) return;
+                const bool anyFocus = sp->email.hasKeyboardFocus (true) || sp->pass.hasKeyboardFocus (true);
+                if (! anyFocus && sp->kbShown) { sp->kbShown = false; sp->resized(); sp->repaint(); }
+            });
+        };
+        email.onFocus = onFocus; email.onBlur = onBlur;
+        pass.onFocus  = onFocus; pass.onBlur  = onBlur;
+
+        entrar.setButtonText (juce::String::fromUTF8 ("Entrar"));
+        entrar.setColour (juce::TextButton::buttonColourId,    juce::Colour (0xfff2f2f2));
+        entrar.setColour (juce::TextButton::textColourOffId,   juce::Colour (0xff0a0a0a));
+        entrar.onClick = [this] { submit(); };
+        addAndMakeVisible (entrar);
+
+        error.setJustificationType (juce::Justification::centred);
+        error.setColour (juce::Label::textColourId, juce::Colour (0xffef6b6b));
+        error.setFont (juce::Font (14.0f));
+        addAndMakeVisible (error);
+    }
+
+    void setLogo (juce::Image i) { logo = i; repaint(); }
+
+    void showError (const juce::String& m)
+    {
+        error.setText (m, juce::dontSendNotification);
+        setBusy (false);
+    }
+
+    void setBusy (bool b)
+    {
+        entrar.setEnabled (! b);
+        entrar.setButtonText (b ? juce::String::fromUTF8 ("Entrando\xe2\x80\xa6")
+                                : juce::String::fromUTF8 ("Entrar"));
+    }
+
+    void reset()
+    {
+        error.setText ({}, juce::dontSendNotification);
+        setBusy (false);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xff0a0a0a));
+        g.setColour (juce::Colour (0xff141518));
+        g.fillRoundedRectangle (card.toFloat(), 18.0f);
+        g.setColour (juce::Colour (0xff2a2c31));
+        g.drawRoundedRectangle (card.toFloat(), 18.0f, 1.0f);
+        if (logo.isValid())
+            g.drawImageWithin (logo, logoBounds.getX(), logoBounds.getY(),
+                               logoBounds.getWidth(), logoBounds.getHeight(),
+                               juce::RectanglePlacement::centred);
+    }
+
+    void resized() override
+    {
+        const int cardW = juce::jmin (460, getWidth()  - 48);
+        const int cardH = 452;
+        auto b = getLocalBounds();
+        int cy = b.getCentreY();
+        if (kbShown)
+        {
+            // dejar el fondo de la tarjeta por encima del teclado en pantalla (~mitad inferior)
+            const int desiredBottom = (int) (b.getHeight() * 0.50f);
+            cy = juce::jmin (cy, desiredBottom - cardH / 2);
+            cy = juce::jmax (cy, b.getY() + 16 + cardH / 2);   // sin salir por arriba
+        }
+        card = juce::Rectangle<int> (0, 0, cardW, cardH).withCentre ({ b.getCentreX(), cy });
+        auto in = card.reduced (30);
+        logoBounds = in.removeFromTop (66); in.removeFromTop (10);
+        title.setBounds    (in.removeFromTop (38));
+        subtitle.setBounds (in.removeFromTop (42)); in.removeFromTop (14);
+        email.setBounds    (in.removeFromTop (48)); in.removeFromTop (12);
+        pass.setBounds     (in.removeFromTop (48)); in.removeFromTop (8);
+        error.setBounds    (in.removeFromTop (22)); in.removeFromTop (8);
+        entrar.setBounds   (in.removeFromTop (52));
+    }
+
+private:
+    void submit()
+    {
+        error.setText ({}, juce::dontSendNotification);
+        if (onSubmit) { setBusy (true); onSubmit (email.getText().trim(), pass.getText()); }
+    }
+
+    juce::Label title, subtitle, error;
+    FocusTextEditor email, pass;
+    juce::TextButton entrar;
+    juce::Image logo;
+    juce::Rectangle<int> card, logoBounds;
+    bool kbShown = false;   // teclado en pantalla visible → subir la tarjeta
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NeuralLoginOverlay)
+};
+
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer,
                       private juce::ChangeListener,
@@ -2604,7 +2763,11 @@ public:
         logoImg = juce::ImageFileFormat::loadFrom (BinaryData::AppIcon_png, (size_t) BinaryData::AppIcon_pngSize);
         splash.logo = logoImg;
         formatManager.registerBasicFormats();
-       #if JUCE_MAC
+       #if JUCE_MAC || JUCE_IOS
+        // CoreAudio decodifica los formatos comprimidos (MP3/AAC/M4A) ademas de WAV/AIFF.
+        // Se registra tambien en iOS para reproducir los stems ORIGINALES tal como el
+        // usuario los subio (si subio WAV suena WAV; si subio MP3 suena MP3). NeuralPlay
+        // nunca fuerza un formato: baja el archivo original que lista el servidor.
         formatManager.registerFormat (new juce::CoreAudioFormat(), false);
        #endif
         readThread.startThread();
@@ -3460,7 +3623,21 @@ public:
             g.setFont (13.0f);
             juce::String msg;
             if (currentSong >= 0)                     msg = juce::String ("Cargando forma de onda...");
-            else if (! repertoire.isEmpty())          msg = juce::String::fromUTF8 ("Descargando repertorio\xe2\x80\xa6");
+            else if (! repertoire.isEmpty())
+            {
+                // Mostrar el % real de la primera cancion (la que se cargara al terminar)
+                float p = -1.0f;
+                if (! dlById.empty())
+                {
+                    auto it = dlById.find (repertoire.getReference (0).id);
+                    p = (it != dlById.end()) ? it->second : dlById.begin()->second;
+                }
+                if (p >= 0.0f)
+                    msg = juce::String::fromUTF8 ("Descargando stems\xe2\x80\xa6 ")
+                          + juce::String ((int) (p * 100.0f)) + juce::String::fromUTF8 (" %  \xc2\xb7  se guarda en cache");
+                else
+                    msg = juce::String::fromUTF8 ("Descargando stems\xe2\x80\xa6");
+            }
             else if (serverToken.isEmpty())           msg = juce::String ("Conecta para traer el repertorio");
             else if (currentSetlistName.isNotEmpty()) msg = juce::String::fromUTF8 ("Empez\xc3\xa1 a agregar canciones a este repertorio con +");
             else                                      msg = juce::String::fromUTF8 ("Abr\xc3\xad un repertorio o cre\xc3\xa1 uno nuevo");
@@ -3907,7 +4084,18 @@ public:
 
     void resized() override
     {
-        auto area = getLocalBounds().reduced (16);
+       #if JUCE_IOS || JUCE_ANDROID
+        if (loginOverlay != nullptr && loginOverlay->isVisible())
+            loginOverlay->setBounds (getLocalBounds());
+       #endif
+
+        auto full = getLocalBounds();
+       #if JUCE_IOS || JUCE_ANDROID
+        // Respetar las areas seguras del iPad (barra de estado / indicador / notch).
+        if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+            full = d->safeAreaInsets.subtractedFrom (full);
+       #endif
+        auto area = full.reduced (16);
 
         // Barra superior: logo (izq) | Play + Inicio (centro) | Conectar + tiempo (der)
         auto topbar = area.removeFromTop (46);
@@ -4189,12 +4377,20 @@ private:
                     sp->connStatus.setText (juce::String::fromUTF8 ("Sesion: ")
                                             + v.getProperty ("org_nombre", "").toString(),
                                             juce::dontSendNotification);
+                   #if JUCE_IOS || JUCE_ANDROID
+                    if (sp->loginOverlay != nullptr) { sp->loginOverlay->setVisible (false); sp->loginOverlay->reset(); }
+                   #endif
                 }
                 else
                 {
                     auto msg = v.getProperty ("mensaje", "").toString();
                     if (msg.isEmpty()) msg = juce::String::fromUTF8 ("No se pudo conectar. Revisa el servidor y tu conexion.");
                     sp->connStatus.setText (msg, juce::dontSendNotification);
+                   #if JUCE_IOS || JUCE_ANDROID
+                    if (sp->loginOverlay != nullptr && sp->loginOverlay->isVisible())
+                        sp->loginOverlay->showError (msg);
+                    else
+                   #endif
                     juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
                                                             juce::String::fromUTF8 ("Iniciar sesion"), msg);
                 }
@@ -4202,8 +4398,45 @@ private:
         });
     }
 
+    // En tactil (iOS/Android) un AlertWindow como ventana modal aparte no se
+    // presenta sobre la ventana principal a pantalla completa. Este helper lo
+    // monta como hijo del componente principal cubriendo toda la pantalla.
+    // En escritorio no hace nada (el AlertWindow va a su propia ventana).
+    void presentModalAlert (juce::AlertWindow* aw)
+    {
+       #if JUCE_IOS || JUCE_ANDROID
+        addChildComponent (aw);
+        aw->setAlwaysOnTop (true);
+        aw->setBounds (getLocalBounds());
+        aw->setVisible (true);
+        aw->toFront (true);
+       #else
+        juce::ignoreUnused (aw);
+       #endif
+    }
+
     void mostrarLoginDialog()
     {
+       #if JUCE_IOS || JUCE_ANDROID
+        // En tactil usamos un panel propio (tarjeta centrada) en vez del AlertWindow.
+        if (loginOverlay == nullptr)
+        {
+            loginOverlay = std::make_unique<NeuralLoginOverlay>();
+            loginOverlay->onSubmit = [this] (juce::String e, juce::String p)
+            {
+                const juce::String srv = serverUrl.isNotEmpty() ? serverUrl
+                                                                : juce::String ("https://neuralworship.com");
+                doLogin (srv, e, p);
+            };
+            addAndMakeVisible (*loginOverlay);
+        }
+        loginOverlay->reset();
+        loginOverlay->setLogo (logoImg);
+        loginOverlay->setBounds (getLocalBounds());
+        loginOverlay->setVisible (true);
+        loginOverlay->toFront (true);
+        return;
+       #endif
         auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Iniciar sesion en NeuralWorship"),
                                           juce::String::fromUTF8 ("Entra con tu cuenta para cargar tu organizacion."),
                                           juce::MessageBoxIconType::NoIcon);
@@ -4211,6 +4444,7 @@ private:
         aw->addTextEditor ("pass", "", juce::String::fromUTF8 ("Contrasena:"), true);
         aw->addButton ("Entrar", 1, juce::KeyPress (juce::KeyPress::returnKey));
         aw->addButton ("Cancelar", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        presentModalAlert (aw);
         juce::Component::SafePointer<MainComponent> sp (this);
         aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
         {
@@ -4968,6 +5202,7 @@ private:
         aw->addTextEditor ("f", hoy, juce::String::fromUTF8 ("Fecha (AAAA-MM-DD):"));
         aw->addButton ("Crear", 1);
         aw->addButton ("Cancelar", 0);
+        presentModalAlert (aw);
         juce::Component::SafePointer<MainComponent> sp (this);
         aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
         {
@@ -5008,6 +5243,7 @@ private:
                                           juce::MessageBoxIconType::NoIcon);
         aw->addButton ("Borrar", 1);
         aw->addButton ("Cancelar", 0);
+        presentModalAlert (aw);
         juce::Component::SafePointer<MainComponent> sp (this);
         aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, id] (int r)
         {
@@ -5356,6 +5592,11 @@ private:
     void startLoadId (juce::String setlistId)
     {
         if (serverToken.isEmpty()) { connStatus.setText ("Falta servidor/token", juce::dontSendNotification); return; }
+        // Evitar recargas duplicadas del MISMO repertorio (doble-tap tactil): si ya hay un
+        // loader trabajando en ese id, ignorar. Asi no quedan dos hilos bajando los mismos
+        // stems en paralelo (se autolibera cuando el hilo termina: isThreadRunning() == false).
+        if (loader && loader->isThreadRunning() && setlistId == lastSetlistId)
+            return;
         if (loader && loader->isThreadRunning())      // cancelar la carga anterior y reiniciar (no bloquear crear/agregar)
         {
             loader->signalThreadShouldExit();
@@ -5493,6 +5734,13 @@ private:
         {
             songCards[idx]->dlProgress = (f >= 1.0) ? -1.0f : (float) f;
             songCards[idx]->repaint();
+        }
+        // Actualizar el % del placeholder central mientras aun no hay cancion cargada,
+        // repintando solo cuando cambia el entero (para no saturar durante la descarga).
+        if (currentSong < 0)
+        {
+            const int pct = (int) (f * 100.0);
+            if (pct != lastDlPct) { lastDlPct = pct; repaint (mapBounds); }
         }
         if (f >= 1.0 && idx >= 0 && idx < songReady.size())
         {
@@ -6866,6 +7114,7 @@ private:
     juce::Array<juce::var> songMixCache;   // mezcla por cancion (del repertorio cargado)
     juce::Array<bool> songReady;      // audio de la canción ya descargado
     std::map<int, float> dlById;      // id de canción -> progreso 0..1 (ausente = sin barra). Sigue a la canción al reordenar
+    int lastDlPct = -1;               // ultimo % mostrado en el placeholder de descarga (para repintar sin saturar)
     juce::Array<int> loadOrderIds;    // ids en el ORDEN del loader (fijo); mapea el índice del loader al id aunque se reordene
     int pendingAddAfterId = 0;   // botón + de la tarjeta: insertar la canción agregada justo después de esta (0 = al final)
     int currentSong = -1;
@@ -7040,6 +7289,7 @@ private:
     int  midiMasterFader = 0;
 
     juce::Image logoImg;
+    std::unique_ptr<NeuralLoginOverlay> loginOverlay;   // login tactil (iOS/iPad)
     PillLNF pillLnf;
     FaderLNF faderLnf;
     juce::TextButton connectButton, returnButton, barPrevBtn, barNextBtn;
@@ -7148,8 +7398,12 @@ public:
         {
             setUsingNativeTitleBar (true);
             setContentOwned (c, true);
+           #if JUCE_IOS || JUCE_ANDROID
+            setFullScreen (true);
+           #else
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());
+           #endif
             setVisible (true);
         }
         void closeButtonPressed() override { juce::JUCEApplication::getInstance()->systemRequestedQuit(); }
