@@ -9,7 +9,7 @@
     --txt:#fff;--txt2:#a3a3a3;--txt3:#666;--gold:#9CA3AF;--live:#86B36A;--error:#dc6262}
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;
-    padding:28px 24px 48px;max-width:1020px;margin:0 auto}
+    padding:28px 22px 48px;max-width:1180px;margin:0 auto}
   .top{margin-bottom:8px}
   .back{color:var(--txt2);text-decoration:none;font-size:13px;background:var(--raised);
     border:1px solid var(--line);padding:8px 14px;border-radius:8px;display:inline-block}
@@ -19,22 +19,24 @@
   .flash.success{background:rgba(134,179,106,.1);color:var(--live);border-color:rgba(134,179,106,.3)}
   .flash.error{background:rgba(220,98,98,.12);color:var(--error);border-color:rgba(220,98,98,.25)}
 
-  /* ── Rejilla de planes (columnas lado a lado) ── */
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-items:stretch}
+  /* ── Rejilla de planes (4 columnas lado a lado) ── */
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;align-items:stretch}
   .card{position:relative;display:flex;flex-direction:column;background:var(--surface);
-    border:1px solid var(--line);border-radius:16px;padding:22px 20px;transition:border-color .15s,transform .15s}
+    border:1px solid var(--line);border-radius:16px;padding:22px 18px;transition:border-color .15s}
   .card:hover{border-color:#3a3a3a}
   .card.best{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 8px 30px rgba(0,0,0,.4)}
   .card.active{border-color:rgba(134,179,106,.55)}
+  .card.repro{border-color:#33405e}
   .badge{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--gold);
-    color:#000;font-size:10.5px;font-weight:800;letter-spacing:.4px;padding:3px 12px;border-radius:999px;white-space:nowrap}
+    color:#000;font-size:10px;font-weight:800;letter-spacing:.4px;padding:3px 12px;border-radius:999px;white-space:nowrap}
+  .badge.play{background:#4C7CFF;color:#fff}
   .nom{font-size:18px;font-weight:800;margin-bottom:2px}
-  .price{font-size:34px;font-weight:900;color:var(--gold);line-height:1.1;margin:6px 0 2px}
+  .price{font-size:32px;font-weight:900;color:var(--gold);line-height:1.1;margin:6px 0 2px}
   .price small{font-size:13px;color:var(--txt2);font-weight:600}
-  .meta{font-size:12px;color:var(--txt3);margin-bottom:14px}
+  .meta{font-size:11.5px;color:var(--txt3);margin-bottom:14px}
   .hr{height:1px;background:var(--line);margin:2px 0 14px}
   .flist{list-style:none;display:flex;flex-direction:column;gap:9px;flex:1;margin-bottom:18px}
-  .flist li{display:flex;align-items:flex-start;gap:9px;font-size:12.8px;color:var(--txt);line-height:1.35}
+  .flist li{display:flex;align-items:flex-start;gap:8px;font-size:12.4px;color:var(--txt);line-height:1.35}
   .flist li.off{color:var(--txt3)}
   .ic{flex:0 0 16px;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;
     justify-content:center;font-size:10px;font-weight:900;margin-top:1px}
@@ -42,29 +44,18 @@
   .ic.no{background:#232323;color:var(--txt3)}
   .cta{margin-top:auto}
   .cta form{margin:0}
-  .cta button{width:100%;padding:12px 18px;font-size:14px;font-weight:800;background:var(--gold);
+  .cta button{width:100%;padding:12px 16px;font-size:13.5px;font-weight:800;background:var(--gold);
     color:#000;border:none;border-radius:999px;cursor:pointer}
+  .cta button.play{background:#4C7CFF;color:#fff}
   .cta button:hover{filter:brightness(1.08)}
-  .cta .disabled{width:100%;padding:12px 18px;font-size:13.5px;font-weight:700;text-align:center;
+  .cta .disabled{width:100%;padding:12px 16px;font-size:13px;font-weight:700;text-align:center;
     background:var(--raised);color:var(--txt3);border:1px solid var(--line);border-radius:999px}
-  .cta .isactive{width:100%;padding:12px 18px;font-size:13.5px;font-weight:800;text-align:center;
+  .cta .isactive{width:100%;padding:12px 16px;font-size:13px;font-weight:800;text-align:center;
     color:var(--live);background:rgba(134,179,106,.14);border:1px solid rgba(134,179,106,.32);border-radius:999px}
-
-  /* ── Bloque NeuralPlay (reproductor) ── */
-  .repro-h{font-size:19px;font-weight:800;margin-top:34px}
-  .repro{display:flex;gap:22px;align-items:center;background:var(--surface);border:1px solid var(--line);
-    border-radius:16px;padding:22px;margin-top:14px;flex-wrap:wrap}
-  .repro .left{min-width:150px}
-  .repro .price{margin:4px 0 0}
-  .repro .flist{flex:1;min-width:240px;display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin:0}
-  .repro .cta{min-width:190px;margin:0}
   .note{font-size:11px;color:var(--txt3);margin-top:22px;text-align:center;line-height:1.6}
 
-  @media (max-width:760px){
-    .grid{grid-template-columns:1fr}
-    .card.best{margin-top:6px}
-    .repro .flist{grid-template-columns:1fr}
-  }
+  @media (max-width:980px){.grid{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:560px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -85,26 +76,42 @@
   {% endmacro %}
 
   <div class="grid">
-    {% for pk in ['basico','premium','ministerio'] %}
+    {% for pk in ['basico','premium','ministerio','reproductor'] %}
     {% set p = paquetes[pk] %}
     {% set sin_plan = estado not in ('activa','prueba') %}
     {% set es_actual = (actual == pk and estado in ('activa','prueba')) %}
     {% set recomendado = (pk == 'premium' and sin_plan) %}
-    <div class="card {{ 'best' if recomendado else '' }} {{ 'active' if es_actual else '' }}">
+    {% set es_repro = (pk == 'reproductor') %}
+    <div class="card {{ 'best' if recomendado else '' }} {{ 'repro' if es_repro else '' }} {{ 'active' if es_actual else '' }}">
       {% if recomendado %}<span class="badge">RECOMENDADO</span>{% endif %}
+      {% if es_repro %}<span class="badge play">SOLO REPRODUCIR</span>{% endif %}
       <div class="nom">{{ p.nombre }}</div>
       <div class="price">${{ '%.0f'|format(p.precio) }}<small> /mes</small></div>
-      <div class="meta">{{ p.asientos }} asientos · {{ p.gb }} GB</div>
-      <div class="hr"></div>
-      <ul class="flist">
-        {{ row(true,  p.asientos ~ ' asientos de músico') }}
-        {{ row(true,  p.gb ~ ' GB de almacenamiento') }}
-        {{ row(true,  'Charts + Setlists + Pads') }}
-        {{ row(true,  'NeuralPlay ' ~ ('completo' if p.midi else 'básico')) }}
-        {{ row(p.midi, 'NeuralSync (puente DAW)') }}
-        {{ row(p.midi, 'Exportar PDF') }}
-        {{ row(p.midi, 'Sección MIDI') }}
-      </ul>
+      {% if es_repro %}
+        <div class="meta">{{ p.gb }} GB para stems propios</div>
+        <div class="hr"></div>
+        <ul class="flist">
+          {{ row(true,  'NeuralPlay completo') }}
+          {{ row(true,  'Salidas múltiples') }}
+          {{ row(true,  'Sección MIDI') }}
+          {{ row(true,  'Reproductor infinito') }}
+          {{ row(true,  p.gb ~ ' GB para tus stems') }}
+          {{ row(false, 'Sin gestión de músicos') }}
+          {{ row(false, 'Sin NeuralSync ni charts') }}
+        </ul>
+      {% else %}
+        <div class="meta">{{ p.asientos }} asientos · {{ p.gb }} GB</div>
+        <div class="hr"></div>
+        <ul class="flist">
+          {{ row(true,  p.asientos ~ ' asientos de músico') }}
+          {{ row(true,  p.gb ~ ' GB de almacenamiento') }}
+          {{ row(true,  'Charts + Setlists + Pads') }}
+          {{ row(true,  'NeuralPlay ' ~ ('completo' if p.midi else 'básico')) }}
+          {{ row(p.midi, 'NeuralSync (puente DAW)') }}
+          {{ row(p.midi, 'Exportar PDF') }}
+          {{ row(p.midi, 'Sección MIDI') }}
+        </ul>
+      {% endif %}
       <div class="cta">
         {% if es_actual %}
           <div class="isactive">✓ Plan activo</div>
@@ -114,46 +121,12 @@
           <form method="POST" action="{{ url_for('admin_planes_elegir') }}">
             <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
             <input type="hidden" name="paquete" value="{{ pk }}">
-            <button type="submit">Elegir {{ p.nombre }}</button>
+            <button type="submit" class="{{ 'play' if es_repro else '' }}">Elegir {{ p.nombre }}</button>
           </form>
         {% endif %}
       </div>
     </div>
     {% endfor %}
-  </div>
-
-  <h2 class="repro-h">¿Solo querés reproducir?</h2>
-  <p class="sub">Cargá tus propios stems y tocá en vivo con NeuralPlay. Sin gestión de músicos ni charts.</p>
-  {% set p = paquetes['reproductor'] %}
-  {% set es_actual = (actual == 'reproductor' and estado in ('activa','prueba')) %}
-  <div class="repro card {{ 'active' if es_actual else '' }}" style="box-shadow:none">
-    <div class="left">
-      <div class="nom">{{ p.nombre }}</div>
-      <div class="price">${{ '%.0f'|format(p.precio) }}<small> /mes</small></div>
-      <div class="meta" style="margin:6px 0 0">{{ p.gb }} GB para tus stems propios</div>
-    </div>
-    <ul class="flist">
-      {{ row(true,  'NeuralPlay completo') }}
-      {{ row(true,  'Salidas múltiples') }}
-      {{ row(true,  'Sección MIDI') }}
-      {{ row(true,  'Reproductor infinito') }}
-      {{ row(false, 'Sin gestión de músicos') }}
-      {{ row(false, 'Sin NeuralSync') }}
-      {{ row(false, 'Sin charts (cifrado / letras)') }}
-    </ul>
-    <div class="cta">
-      {% if es_actual %}
-        <div class="isactive">✓ Plan activo</div>
-      {% elif es_operador %}
-        <div class="disabled">No disponible</div>
-      {% else %}
-        <form method="POST" action="{{ url_for('admin_planes_elegir') }}">
-          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-          <input type="hidden" name="paquete" value="reproductor">
-          <button type="submit">Elegir NeuralPlay</button>
-        </form>
-      {% endif %}
-    </div>
   </div>
 
   <p class="note">El pago se procesará de forma segura en la web (próximamente).<br>Por ahora, al elegir un plan queda activo de inmediato.</p>
