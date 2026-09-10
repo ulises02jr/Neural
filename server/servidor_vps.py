@@ -2252,7 +2252,7 @@ def _features(paquete):
     return {
         "midi": full,               # sección MIDI (mapping / MIDI OUT / controlador externo)
         "infinito": full,           # botón Reproductor Infinito (Plus+)
-        "neuralsync": (full and not repro) or sync,   # puente con DAW: Plus+ y el plan sync
+        "neuralsync": (paquete == "ministerio"),   # NeuralSync (puente DAW) solo en Premium
         "export_pdf": (full and not repro) or sync,   # exportar charts a PDF (charts/sync)
         "charts": (not repro),      # maneja charts: cifrado + letras (no en reproductor)
         "usuarios": (not repro),    # gestión de músicos / Modo Músico (no en reproductor)
