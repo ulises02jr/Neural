@@ -72,6 +72,10 @@
   .tool.soon .tool-top{flex-direction:column;gap:8px;margin:0}
   .soon-tag{font-size:11.5px;font-weight:700;color:var(--txt3);background:var(--raised);
     border:1px solid var(--line);padding:5px 14px;border-radius:999px;margin-top:12px}
+  .tool-ic.charts{background:#2a2410;color:#E6C15A}
+  .tool-ic.sync{background:#12291b;color:#86B36A}
+  .tool-desc{font-size:12.8px;color:var(--txt2);line-height:1.55;margin-bottom:10px}
+  .tool-desc b{color:var(--txt)}
 
   @media (max-width:980px){.grid{grid-template-columns:repeat(2,1fr)}}
   @media (max-width:860px){.tools{grid-template-columns:1fr}}
@@ -178,16 +182,22 @@
 
   <div class="tools">
 
-    <!-- NeuralCharts (próximamente) -->
-    <div class="tool soon">
+    <!-- NeuralCharts -->
+    <div class="tool">
       <div class="tool-top">
-        <span class="tool-ic">C</span>
+        <span class="tool-ic charts">C</span>
         <div>
           <div class="tool-nom">NeuralCharts</div>
-          <div class="tool-tag">App de músicos · charts + ensayo</div>
+          <div class="tool-tag">App de músicos · cifrados + ensayo</div>
         </div>
       </div>
-      <span class="soon-tag">Detalles próximamente</span>
+      <ul class="flist">
+        {{ row(true, 'Reproductor de Multitracks para ensayo de músicos que se sincroniza con tus Cifrados') }}
+        {{ row(true, 'Sincroniza tus Cifrados con NeuralPlay') }}
+        {{ row(true, 'Carga tus cifrados propios') }}
+        {{ row(true, 'Exportación de Letras para softwares de presentación') }}
+        {{ row(true, 'Exporta tus cifrados a PDF') }}
+      </ul>
     </div>
 
     <!-- NeuralPlay (destacado) -->
@@ -228,16 +238,17 @@
       </ul>
     </div>
 
-    <!-- NeuralSync (próximamente) -->
-    <div class="tool soon">
+    <!-- NeuralSync -->
+    <div class="tool">
       <div class="tool-top">
-        <span class="tool-ic">S</span>
+        <span class="tool-ic sync">S</span>
         <div>
           <div class="tool-nom">NeuralSync</div>
-          <div class="tool-tag">Puente con tu DAW (Mac / Windows)</div>
+          <div class="tool-tag">La tecnología de sincronía</div>
         </div>
       </div>
-      <span class="soon-tag">Detalles próximamente</span>
+      <p class="tool-desc">Es la tecnología que llamamos así y que permite la <b>sincronía de los Cifrados con NeuralPlay</b>.</p>
+      <p class="tool-desc">Además, hay una versión habilitada por si querés usar tu <b>propio DAW</b>: disparás las secuencias en el DAW de tu preferencia y con esto podés mantener en sincronía los cifrados de los músicos.</p>
     </div>
 
   </div>
