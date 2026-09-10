@@ -76,6 +76,8 @@
   .tool-ic.sync{background:#12291b;color:#86B36A}
   .tool-desc{font-size:12.8px;color:var(--txt2);line-height:1.55;margin-bottom:10px}
   .tool-desc b{color:var(--txt)}
+  .tool-mini{font-size:10.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--txt3);border-top:1px solid var(--line);margin-top:12px;padding-top:12px;margin-bottom:9px}
 
   @media (max-width:980px){.grid{grid-template-columns:repeat(2,1fr)}}
   @media (max-width:860px){.tools{grid-template-columns:1fr}}
@@ -248,9 +250,12 @@
           <div class="tool-tag">La tecnología de sincronía</div>
         </div>
       </div>
-      <ul class="flist">
+      <ul class="flist" style="flex:0 0 auto">
         {{ row(true, 'Tecnología propia de NeuralWorship') }}
         {{ row(true, 'Sincroniza los Cifrados de los músicos con NeuralPlay') }}
+      </ul>
+      <div class="tool-mini">Versión con tu propio DAW</div>
+      <ul class="flist" style="flex:0 0 auto">
         {{ row(true, 'Versión para usar tu propio DAW') }}
         {{ row(true, 'Disparás las secuencias en el DAW de tu preferencia') }}
         {{ row(true, 'Mantiene los cifrados de los músicos en sincronía') }}
