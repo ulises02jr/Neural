@@ -6,7 +6,7 @@
 <title>Elegí tu plan · NeuralWorship</title>
 <style>
   :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;
-    --txt:#fff;--txt2:#a3a3a3;--txt3:#666;--gold:#9CA3AF;--live:#86B36A;--error:#dc6262}
+    --txt:#fff;--txt2:#a3a3a3;--txt3:#666;--gold:#9CA3AF;--blue:#4C7CFF;--live:#86B36A;--error:#dc6262}
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;
     padding:28px 22px 48px;max-width:1180px;margin:0 auto}
@@ -22,14 +22,13 @@
   /* ── Rejilla de planes (4 columnas lado a lado) ── */
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;align-items:stretch}
   .card{position:relative;display:flex;flex-direction:column;background:var(--surface);
-    border:1px solid var(--line);border-radius:16px;padding:22px 18px;transition:border-color .15s}
+    border:1px solid var(--line);border-radius:16px;padding:24px 18px 20px;transition:border-color .15s}
   .card:hover{border-color:#3a3a3a}
-  .card.best{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 8px 30px rgba(0,0,0,.4)}
+  .card.best{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue),0 8px 30px rgba(0,0,0,.45)}
   .card.active{border-color:rgba(134,179,106,.55)}
   .card.repro{border-color:#33405e}
-  .badge{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--gold);
-    color:#000;font-size:10px;font-weight:800;letter-spacing:.4px;padding:3px 12px;border-radius:999px;white-space:nowrap}
-  .badge.play{background:#4C7CFF;color:#fff}
+  .badge{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--blue);
+    color:#fff;font-size:10px;font-weight:800;letter-spacing:.4px;padding:3px 12px;border-radius:999px;white-space:nowrap}
   .nom{font-size:18px;font-weight:800;margin-bottom:2px}
   .price{font-size:32px;font-weight:900;color:var(--gold);line-height:1.1;margin:6px 0 2px}
   .price small{font-size:13px;color:var(--txt2);font-weight:600}
@@ -46,7 +45,7 @@
   .cta form{margin:0}
   .cta button{width:100%;padding:12px 16px;font-size:13.5px;font-weight:800;background:var(--gold);
     color:#000;border:none;border-radius:999px;cursor:pointer}
-  .cta button.play{background:#4C7CFF;color:#fff}
+  .cta button.play{background:var(--blue);color:#fff}
   .cta button:hover{filter:brightness(1.08)}
   .cta .disabled{width:100%;padding:12px 16px;font-size:13px;font-weight:700;text-align:center;
     background:var(--raised);color:var(--txt3);border:1px solid var(--line);border-radius:999px}
@@ -84,34 +83,49 @@
     {% set es_repro = (pk == 'reproductor') %}
     <div class="card {{ 'best' if recomendado else '' }} {{ 'repro' if es_repro else '' }} {{ 'active' if es_actual else '' }}">
       {% if recomendado %}<span class="badge">RECOMENDADO</span>{% endif %}
-      {% if es_repro %}<span class="badge play">SOLO REPRODUCIR</span>{% endif %}
+      {% if es_repro %}<span class="badge">SOLO REPRODUCIR</span>{% endif %}
       <div class="nom">{{ p.nombre }}</div>
       <div class="price">${{ '%.0f'|format(p.precio) }}<small> /mes</small></div>
       {% if es_repro %}
-        <div class="meta">{{ p.gb }} GB para stems propios</div>
-        <div class="hr"></div>
-        <ul class="flist">
-          {{ row(true,  'NeuralPlay completo') }}
-          {{ row(true,  'Salidas múltiples') }}
-          {{ row(true,  'Sección MIDI') }}
-          {{ row(true,  'Reproductor infinito') }}
-          {{ row(true,  p.gb ~ ' GB para tus stems') }}
-          {{ row(false, 'Sin gestión de músicos') }}
-          {{ row(false, 'Sin NeuralSync ni charts') }}
-        </ul>
+        <div class="meta">Cargá tus propios stems</div>
       {% else %}
         <div class="meta">{{ p.asientos }} asientos · {{ p.gb }} GB</div>
-        <div class="hr"></div>
-        <ul class="flist">
-          {{ row(true,  p.asientos ~ ' asientos de músico') }}
-          {{ row(true,  p.gb ~ ' GB de almacenamiento') }}
-          {{ row(true,  'Charts + Setlists + Pads') }}
-          {{ row(true,  'NeuralPlay ' ~ ('completo' if p.midi else 'básico')) }}
-          {{ row(p.midi, 'NeuralSync (puente DAW)') }}
-          {{ row(p.midi, 'Exportar PDF') }}
-          {{ row(p.midi, 'Sección MIDI') }}
-        </ul>
       {% endif %}
+      <div class="hr"></div>
+
+      {# Mismas 12 filas y en el mismo orden para las 4 tarjetas (solo cambian ✓/✕) #}
+      {% if es_repro %}
+      <ul class="flist">
+        {{ row(false, 'Sin gestión de músicos') }}
+        {{ row(true,  p.gb ~ ' GB para tus stems') }}
+        {{ row(false, 'Charts (cifrado + letras)') }}
+        {{ row(false, 'Setlists') }}
+        {{ row(false, 'Pads') }}
+        {{ row(true,  'NeuralPlay completo') }}
+        {{ row(true,  'Salidas múltiples') }}
+        {{ row(true,  'Sección MIDI') }}
+        {{ row(false, 'NeuralSync (puente DAW)') }}
+        {{ row(false, 'Sincronización En Vivo (Charts + Secuencia)') }}
+        {{ row(false, 'Exportar PDF') }}
+        {{ row(true,  'Reproductor infinito') }}
+      </ul>
+      {% else %}
+      <ul class="flist">
+        {{ row(true,  p.asientos ~ ' asientos de músico') }}
+        {{ row(true,  p.gb ~ ' GB de almacenamiento') }}
+        {{ row(true,  'Charts (cifrado + letras)') }}
+        {{ row(true,  'Setlists') }}
+        {{ row(true,  'Pads') }}
+        {{ row(true,  'NeuralPlay ' ~ ('completo' if p.midi else 'básico')) }}
+        {{ row(p.salidas > 2, 'Salidas múltiples') }}
+        {{ row(p.midi, 'Sección MIDI') }}
+        {{ row(p.midi, 'NeuralSync (puente DAW)') }}
+        {{ row(p.midi, 'Sincronización En Vivo (Charts + Secuencia)') }}
+        {{ row(p.midi, 'Exportar PDF') }}
+        {{ row(p.midi, 'Reproductor infinito') }}
+      </ul>
+      {% endif %}
+
       <div class="cta">
         {% if es_actual %}
           <div class="isactive">✓ Plan activo</div>
