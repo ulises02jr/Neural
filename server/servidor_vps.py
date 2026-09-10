@@ -2238,6 +2238,8 @@ PAQUETES = {
     # Plan "solo reproductor": NeuralPlay completo para tocar en vivo con stems propios.
     # Sin gestión de músicos, sin NeuralSync y sin charts (cifrado/letras).
     "reproductor": {"nombre": "NeuralPlay", "precio": 10.0, "asientos": 1, "gb": 50, "midi": True, "salidas": 32, "tipo": "reproductor"},
+    # Plan "sync" (para DAW): NeuralCharts (charts/musicos) + NeuralSync. Sin NeuralPlay.
+    "sync":        {"nombre": "NeuralSync", "precio": 10.0, "asientos": 3, "gb": 20, "midi": False, "salidas": 2,  "tipo": "sync"},
 }
 
 
@@ -2246,15 +2248,17 @@ def _features(paquete):
     p = PAQUETES.get(paquete, PAQUETES["basico"])
     full = bool(p.get("midi"))
     repro = p.get("tipo") == "reproductor"   # plan solo-reproductor
+    sync = p.get("tipo") == "sync"           # plan DAW: NeuralCharts + NeuralSync (sin NeuralPlay)
     return {
         "midi": full,               # sección MIDI (mapping / MIDI OUT / controlador externo)
         "infinito": full,           # botón Reproductor Infinito (Plus+)
-        "neuralsync": (full and not repro),   # puente con DAW (no en el plan reproductor)
-        "export_pdf": (full and not repro),   # exportar charts a PDF (sin charts => no)
+        "neuralsync": (full and not repro) or sync,   # puente con DAW: Plus+ y el plan sync
+        "export_pdf": (full and not repro) or sync,   # exportar charts a PDF (charts/sync)
         "charts": (not repro),      # maneja charts: cifrado + letras (no en reproductor)
         "usuarios": (not repro),    # gestión de músicos / Modo Músico (no en reproductor)
         "stems_propios": repro,     # sube sus propios stems
         "solo_reproductor": repro,
+        "neuralplay": (not sync),   # acceso a NeuralPlay (el plan sync usa su propio DAW)
         "tipo": p.get("tipo", "iglesia"),
         "salidas": p.get("salidas", 2),   # salidas de audio (2 estéreo en básico, 32 en Plus+)
         "asientos": p.get("asientos", 3),
