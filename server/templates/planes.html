@@ -93,36 +93,42 @@
       {% endif %}
       <div class="hr"></div>
 
-      {# Mismas 12 filas y en el mismo orden para las 4 tarjetas (solo cambian ✓/✕) #}
+      {# Mismas 15 filas y en el mismo orden para las 4 tarjetas (solo cambian ✓/✕) #}
       {% if es_repro %}
       <ul class="flist">
         {{ row(false, 'Sin gestión de músicos') }}
         {{ row(true,  p.gb ~ ' GB para tus stems') }}
         {{ row(false, 'Charts (cifrado + letras)') }}
-        {{ row(false, 'Setlists') }}
-        {{ row(false, 'Pads') }}
+        {{ row(false, 'Creación de Repertorios') }}
+        {{ row(false, 'Cargar Pads') }}
+        {{ row(true,  'Cargar Multitracks') }}
         {{ row(true,  'NeuralPlay completo') }}
-        {{ row(true,  'Salidas múltiples') }}
-        {{ row(true,  'Sección MIDI') }}
+        {{ row(true,  'Número de Salidas: ' ~ p.salidas) }}
+        {{ row(true,  'Reproductor infinito') }}
+        {{ row(true,  'Almacenar Notas MIDI') }}
+        {{ row(true,  'Múltiples Salidas MIDI') }}
+        {{ row(true,  'MIDI CLOCK') }}
         {{ row(false, 'NeuralSync (puente DAW)') }}
         {{ row(false, 'Sincronización En Vivo (Charts + Secuencia)') }}
         {{ row(false, 'Exportar PDF') }}
-        {{ row(true,  'Reproductor infinito') }}
       </ul>
       {% else %}
       <ul class="flist">
         {{ row(true,  p.asientos ~ ' asientos de músico') }}
         {{ row(true,  p.gb ~ ' GB de almacenamiento') }}
         {{ row(true,  'Charts (cifrado + letras)') }}
-        {{ row(true,  'Setlists') }}
-        {{ row(true,  'Pads') }}
+        {{ row(true,  'Creación de Repertorios') }}
+        {{ row(true,  'Cargar Pads') }}
+        {{ row(true,  'Cargar Multitracks') }}
         {{ row(true,  'NeuralPlay ' ~ ('completo' if p.midi else 'básico')) }}
-        {{ row(p.salidas > 2, 'Salidas múltiples') }}
-        {{ row(p.midi, 'Sección MIDI') }}
-        {{ row(p.midi, 'NeuralSync (puente DAW)') }}
-        {{ row(p.midi, 'Sincronización En Vivo (Charts + Secuencia)') }}
-        {{ row(p.midi, 'Exportar PDF') }}
+        {{ row(true,  'Número de Salidas: ' ~ p.salidas) }}
         {{ row(p.midi, 'Reproductor infinito') }}
+        {{ row(p.midi, 'Almacenar Notas MIDI') }}
+        {{ row(p.midi, 'Múltiples Salidas MIDI') }}
+        {{ row(p.midi, 'MIDI CLOCK') }}
+        {{ row(p.midi, 'NeuralSync (puente DAW)') }}
+        {{ row(true,  'Sincronización En Vivo (Charts + Secuencia)') }}
+        {{ row(p.midi, 'Exportar PDF') }}
       </ul>
       {% endif %}
 
