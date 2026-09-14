@@ -52,6 +52,17 @@ def _codigo_libre(conn):
     return "".join(secrets.choice(_COD_ALFA) for _ in range(8))
 
 
+def _numero_publico_libre(conn):
+    """Número público de 6 cifras (100000–999999), aleatorio y único.
+    Se muestra al usuario en lugar del id interno secuencial para no revelar
+    cuántas organizaciones existen."""
+    for _ in range(50):
+        n = str(secrets.randbelow(900000) + 100000)
+        if not conn.execute("SELECT 1 FROM organizations WHERE numero_publico = ?", (n,)).fetchone():
+            return n
+    return str(secrets.randbelow(900000) + 100000)
+
+
 def init_db():
     """Crea las tablas si no existen."""
     with _conexion() as conn:
@@ -141,6 +152,20 @@ def init_db():
             for r in faltantes:
                 conn.execute("UPDATE organizations SET codigo = ? WHERE id = ?",
                              (_codigo_libre(conn), r["id"]))
+        except Exception:
+            pass
+        # Número público de 6 cifras (no secuencial) para mostrar al usuario
+        try:
+            conn.execute("ALTER TABLE organizations ADD COLUMN numero_publico TEXT")
+        except Exception:
+            pass  # ya existe
+        try:
+            faltantes = conn.execute(
+                "SELECT id FROM organizations WHERE numero_publico IS NULL OR numero_publico = ''"
+            ).fetchall()
+            for r in faltantes:
+                conn.execute("UPDATE organizations SET numero_publico = ? WHERE id = ?",
+                             (_numero_publico_libre(conn), r["id"]))
         except Exception:
             pass
 
@@ -523,10 +548,11 @@ def crear_organizacion(nombre, owner_user_id=None, token=None, paquete="basico",
     try:
         with _conexion() as conn:
             codigo = _codigo_libre(conn)
+            numero_publico = _numero_publico_libre(conn)
             cur = conn.execute(
-                "INSERT INTO organizations (nombre, owner_user_id, token, codigo, paquete, max_musicos, almacen_gb, estado_suscripcion, creado_en) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (nombre, owner_user_id, token, codigo, paquete, int(max_musicos), int(almacen_gb), estado, _ahora_iso()),
+                "INSERT INTO organizations (nombre, owner_user_id, token, codigo, numero_publico, paquete, max_musicos, almacen_gb, estado_suscripcion, creado_en) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (nombre, owner_user_id, token, codigo, numero_publico, paquete, int(max_musicos), int(almacen_gb), estado, _ahora_iso()),
             )
             return True, cur.lastrowid
     except sqlite3.IntegrityError as e:
