@@ -189,6 +189,7 @@ class MultiTrackAudio {
         player.volume = self.volumes[id] ?? 1.0
         self.players[id] = player
       }
+      self.engine.prepare()
       do { try self.engine.start(); completion(.success(self.durationSec)) }
       catch { completion(.failure(error)) }
     }
@@ -208,13 +209,18 @@ class MultiTrackAudio {
   }
 
   func play(from offsetSec: Double) {
-    if !engine.isRunning { activarSesion(); try? engine.start() }
+    if !engine.isRunning { activarSesion(); engine.prepare(); try? engine.start() }
     scheduleAll(from: offsetSec)
-    let startAt = AVAudioTime(hostTime: mach_absolute_time() &+ Self.hostTicks(0.12))
+    // Pre-rollear cada pista: deja los buffers listos para que TODAS arranquen exactamente
+    // en el mismo instante. Sin esto, cada nodo se "calienta" al iniciar y entran desfasadas.
+    for (_, player) in players { player.prepare(withFrameCount: 8192) }
+    // Margen de anticipacion comun (mayor que antes) para que ninguna pista llegue tarde al arranque.
+    let lead = 0.20
+    let startAt = AVAudioTime(hostTime: mach_absolute_time() &+ Self.hostTicks(lead))
     for (_, player) in players { player.play(at: startAt) }
     playing = true
     startOffsetSec = max(0, offsetSec)
-    startDate = Date().addingTimeInterval(0.12)
+    startDate = Date().addingTimeInterval(lead)
   }
 
   private static func hostTicks(_ seconds: Double) -> UInt64 {
