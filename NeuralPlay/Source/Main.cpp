@@ -382,6 +382,67 @@ struct FadeIconButton : public juce::Button
     }
 };
 
+// Boton "ir al inicio" (barra vertical + triangulo a la izquierda), dibujado como
+// vector para verse IDENTICO en Mac y iPad (los glifos de texto los sustituye iOS).
+struct SkipStartButton : public juce::Button
+{
+    SkipStartButton() : juce::Button ("inicio") {}
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const float rad = juce::jmin (r.getHeight() * 0.5f, 12.0f);
+        juce::Colour bg (0xff1f1f1f);
+        if (down) bg = bg.brighter (0.06f); else if (over) bg = bg.brighter (0.10f);
+        g.setColour (bg); g.fillRoundedRectangle (r, rad);
+        g.setColour (juce::Colour (0xff2a2a2a)); g.drawRoundedRectangle (r, rad, 1.0f);
+
+        const auto c = r.getCentre();
+        const float s = juce::jmin (r.getHeight(), r.getWidth());
+        const float tw = s * 0.26f, th = s * 0.40f;
+        const float barW = s * 0.085f, gap = s * 0.06f;
+        const float groupW = barW + gap + tw;
+        const float leftX = c.x - groupW * 0.5f;
+        g.setColour (juce::Colours::white.withAlpha (isEnabled() ? 0.95f : 0.4f));
+        g.fillRoundedRectangle (leftX, c.y - th * 0.5f, barW, th, barW * 0.4f);   // barra "|"
+        juce::Path tri;                                                            // triangulo a la izquierda
+        const float triX = leftX + barW + gap;
+        tri.addTriangle (triX + tw, c.y - th * 0.5f,
+                         triX + tw, c.y + th * 0.5f,
+                         triX,      c.y);
+        g.fillPath (tri);
+    }
+};
+
+// Boton de flecha triangular (navegacion por seccion del mapa), vector cross-platform.
+struct TriIconButton : public juce::Button
+{
+    bool pointsRight = false;
+    TriIconButton() : juce::Button ("tri") {}
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const float rad = juce::jmin (r.getHeight() * 0.5f, 10.0f);
+        juce::Colour bg (0xcc1a1a1a);
+        if (down) bg = bg.brighter (0.06f); else if (over) bg = bg.brighter (0.10f);
+        g.setColour (bg); g.fillRoundedRectangle (r, rad);
+
+        const auto c = r.getCentre();
+        const float s = juce::jmin (r.getHeight(), r.getWidth());
+        const float w = s * 0.30f, h = s * 0.42f;
+        g.setColour (juce::Colours::white.withAlpha (isEnabled() ? 0.95f : 0.4f));
+        juce::Path tri;
+        if (pointsRight)
+            tri.addTriangle (c.x - w * 0.5f, c.y - h * 0.5f,
+                             c.x - w * 0.5f, c.y + h * 0.5f,
+                             c.x + w * 0.5f, c.y);
+        else
+            tri.addTriangle (c.x + w * 0.5f, c.y - h * 0.5f,
+                             c.x + w * 0.5f, c.y + h * 0.5f,
+                             c.x - w * 0.5f, c.y);
+        g.fillPath (tri);
+    }
+};
+
 struct SongCard : public juce::Component
 {
     juce::Image cover;
@@ -1593,6 +1654,9 @@ struct AudioConfigPanel : public juce::Component
     juce::ComboBox srBox;                  // selector de frecuencia (sample rate)
     juce::Label srLbl;
     juce::Array<double> srList;
+    juce::ToggleButton autoPanBtn;         // Autopan para jack de 2 salidas
+    std::function<void (bool)> onAutoPan;
+    void setAutoPan (bool on) { autoPanBtn.setToggleState (on, juce::dontSendNotification); }
     int numChans = 2;
     int maxChans = 32;                              // tope de salidas segun el plan (2 en Basico)
     std::function<void (const juce::String&)> onDevice;
@@ -1656,6 +1720,15 @@ struct AudioConfigPanel : public juce::Component
         backBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         backBtn.onClick = [this] { setVisible (false); if (onBack) onBack(); };
         addAndMakeVisible (backBtn);
+
+        // Autopan: 1 toque para mandar Click/Guia a la derecha y las pistas a la izquierda
+        // (ideal para quien solo tiene un jack de 2 salidas y no quiere rutear familia por familia).
+        autoPanBtn.setButtonText (juce::String::fromUTF8 ("Autopan  \xc2\xb7  Click y Gu\xc3\xad" "a a la derecha, pistas a la izquierda"));
+        autoPanBtn.setColour (juce::ToggleButton::textColourId, juce::Colour (0xfff2f2f2));
+        autoPanBtn.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xff2E6BE6));
+        autoPanBtn.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour (0x55ffffff));
+        autoPanBtn.onClick = [this] { if (onAutoPan) onAutoPan (autoPanBtn.getToggleState()); };
+        addAndMakeVisible (autoPanBtn);
     }
 
     void setDevices (const juce::StringArray& names, const juce::String& current)
@@ -1742,6 +1815,8 @@ struct AudioConfigPanel : public juce::Component
         b.removeFromTop (6);
         srLbl.setBounds (b.removeFromTop (16));
         srBox.setBounds (b.removeFromTop (30));
+        b.removeFromTop (8);
+        autoPanBtn.setBounds (b.removeFromTop (26));
         b.removeFromTop (8);
         for (int i = 0; i < kNumFam; ++i)
         {
@@ -2613,7 +2688,7 @@ public:
     {
         setInterceptsMouseClicks (true, true);
 
-        title.setText (juce::String::fromUTF8 ("NeuralWorship"), juce::dontSendNotification);
+        title.setText (juce::String::fromUTF8 ("NeuralPlay"), juce::dontSendNotification);
         title.setJustificationType (juce::Justification::centred);
         title.setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
         title.setFont (juce::Font (30.0f, juce::Font::bold));
@@ -2837,6 +2912,7 @@ public:
 
         audioCfg.onDevice = [this] (const juce::String& d) { applyAudioDevice (d); };
         audioCfg.onRoute  = [this] (int f, int m, int b)   { setFamRoute (f, m, b); };
+        audioCfg.onAutoPan = [this] (bool on) { autoPan.store (on); saveAudioRouting(); };
         audioCfg.onSampleRate = [this] (double sr)
         {
             preferredSampleRate = sr;
@@ -2952,20 +3028,13 @@ public:
         playButton.onClick = [this] { if (clickOrArm (kaPlay)) return; togglePlay(); };
         addAndMakeVisible (playButton);
 
-        returnButton.setButtonText ("|" + juce::String::charToString ((juce_wchar) 0x25C0));
-        returnButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
-        returnButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        // returnButton ahora es un icono vectorial (SkipStartButton), no texto.
         returnButton.onClick = [this] { if (clickOrArm (kaReturn)) return; seekSeconds (0.0); };
         addAndMakeVisible (returnButton);
 
+        barNextBtn.pointsRight = true;                 // flecha derecha; barPrevBtn apunta a la izquierda
         for (auto* b : { &barPrevBtn, &barNextBtn })   // navegación por compás sobre el mapa
-        {
-            b->setColour (juce::TextButton::buttonColourId, juce::Colour (0xcc1a1a1a));
-            b->setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
             addAndMakeVisible (b);
-        }
-        barPrevBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25C0));   // ◀
-        barNextBtn.setButtonText (juce::String::charToString ((juce_wchar) 0x25B6));   // ▶
         barPrevBtn.onClick = [this] { if (clickOrArm (kaPrevBar)) return; seekSection (-1); };
         barNextBtn.onClick = [this] { if (clickOrArm (kaNextBar)) return; seekSection (+1); };
 
@@ -3435,9 +3504,15 @@ public:
             const float* tR = temp.getNumChannels() > 1 ? temp.getReadPointer (1) : tL;
 
             const int fi   = (t < kMaxTracks ? trackRouteFam[t] : 10);   // familia -> ruta de salida
-            const int mode = famMode[fi];
+            int mode = famMode[fi];
             int base = famBaseCh[fi];
             if (featSalidas <= 2 && base >= 2) base = 0;   // Basico: todo al par principal (1/2)
+            if (autoPan.load())                            // Autopan (jack 2 salidas): Click(15)/Guia(13) -> derecha, resto -> izquierda
+            {
+                const bool clickOguia = (fi == 15 || fi == 13);
+                mode = 1;                                  // mono
+                base = (clickOguia && useCh >= 2) ? 1 : 0; // derecha (canal 1) o izquierda (canal 0)
+            }
             float peak = 0.0f;
 
             if (mode == 2 && base >= 0 && base < useCh)            // estéreo (canal base + base+1)
@@ -3484,6 +3559,7 @@ public:
                 if (t < kMaxTracks && trackIsClick[t]) { const int fi = trackRouteFam[t]; cm = famMode[fi]; cb = famBaseCh[fi]; break; }
             if (cb < 0) { cb = 0; cm = 2; }
             if (featSalidas <= 2 && cb >= 2) cb = 0;   // Basico: click al par principal
+            if (autoPan.load()) { cm = 1; cb = (useCh >= 2 ? 1 : 0); }   // Autopan: click sintetizado a la derecha
             float* cL = (cb >= 0 && cb < useCh) ? out[cb] : nullptr;
             float* cR = (cm == 2 && cb + 1 < useCh) ? out[cb + 1] : nullptr;
             const double twoPi = juce::MathConstants<double>::twoPi;
@@ -3556,7 +3632,8 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xff0a0a0a));
-        drawLogo (g, 28.0f, 18.5f);   // centrado vertical con los botones de la cabecera
+        // Logo anclado a la fila del header (respeta el safe area en iPad, no una Y fija)
+        drawLogo (g, (float) hdrLogoX, (float) hdrLogoY);
 
         {
             auto tbx = timeLabel.getBounds().toFloat();
@@ -4113,6 +4190,8 @@ public:
             // Izquierda (tras el logo): caja de tiempo + caja de tempo/compás + PAD
             // logoW deja espacio para el wordmark "NeuralPlay" (mas ancho que el icono cuadrado)
             const int logoW = 122, boxW = 56, boxG = 6;
+            hdrLogoX = topbar.getX() + 12;   // logo a la izquierda del header
+            hdrLogoY = gy;                     // misma fila que reloj/PAD/Play (respeta safe area)
             int lx = topbar.getX() + logoW;
             timeLabel.setBounds (lx, gy, boxW, BH);
             lx += boxW + boxG;
@@ -4286,9 +4365,9 @@ private:
         const juce::Image& corner = logoInternoImg.isValid() ? logoInternoImg : logoImg;
         if (corner.isValid())
         {
-            const float hh = 34.0f;
+            const float hh = 34.0f;   // = altura de los botones del header (BH), alineado con la fila
             const float ww = hh * (float) corner.getWidth() / (float) juce::jmax (1, corner.getHeight());
-            g.drawImage (corner, juce::Rectangle<float> (x, y + 3.0f, ww, hh), juce::RectanglePlacement::centred);
+            g.drawImage (corner, juce::Rectangle<float> (x, y, ww, hh), juce::RectanglePlacement::centred);
             return;
         }
         const float bw = 4.0f, gap = 3.5f, h = 30.0f;
@@ -4475,7 +4554,7 @@ private:
         loginOverlay->toFront (true);
         return;
        #endif
-        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Iniciar sesion en NeuralWorship"),
+        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Iniciar sesion en NeuralPlay"),
                                           juce::String::fromUTF8 ("Entra con tu cuenta para cargar tu organizacion."),
                                           juce::MessageBoxIconType::NoIcon);
         aw->addTextEditor ("email", "", juce::String::fromUTF8 ("Email:"));
@@ -4864,6 +4943,7 @@ private:
         audioCfg.buildRouteItems (openOutChans);
         audioCfg.setSampleRates (deviceSampleRates(), currentDeviceSampleRate(), preferredSampleRate);
         applyRoutesToUI();
+        audioCfg.setAutoPan (autoPan.load());
         audioCfg.setVisible (true);
         audioCfg.toFront (true);
     }
@@ -4885,6 +4965,7 @@ private:
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
         root->setProperty ("device", audioOutDevice);
         root->setProperty ("sample_rate", preferredSampleRate);
+        root->setProperty ("autopan", autoPan.load());
         juce::DynamicObject::Ptr dev = new juce::DynamicObject();
         for (auto& kv : routesByDevice)
         {
@@ -4910,6 +4991,7 @@ private:
         if (! v.isObject()) return;
         audioOutDevice = v.getProperty ("device", "").toString();
         preferredSampleRate = (double) v.getProperty ("sample_rate", 0.0);
+        autoPan.store ((bool) v.getProperty ("autopan", false));
         auto routes = v.getProperty ("routes", juce::var());
         if (auto* obj = routes.getDynamicObject())
             for (auto& p : obj->getProperties())
@@ -7348,10 +7430,13 @@ private:
 
     juce::Image logoImg;
     juce::Image logoInternoImg;   // wordmark "NeuralPlay" para la esquina del header
+    int hdrLogoX = 28, hdrLogoY = 16;   // posicion del logo en el header (se fija en resized, respeta safe area)
     std::unique_ptr<NeuralLoginOverlay> loginOverlay;   // login tactil (iOS/iPad)
     PillLNF pillLnf;
     FaderLNF faderLnf;
-    juce::TextButton connectButton, returnButton, barPrevBtn, barNextBtn;
+    juce::TextButton connectButton;
+    SkipStartButton returnButton;                 // "ir al inicio" (icono vectorial)
+    TriIconButton barPrevBtn, barNextBtn;         // flechas de navegacion por seccion (icono vectorial)
     PlayIconButton playButton;
     FadeIconButton fadeButton;
     juce::Array<double> preFadeVals;
@@ -7393,6 +7478,7 @@ private:
     std::map<juce::String, std::array<AudioConfigPanel::FamRoute, kNumFam>> routesByDevice;
     int famMode[kNumFam] = { 2,2,2,2,2,2,2,2,2,2,2 };   // snapshot para el hilo de audio (default estéreo)
     int famBaseCh[kNumFam] = { 0 };
+    std::atomic<bool> autoPan { false };   // Autopan: Click/Guia -> canal derecho, resto -> izquierdo (jack 2 salidas)
     int trackRouteFam[kMaxTracks] = { 0 };
     int openOutChans = 2;
     juce::Array<MidiBox> currentMidiBoxes;

@@ -216,7 +216,18 @@ class MultiTrackAudio {
     for (_, player) in players { player.prepare(withFrameCount: 8192) }
     // Margen de anticipacion comun (mayor que antes) para que ninguna pista llegue tarde al arranque.
     let lead = 0.20
-    let startAt = AVAudioTime(hostTime: mach_absolute_time() &+ Self.hostTicks(lead))
+    // Anclar el arranque al RELOJ DE MUESTRAS del motor (no al reloj del sistema).
+    // Todas las pistas comparten el mismo render clock del engine; darles el mismo
+    // sampleTime futuro las hace arrancar EXACTAMENTE en el mismo frame, sin desfase.
+    let outSR = engine.outputNode.outputFormat(forBus: 0).sampleRate
+    let startAt: AVAudioTime
+    if let rt = engine.outputNode.lastRenderTime, rt.isSampleTimeValid, outSR > 0 {
+      let startSample = rt.sampleTime + AVAudioFramePosition(lead * outSR)
+      startAt = AVAudioTime(sampleTime: startSample, atRate: outSR)
+    } else {
+      // Respaldo: si el motor aun no reporta tiempo de muestras, usar el reloj del sistema.
+      startAt = AVAudioTime(hostTime: mach_absolute_time() &+ Self.hostTicks(lead))
+    }
     for (_, player) in players { player.play(at: startAt) }
     playing = true
     startOffsetSec = max(0, offsetSec)
