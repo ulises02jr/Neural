@@ -2770,7 +2770,7 @@ public:
         // nunca fuerza un formato: baja el archivo original que lista el servidor.
         formatManager.registerFormat (new juce::CoreAudioFormat(), false);
        #endif
-        readThread.startThread();
+        readThread.startThread (juce::Thread::Priority::high);   // alimenta los buffers a tiempo (evita cortes con muchos stems)
         thumb.addChangeListener (this);
 
         connectButton.setButtonText ("Conectar");
@@ -3064,7 +3064,11 @@ public:
         setSize (1040, 906);
         setAudioChannels (0, 32);   // hasta 32 salidas (interfaces multicanal)
         auto setup = deviceManager.getAudioDeviceSetup();
-        setup.bufferSize = 256;   // menor latencia de salida (sin comprometer estabilidad)
+       #if JUCE_IOS
+        setup.bufferSize = 1024;  // iPad: mas holgura con muchos stems/canciones largas (evita cortes)
+       #else
+        setup.bufferSize = 512;   // escritorio: buen balance latencia/estabilidad
+       #endif
         setup.sampleRate = 0.0;   // 0 = automático: seguir la frecuencia nativa del dispositivo
         deviceManager.setAudioDeviceSetup (setup, true);
 
@@ -3244,7 +3248,7 @@ public:
         auto* rs = new juce::AudioFormatReaderSource (reader, true);
         rs->setLooping (true);
         voice->src.reset (rs);
-        voice->buf.reset (new juce::BufferingAudioSource (rs, readThread, false, 88200, 2));
+        voice->buf.reset (new juce::BufferingAudioSource (rs, readThread, false, 240000, 2));
         voice->res.reset (new juce::ResamplingAudioSource (voice->buf.get(), false, 2));
         const double sr = deviceSampleRate; const int bs = juce::jmax (256, currentBlockSize);
         voice->res->setResamplingRatio (voice->fileRate / sr);
@@ -4789,7 +4793,11 @@ private:
         setup.useDefaultOutputChannels = false;
         setup.outputChannels.clear();
         setup.outputChannels.setRange (0, 32, true);
-        setup.bufferSize = 256;
+       #if JUCE_IOS
+        setup.bufferSize = 1024;
+       #else
+        setup.bufferSize = 512;
+       #endif
         setup.sampleRate = preferredSampleRate;   // 0 = automático (sigue la frecuencia del dispositivo)
         deviceManager.setAudioDeviceSetup (setup, true);
         audioOutDevice = name;
@@ -5923,7 +5931,7 @@ private:
             auto* rs = new juce::AudioFormatReaderSource (reader, true);
             rs->setLooping (false);
             readerSources.add (rs);
-            bufferingSources.add (new juce::BufferingAudioSource (rs, readThread, false, 88200, 2));
+            bufferingSources.add (new juce::BufferingAudioSource (rs, readThread, false, 240000, 2));  // ~5s de pre-carga por stem (canciones largas/pesadas)
             resamplers.add (new juce::ResamplingAudioSource (bufferingSources.getLast(), false, 2));
             trackNames.add (f.getFileNameWithoutExtension().replaceCharacter ('_', ' '));
             { const int fi = curFamFiles.indexOf (f.getFileName()); trackServerFam.add (fi >= 0 ? curFamNames[fi] : juce::String()); }
