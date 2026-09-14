@@ -1757,12 +1757,16 @@ def is_live_activo(cfg=None):
 
 @app.route("/api/live_ping", methods=["POST"])
 def api_live_ping():
-    """El puente.py del Mac llama esto cada 30s para avisar que está vivo."""
+    """El puente.py del Mac / NeuralPlay llama esto cada 30s para avisar que está vivo."""
     data = request.get_json(silent=True) or {}
-    cfg = get_config()
-    # Validar token
-    if data.get("token") != cfg.get("live_token"):
+    # Multi-tenant: el token viene en el BODY, así que resolvemos la organización
+    # dueña de ese token (org_actual() no ve el body). Esto valida y a la vez
+    # asegura que el estado del live se guarde en la organización correcta.
+    org = usuarios.obtener_org_por_token(data.get("token"))
+    if not org:
         return jsonify({"ok": False, "error": "invalid token"}), 403
+    oid = org["id"]
+    cfg = get_config(oid)
     ip = data.get("ip", "").strip()
     if not ip:
         return jsonify({"ok": False, "error": "missing ip"}), 400
@@ -1771,12 +1775,12 @@ def api_live_ping():
     if accion == "bye":
         cfg["live_activo"] = False
         cfg["ultimo_heartbeat"] = None
-        print(f"📴 Mac local desconectado (bye explícito)")
+        print(f"📴 Mac local desconectado (bye explícito) org={oid}")
     else:
         cfg["live_activo"] = True
         cfg["mac_local_ip"] = ip
         cfg["ultimo_heartbeat"] = _t.time()
-    guardar_config(cfg)
+    guardar_config(cfg, oid)
     return jsonify({"ok": True})
 
 

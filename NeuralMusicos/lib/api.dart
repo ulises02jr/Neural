@@ -207,9 +207,11 @@ class Api {
   /// Estado del culto en vivo: {activo:bool, ip:String?}.
   Future<Map<String, dynamic>> liveStatus() async {
     try {
-      final r = await http
-          .get(Uri.parse('$baseUrl/api/live_status'))
-          .timeout(const Duration(seconds: 10));
+      // Multi-tenant: mandamos el token para que el servidor devuelva el estado
+      // del live de NUESTRA organización (sin token caería a la organización 1).
+      final u = Uri.parse('$baseUrl/api/live_status')
+          .replace(queryParameters: {'token': token ?? ''});
+      final r = await http.get(u).timeout(const Duration(seconds: 10));
       final j = jsonDecode(r.body) as Map<String, dynamic>;
       return {'activo': j['activo'] == true, 'ip': j['ip']?.toString()};
     } catch (e) {
