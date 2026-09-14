@@ -30,7 +30,9 @@ juce_add_gui_app(NeuralPlaySpike
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png"
     ${NP_PLATFORM_OPTS})
 
-juce_add_binary_data(NeuralPlayData SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png")
+juce_add_binary_data(NeuralPlayData SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/LogoInterno.png")
 
 juce_generate_juce_header(NeuralPlaySpike)
 

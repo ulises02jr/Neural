@@ -2761,6 +2761,9 @@ public:
         setLookAndFeel (&pillLnf);
         setWantsKeyboardFocus (true);   // #4 recibir teclas para el mapping de teclado
         logoImg = juce::ImageFileFormat::loadFrom (BinaryData::AppIcon_png, (size_t) BinaryData::AppIcon_pngSize);
+        // Logo interno (wordmark "NeuralPlay") SOLO para la esquina del header.
+        // El icono de la app (AppIcon) se mantiene en splash/login y como icono general.
+        logoInternoImg = juce::ImageFileFormat::loadFrom (BinaryData::LogoInterno_png, (size_t) BinaryData::LogoInterno_pngSize);
         splash.logo = logoImg;
         formatManager.registerBasicFormats();
        #if JUCE_MAC || JUCE_IOS
@@ -4108,7 +4111,8 @@ public:
             const int gy = topbar.getCentreY() - BH / 2;
 
             // Izquierda (tras el logo): caja de tiempo + caja de tempo/compás + PAD
-            const int logoW = 80, boxW = 64, boxG = 6;
+            // logoW deja espacio para el wordmark "NeuralPlay" (mas ancho que el icono cuadrado)
+            const int logoW = 122, boxW = 56, boxG = 6;
             int lx = topbar.getX() + logoW;
             timeLabel.setBounds (lx, gy, boxW, BH);
             lx += boxW + boxG;
@@ -4278,11 +4282,13 @@ private:
 
     void drawLogo (juce::Graphics& g, float x, float y)
     {
-        if (logoImg.isValid())
+        // Esquina del header: wordmark "NeuralPlay" (logo interno), no el icono cuadrado.
+        const juce::Image& corner = logoInternoImg.isValid() ? logoInternoImg : logoImg;
+        if (corner.isValid())
         {
-            const float hh = 45.0f;
-            const float ww = hh * (float) logoImg.getWidth() / (float) juce::jmax (1, logoImg.getHeight());
-            g.drawImage (logoImg, juce::Rectangle<float> (x, y - 2.0f, ww, hh), juce::RectanglePlacement::centred);
+            const float hh = 34.0f;
+            const float ww = hh * (float) corner.getWidth() / (float) juce::jmax (1, corner.getHeight());
+            g.drawImage (corner, juce::Rectangle<float> (x, y + 3.0f, ww, hh), juce::RectanglePlacement::centred);
             return;
         }
         const float bw = 4.0f, gap = 3.5f, h = 30.0f;
@@ -7341,6 +7347,7 @@ private:
     int  midiMasterFader = 0;
 
     juce::Image logoImg;
+    juce::Image logoInternoImg;   // wordmark "NeuralPlay" para la esquina del header
     std::unique_ptr<NeuralLoginOverlay> loginOverlay;   // login tactil (iOS/iPad)
     PillLNF pillLnf;
     FaderLNF faderLnf;

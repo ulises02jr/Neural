@@ -38,3 +38,4 @@ entregas/
 server/_set_spaces.py
 server/_test_spaces.py
 NeuralPlay/build-ios/
+NeuralPlay/build-ios-device/
