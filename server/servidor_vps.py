@@ -3147,7 +3147,32 @@ def admin_pistas_subir():
         flash("Elegi una cancion valida", "error")
         return redirect(url_for("admin_pistas"))
     archivos = request.files.getlist("pistas")
-    carpeta = dir_pistas(_cur_org()) / numero
+    org = _cur_org()
+    # Enforcement de almacenamiento: no dejar exceder el cupo (GB) del plan.
+    # (La organización del operador no tiene tope.)
+    try:
+        if int(org) != OPERADOR_ORG_ID:
+            org_obj = usuarios.obtener_organizacion(org) or {}
+            limite_gb = int(org_obj.get("almacen_gb") or 0)
+            if limite_gb > 0:
+                limite_bytes = limite_gb * (1024 ** 3)
+                usado = uso_almacen(org)
+                nuevos = 0
+                for a in archivos:
+                    if not a or a.filename == "":
+                        continue
+                    try:
+                        a.stream.seek(0, 2); nuevos += a.stream.tell(); a.stream.seek(0)
+                    except Exception:
+                        pass
+                if usado + nuevos > limite_bytes:
+                    libre = max(0.0, (limite_bytes - usado) / (1024 ** 3))
+                    flash("Sin espacio: tu plan incluye %d GB y ya casi lo llenás (libre ~%.1f GB). "
+                          "Liberá espacio o subí de plan / añadí más almacenamiento." % (limite_gb, libre), "error")
+                    return redirect(url_for("admin_pistas"))
+    except Exception as e:
+        logging.error("chequeo de cupo (org %s): %s", org, e)
+    carpeta = dir_pistas(org) / numero
     carpeta.mkdir(exist_ok=True)
     guardadas = 0
     for a in archivos:
