@@ -764,6 +764,18 @@ def home():
     return render_template("landing.html", paquetes=PAQUETES)
 
 
+@app.route("/terminos")
+def terminos():
+    """Terminos de Servicio (pagina publica)."""
+    return render_template("terminos.html")
+
+
+@app.route("/privacidad")
+def privacidad():
+    """Politica de Privacidad (pagina publica)."""
+    return render_template("privacidad.html")
+
+
 @app.route("/robots.txt")
 def robots_txt():
     """Guia a los buscadores: indexar lo publico, no el area privada."""
@@ -787,6 +799,8 @@ def sitemap_xml():
     urls = [
         ("https://neuralworship.com/", "1.0"),
         ("https://neuralworship.com/crear-organizacion", "0.8"),
+        ("https://neuralworship.com/terminos", "0.3"),
+        ("https://neuralworship.com/privacidad", "0.3"),
     ]
     items = "".join(
         "<url><loc>%s</loc><lastmod>%s</lastmod><changefreq>weekly</changefreq><priority>%s</priority></url>"
