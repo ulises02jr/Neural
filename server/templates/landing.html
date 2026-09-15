@@ -4,29 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NeuralWorship — El ecosistema para el equipo de alabanza de tu iglesia</title>
-<meta name="description" content="Cifrados, reproductor multipista y sincronización en vivo. Todo integrado, en español y a un precio justo. Prueba gratis 7 días.">
+<meta name="description" content="Cifrados, reproductor multipista y sincronización en vivo. Todo integrado y en español. Prueba gratis 7 días.">
 <meta property="og:title" content="NeuralWorship — Herramientas para equipos de alabanza">
-<meta property="og:description" content="Cifrados, reproductor multipista y sincronización en vivo. En español y a un precio justo.">
+<meta property="og:description" content="Cifrados, reproductor multipista y sincronización en vivo. Todo integrado y en español.">
 <meta property="og:image" content="{{ url_for('static', filename='marca.png') }}">
 <style>
   :root{
     --bg:#0a0a0f; --bg2:#101018; --card:#14141d; --line:#23232f;
     --txt:#f2f3f7; --txt2:#a2a6b4; --txt3:#6b6f7d;
-    --accent:#6d78ff; --accent2:#a855f7; --grad:linear-gradient(120deg,#6d78ff,#a855f7);
-    --ok:#3ED66E;
+    --accent:#ffffff; --accent-soft:#c9ccd6;
+    --ok:#e8e9ef;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
   a{color:inherit;text-decoration:none}
   .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:15px;border-radius:11px;padding:14px 24px;cursor:pointer;border:none;transition:transform .12s ease,filter .2s ease;white-space:nowrap}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:15px;border-radius:11px;padding:14px 24px;cursor:pointer;border:none;transition:transform .12s ease,filter .2s ease,background .2s ease;white-space:nowrap}
   .btn:hover{transform:translateY(-1px)}
-  .btn-primary{background:var(--grad);color:#fff;box-shadow:0 8px 30px rgba(109,120,255,.35)}
-  .btn-primary:hover{filter:brightness(1.08)}
+  .btn-primary{background:var(--accent);color:#0a0a0f;box-shadow:0 8px 30px rgba(255,255,255,.12)}
+  .btn-primary:hover{filter:brightness(.94)}
   .btn-ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
   .btn-ghost:hover{background:var(--card);border-color:#33333f}
-  .eyebrow{color:var(--accent);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
 
   /* Nav */
   nav{position:sticky;top:0;z-index:50;background:rgba(10,10,15,.72);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
@@ -36,13 +35,25 @@
   .nav-links{display:flex;align-items:center;gap:26px}
   .nav-links a.lnk{color:var(--txt2);font-weight:600;font-size:15px}
   .nav-links a.lnk:hover{color:var(--txt)}
-  @media(max-width:720px){ .nav-links .lnk{display:none} }
+  @media(max-width:760px){ .nav-links .lnk, .nav-links .dd{display:none} }
+
+  /* Dropdown login */
+  .dd{position:relative}
+  .dd-btn{color:var(--txt2);font-weight:600;font-size:15px;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+  .dd-btn:hover{color:var(--txt)}
+  .dd-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2;transition:transform .2s}
+  .dd.open .dd-btn svg{transform:rotate(180deg)}
+  .dd-menu{position:absolute;top:calc(100% + 10px);right:0;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.5);opacity:0;visibility:hidden;transform:translateY(-6px);transition:.16s ease}
+  .dd.open .dd-menu{opacity:1;visibility:visible;transform:translateY(0)}
+  .dd-menu a{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:8px;color:var(--txt2);font-weight:600;font-size:14.5px}
+  .dd-menu a:hover{background:var(--bg2);color:var(--txt)}
+  .dd-menu a svg{width:17px;height:17px;stroke:var(--accent-soft);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
   /* Hero */
   .hero{position:relative;padding:96px 0 70px;text-align:center;overflow:hidden}
-  .glow{position:absolute;top:-160px;left:50%;transform:translateX(-50%);width:900px;height:520px;background:radial-gradient(closest-side,rgba(109,120,255,.28),rgba(168,85,247,.10),transparent);filter:blur(30px);pointer-events:none;z-index:0}
+  .glow{position:absolute;top:-160px;left:50%;transform:translateX(-50%);width:900px;height:520px;background:radial-gradient(closest-side,rgba(255,255,255,.10),rgba(255,255,255,.03),transparent);filter:blur(30px);pointer-events:none;z-index:0}
   .hero .wrap{position:relative;z-index:1}
-  h1{font-size:clamp(34px,6vw,60px);line-height:1.08;font-weight:800;letter-spacing:-1.2px;margin:18px auto 0;max-width:900px;background:linear-gradient(180deg,#fff,#c8ccd8);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h1{font-size:clamp(34px,6vw,60px);line-height:1.08;font-weight:800;letter-spacing:-1.2px;margin:0 auto;max-width:900px;background:linear-gradient(180deg,#fff,#c8ccd8);-webkit-background-clip:text;background-clip:text;color:transparent}
   .sub{font-size:clamp(17px,2.4vw,21px);color:var(--txt2);max-width:660px;margin:22px auto 0}
   .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:34px}
   .microcopy{color:var(--txt3);font-size:13.5px;margin-top:16px}
@@ -60,10 +71,9 @@
   @media(max-width:860px){ .tools{grid-template-columns:1fr} }
   .tool{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 26px;transition:border-color .2s ease,transform .2s ease}
   .tool:hover{border-color:#34344a;transform:translateY(-3px)}
-  .tool .ico{width:52px;height:52px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(109,120,255,.22),rgba(168,85,247,.18));margin-bottom:18px}
-  .tool .ico svg{width:26px;height:26px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .tool .logo{width:58px;height:58px;border-radius:14px;margin-bottom:18px;object-fit:cover;border:1px solid var(--line);background:#000}
   .tool h3{font-size:21px;font-weight:800;letter-spacing:-.3px}
-  .tool .tag{color:var(--accent);font-weight:700;font-size:13px;margin:2px 0 12px}
+  .tool .tag{color:var(--accent-soft);font-weight:700;font-size:13px;margin:2px 0 12px}
   .tool p{color:var(--txt2);font-size:15px}
   .tool ul{list-style:none;margin-top:16px;display:flex;flex-direction:column;gap:9px}
   .tool ul li{color:var(--txt2);font-size:14.5px;display:flex;gap:9px;align-items:flex-start}
@@ -78,10 +88,10 @@
   .why .item p{color:var(--txt2);font-size:14.5px}
 
   /* Steps */
-  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;counter-reset:s}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
   @media(max-width:860px){ .steps{grid-template-columns:1fr} }
   .step{position:relative;padding:28px 24px;background:var(--card);border:1px solid var(--line);border-radius:16px}
-  .step .n{width:38px;height:38px;border-radius:11px;background:var(--grad);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:16px}
+  .step .n{width:38px;height:38px;border-radius:11px;background:var(--accent);color:#0a0a0f;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:16px}
   .step h4{font-size:18px;font-weight:800}
   .step p{color:var(--txt2);font-size:15px;margin-top:7px}
 
@@ -89,8 +99,8 @@
   .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch}
   @media(max-width:860px){ .plans{grid-template-columns:1fr;max-width:420px;margin:0 auto} }
   .plan{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 26px;display:flex;flex-direction:column}
-  .plan.best{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 18px 50px rgba(109,120,255,.18)}
-  .plan .badge{align-self:flex-start;background:var(--grad);color:#fff;font-weight:800;font-size:11px;letter-spacing:1px;padding:5px 11px;border-radius:999px;margin-bottom:12px}
+  .plan.best{border-color:var(--accent-soft);box-shadow:0 0 0 1px var(--accent-soft),0 18px 50px rgba(255,255,255,.06)}
+  .plan .badge{align-self:flex-start;background:var(--accent);color:#0a0a0f;font-weight:800;font-size:11px;letter-spacing:1px;padding:5px 11px;border-radius:999px;margin-bottom:12px}
   .plan .pname{font-size:19px;font-weight:800}
   .plan .price{font-size:42px;font-weight:800;letter-spacing:-1px;margin:10px 0 2px}
   .plan .price small{font-size:16px;color:var(--txt2);font-weight:600}
@@ -103,8 +113,8 @@
 
   /* Final CTA */
   .final{position:relative;text-align:center;padding:86px 0;overflow:hidden}
-  .final .card{position:relative;z-index:1;background:linear-gradient(135deg,#15151f,#1a1526);border:1px solid var(--line);border-radius:26px;padding:60px 30px;overflow:hidden}
-  .final .card .glow2{position:absolute;inset:0;background:radial-gradient(600px 240px at 50% -20%,rgba(109,120,255,.28),transparent);pointer-events:none}
+  .final .card{position:relative;z-index:1;background:linear-gradient(135deg,#15151f,#1b1b26);border:1px solid var(--line);border-radius:26px;padding:60px 30px;overflow:hidden}
+  .final .card .glow2{position:absolute;inset:0;background:radial-gradient(600px 240px at 50% -20%,rgba(255,255,255,.10),transparent);pointer-events:none}
   .final h2{font-size:clamp(26px,4.5vw,42px);font-weight:800;letter-spacing:-.6px;position:relative}
   .final p{color:var(--txt2);font-size:18px;margin:14px auto 0;max-width:520px;position:relative}
 
@@ -129,7 +139,15 @@
     <div class="nav-links">
       <a class="lnk" href="#herramientas">Herramientas</a>
       <a class="lnk" href="#planes">Planes</a>
-      <a class="lnk" href="{{ url_for('login') }}">Iniciar sesión</a>
+      <div class="dd" id="loginDD">
+        <button class="dd-btn" onclick="toggleDD(event)">Iniciar sesión
+          <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="dd-menu">
+          <a href="{{ url_for('admin_login') }}"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Administrador</a>
+          <a href="{{ url_for('login') }}"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Músico</a>
+        </div>
+      </div>
       <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" style="padding:10px 18px">Prueba gratis</a>
     </div>
   </div>
@@ -138,9 +156,8 @@
 <header class="hero">
   <div class="glow"></div>
   <div class="wrap">
-    <div class="eyebrow">por Neural INC</div>
     <h1>El ecosistema completo para el equipo de alabanza de tu iglesia</h1>
-    <p class="sub">Cifrados, reproductor multipista y sincronización en vivo. Todo integrado, en español y a un precio justo.</p>
+    <p class="sub">Cifrados, reproductor multipista y sincronización en vivo. Todo integrado y en español.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}">Prueba gratis 7 días</a>
       <a class="btn btn-ghost" href="#planes">Ver planes</a>
@@ -148,7 +165,7 @@
     <div class="microcopy">Sin tarjeta para empezar · Cancelá cuando quieras</div>
     <div class="statbar">
       <div><b>3 apps</b> un solo ecosistema</div>
-      <div><b>desde $10</b> al mes por iglesia</div>
+      <div><b>En vivo</b> tu banda sincronizada</div>
       <div><b>iPhone · iPad · Android · Mac</b></div>
     </div>
   </div>
@@ -163,7 +180,7 @@
     </div>
     <div class="tools">
       <div class="tool">
-        <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+        <img class="logo" src="{{ url_for('static', filename='logo.png') }}" alt="NeuralCharts">
         <h3>NeuralCharts</h3>
         <div class="tag">La app de tus músicos</div>
         <p>Cifrados y letras siempre a la mano, con modo ensayo usando las pistas reales de cada canción.</p>
@@ -175,7 +192,7 @@
         </ul>
       </div>
       <div class="tool">
-        <div class="ico"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+        <img class="logo" src="{{ url_for('static', filename='neuralplay_icon.png') }}" alt="NeuralPlay">
         <h3>NeuralPlay</h3>
         <div class="tag">El reproductor en vivo</div>
         <p>Reproducí y mezclá tus multipistas en tiempo real, con la potencia de un sistema profesional.</p>
@@ -187,7 +204,7 @@
         </ul>
       </div>
       <div class="tool">
-        <div class="ico"><svg viewBox="0 0 24 24"><path d="M4 17V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10"/><path d="M8 21h8"/><path d="M12 17v4"/><circle cx="12" cy="11" r="2"/></svg></div>
+        <img class="logo" src="{{ url_for('static', filename='neuralworship.png') }}" alt="NeuralSync">
         <h3>NeuralSync</h3>
         <div class="tag">Tu propio DAW, conectado</div>
         <p>¿Tocás desde Logic o Ableton? Sincronizá tu sesión en vivo con los músicos en tiempo real.</p>
@@ -205,11 +222,11 @@
 <section class="blk" style="background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
     <div class="sec-head">
-      <h2>Hecho para tu iglesia, no para tu billetera</h2>
-      <p>Todo lo que necesitás para dirigir la alabanza con excelencia, sin pagar de más.</p>
+      <h2>Todo lo que tu equipo necesita</h2>
+      <p>Del ensayo al servicio, con la excelencia que tu iglesia merece.</p>
     </div>
     <div class="why">
-      <div class="item"><h4>Precio justo</h4><p>Desde $10 al mes por toda la iglesia. Otros cobran $25 o más por lo mismo.</p></div>
+      <div class="item"><h4>Un solo plan por iglesia</h4><p>Toda tu congregación cubierta con un plan, sin pagar por cada usuario.</p></div>
       <div class="item"><h4>Traé tu propio contenido</h4><p>Cargá tus cifrados y tus pistas. Vos controlás tu música.</p></div>
       <div class="item"><h4>En español</h4><p>Pensado para equipos de adoración de habla hispana, de principio a fin.</p></div>
       <div class="item"><h4>Todo integrado</h4><p>Charts, reproductor y sincronización trabajando juntos, sin apps sueltas.</p></div>
@@ -250,7 +267,7 @@
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>NeuralCharts (cifrados + ensayo)</li>
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>NeuralPlay (2 salidas, estéreo)</li>
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Sincronización en vivo</li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>5 asientos de músicos · 50 GB</li>
+          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>3 asientos de músicos · 50 GB</li>
         </ul>
         <a class="btn btn-ghost" href="{{ url_for('crear_organizacion') }}">Empezar gratis</a>
       </div>
@@ -263,7 +280,7 @@
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Todo lo del Básico</li>
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Hasta 32 salidas + buses</li>
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>MIDI, loops y pad player avanzado</li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>10 asientos · 100 GB</li>
+          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>5 asientos · 100 GB</li>
         </ul>
         <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}">Empezar gratis</a>
       </div>
@@ -275,7 +292,7 @@
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Todo lo del Plus</li>
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>NeuralSync (Logic / Ableton)</li>
           <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>MIDI Clock y múltiples salidas MIDI</li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Asientos ampliados · 200 GB</li>
+          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>10 asientos · 200 GB</li>
         </ul>
         <a class="btn btn-ghost" href="{{ url_for('crear_organizacion') }}">Empezar gratis</a>
       </div>
@@ -307,13 +324,15 @@
     <div class="foot-links">
       <a href="#herramientas">Herramientas</a>
       <a href="#planes">Planes</a>
-      <a href="{{ url_for('crear_organizacion') }}">Crear organización</a>
-      <a href="{{ url_for('login') }}">Iniciar sesión</a>
-      <a href="{{ url_for('admin_login') }}">Admin</a>
     </div>
   </div>
-  <div class="wrap" style="margin-top:22px;color:var(--txt3);font-size:13px">© 2026 NeuralWorship · por Neural INC. Todos los derechos reservados.</div>
+  <div class="wrap" style="margin-top:22px;color:var(--txt3);font-size:13px">© 2026 NeuralWorship. Todos los derechos reservados.</div>
 </footer>
+
+<script>
+  function toggleDD(e){ e.stopPropagation(); document.getElementById('loginDD').classList.toggle('open'); }
+  document.addEventListener('click', function(){ var d=document.getElementById('loginDD'); if(d) d.classList.remove('open'); });
+</script>
 
 </body>
 </html>
