@@ -293,7 +293,7 @@
         {% if pk == 'premium' %}<span class="badge" data-i18n="badge_rec">RECOMENDADO</span>{% endif %}
         <div class="pname">{{ p.nombre }}</div>
         <div class="price">{% if p.precio == 0 %}<span data-i18n="price_free">Gratis</span>{% else %}${{ '%.0f'|format(p.precio) }}<small data-i18n="per_mo"> /mes</small>{% endif %}</div>
-        <div class="meta" data-i18n="meta_trial">Prueba gratis de 7 días</div>
+        {% if pk != 'basico' %}<div class="meta" data-i18n="meta_trial">Prueba gratis de 7 días</div>{% endif %}
 
         <div class="psec first" data-i18n="sec_general">General</div>
         <ul class="flist2">
