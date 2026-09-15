@@ -2430,8 +2430,8 @@ COSTOS_INFRA = {
     "alerta_almacen_pct": 80,    # aviso "ampliar" al llegar a este % de capacidad
     # Precios de venta de add-ons (amenidades extra)
     "addon_asiento_mes": 2.0,    # asiento (músico) extra sobre el plan
-    "addon_gb_bloque_mes": 5.0,  # bloque de +25 GB
-    "addon_gb_bloque": 25,       # tamaño del bloque de GB
+    "addon_gb_bloque_mes": 5.0,  # bloque de +50 GB
+    "addon_gb_bloque": 50,       # tamaño del bloque de GB
 }
 
 
