@@ -754,6 +754,17 @@ def logout():
 
 # ───────────────────────── Rutas para músicos ─────────────────────────
 @app.route("/")
+def home():
+    """Homepage publica (web de presentacion/venta).
+    Si ya hay sesion iniciada, redirige a la app que corresponde."""
+    if session.get("user_id"):
+        if session.get("rol") == "admin":
+            return redirect(url_for("admin"))
+        return redirect(url_for("principal"))
+    return render_template("landing.html")
+
+
+@app.route("/inicio")
 @login_required("musico")
 def principal():
     if not _plan_activo(org_actual()):
