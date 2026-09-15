@@ -125,10 +125,16 @@
   .plan .price{font-size:42px;font-weight:800;letter-spacing:-1px;margin:10px 0 2px}
   .plan .price small{font-size:16px;color:var(--txt2);font-weight:600}
   .plan .pdesc{color:var(--txt2);font-size:14.5px;min-height:42px}
-  .plan ul{list-style:none;margin:18px 0 24px;display:flex;flex-direction:column;gap:10px}
-  .plan ul li{color:var(--txt2);font-size:14.5px;display:flex;gap:9px;align-items:flex-start}
-  .plan ul li svg{width:17px;height:17px;flex:0 0 17px;margin-top:3px;stroke:var(--ok);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
-  .plan .btn{margin-top:auto;width:100%}
+  .plan .meta{color:var(--txt3);font-size:13px;margin:2px 0 4px}
+  .plan .psec{font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt3);margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+  .plan .psec.first{border-top:none;padding-top:0;margin-top:8px}
+  .plan .flist2{list-style:none;display:flex;flex-direction:column;gap:9px;margin:0}
+  .plan .flist2 li{color:var(--txt2);font-size:13.5px;display:flex;gap:9px;align-items:flex-start;line-height:1.45}
+  .plan .flist2 li svg{width:16px;height:16px;flex:0 0 16px;margin-top:2px;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+  .plan .flist2 li svg.ck{stroke:var(--ok)}
+  .plan .flist2 li svg.xk{stroke:#55555f}
+  .plan .flist2 li.off{color:var(--txt3)}
+  .plan .btn{margin-top:22px;width:100%}
   .pricing-note{text-align:center;color:var(--txt3);font-size:13.5px;margin-top:26px}
 
   .final{position:relative;text-align:center;padding:86px 0;overflow:hidden}
@@ -274,43 +280,70 @@
       <p data-i18n="plans_p">Un plan por iglesia. Todos incluyen prueba gratis de 7 días.</p>
     </div>
     <div class="plans">
-      <div class="plan">
-        <div class="pname" data-i18n="basico_name">Básico</div>
-        <div class="price">$10<small data-i18n="per_mo"> /mes</small></div>
-        <div class="pdesc" data-i18n="basico_desc">Para empezar con lo esencial del ensayo y el vivo.</div>
-        <ul>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="b_li1">NeuralCharts (cifrados + ensayo)</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="b_li2">NeuralPlay (2 salidas, estéreo)</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="b_li3">Sincronización en vivo</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="b_li4">3 asientos de músicos</span></li><li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="b_li5">50 GB de almacenamiento para tus tracks</span></li>
+      {% macro rowf(on, key, txt) -%}
+      <li class="{{ '' if on else 'off' }}">{% if on %}<svg class="ck" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>{% else %}<svg class="xk" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>{% endif %}<span data-i18n="{{ key }}">{{ txt }}</span></li>
+      {%- endmacro %}
+      {% for pk in ['basico','premium','ministerio'] %}
+      {% set p = paquetes[pk] %}
+      {% set hasMidi = p.midi %}
+      {% set hasSync = (pk == 'ministerio') %}
+      {% set hasExport = (hasMidi or hasSync) %}
+      {% set hasFull = hasMidi %}
+      <div class="plan {{ 'best' if pk == 'premium' else '' }}">
+        {% if pk == 'premium' %}<span class="badge" data-i18n="badge_rec">RECOMENDADO</span>{% endif %}
+        <div class="pname">{{ p.nombre }}</div>
+        <div class="price">${{ '%.0f'|format(p.precio) }}<small data-i18n="per_mo"> /mes</small></div>
+        <div class="meta" data-i18n="meta_trial">Prueba gratis de 7 días</div>
+
+        <div class="psec first" data-i18n="sec_general">General</div>
+        <ul class="flist2">
+          <li><svg class="ck" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>{{ p.asientos }} <span data-i18n="lbl_asientos">Asientos de Músicos</span></span></li>
+          <li><svg class="ck" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>{{ p.gb }} GB <span data-i18n="lbl_almacen">de almacenamiento para tus tracks</span></span></li>
+          {{ rowf(true,'f_repertorios','Creación de Repertorios') }}
+          {{ rowf(true,'f_pads','Cargar Pads') }}
+          {{ rowf(true,'f_multitracks','Cargar Multitracks') }}
+          {{ rowf(true,'f_cifprop','Cargar tus propios cifrados') }}
+          {{ rowf(hasMidi,'f_notasmidi','Almacenar Notas MIDI') }}
+          {{ rowf(hasExport,'f_exlyrics','Exportar Lyrics para presentación') }}
+          {{ rowf(hasExport,'f_expdf','Exportar Charts en PDF') }}
         </ul>
-        <a class="btn btn-ghost" href="{{ url_for('crear_organizacion') }}" data-i18n="plan_cta">Empezar gratis</a>
-      </div>
-      <div class="plan best">
-        <div class="badge" data-i18n="badge_rec">RECOMENDADO</div>
-        <div class="pname">Plus</div>
-        <div class="price">$20<small data-i18n="per_mo"> /mes</small></div>
-        <div class="pdesc" data-i18n="plus_desc">La experiencia completa de NeuralPlay con MIDI y más.</div>
-        <ul>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="p_li1">Todo lo del Básico</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="p_li2">Hasta 32 salidas de audio + buses en NeuralPlay</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="p_li3">MIDI, loops y pad player avanzado en NeuralPlay</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="p_li4">5 asientos de músicos</span></li><li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="p_li5">100 GB de almacenamiento para tus tracks</span></li>
+
+        <div class="psec" data-i18n="sec_charts">NeuralCharts</div>
+        <ul class="flist2">
+          {{ rowf(true,'f_charts','Charts (cifrado + letras)') }}
+          {{ rowf(true,'f_synccif','Sincroniza tus Cifrados con NeuralPlay') }}
+          {{ rowf(true,'f_reproens','Reproductor de Multitracks para ensayo (sincronizado con Cifrados)') }}
+          {{ rowf(true,'f_disp','Disponible para iPhone, iPad y Android') }}
         </ul>
-        <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" data-i18n="plan_cta">Empezar gratis</a>
-      </div>
-      <div class="plan">
-        <div class="pname">Premium</div>
-        <div class="price">$30<small data-i18n="per_mo"> /mes</small></div>
-        <div class="pdesc" data-i18n="prem_desc">Todo el poder, incluida la sincronización con tu DAW.</div>
-        <ul>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="pr_li1">Todo lo del Plus</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="pr_li2">NeuralSync (Logic / Ableton)</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="pr_li3">MIDI Clock y múltiples salidas MIDI</span></li>
-          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="pr_li4">10 asientos de músicos</span></li><li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="pr_li5">200 GB de almacenamiento para tus tracks</span></li>
+
+        <div class="psec" data-i18n="sec_play">NeuralPlay</div>
+        <ul class="flist2">
+          {{ rowf(true,'f_reprostems','Reproductor de Multitracks/Stems') }}
+          {{ rowf(true,'f_tonotempo','Cambio de Tono/Tempo fuera de línea a los 12 tonos') }}
+          {{ rowf(true,'f_variosrep','Crea y guarda varios repertorios') }}
+          {{ rowf(true,'f_syncvivo','Sincronización en vivo en NeuralCharts') }}
+          {{ rowf(hasFull,'f_tiempo','Ajusta tiempo inicial y final') }}
+          {{ rowf(true,'f_padsamb','Reproduce pads ambientales con canciones') }}
+          {{ rowf(hasFull,'f_loop','Repite secciones con Loop/Loop Infinito') }}
+          {{ rowf(hasFull,'f_midiasig','Asignación MIDI/Teclado/Controlador') }}
+          {{ rowf(true,'f_npmac','NeuralPlay para Mac / iPad') }}
+          {{ rowf(hasFull,'f_padadv','Interfaz avanzada de Pad Player') }}
+          {% if hasFull %}{{ rowf(true,'f_out32','Hasta 32 MultiOuts® con buses') }}{% else %}{{ rowf(true,'f_out2','2 salidas') }}{% endif %}
+          {{ rowf(hasFull,'f_clicks','Añadir sección de clicks a las canciones al final') }}
+          {{ rowf(hasFull,'f_midisync','Reproductor de Notas MIDI en Sincronización') }}
+          {{ rowf(hasFull,'f_midimulti','Múltiples Salidas MIDI para Lyrics/Luces y Efectos') }}
+          {{ rowf(hasFull,'f_midiclock','MIDI Clock') }}
+          {{ rowf(true,'f_gestalm','Gestión de almacenamiento en dispositivo') }}
         </ul>
-        <a class="btn btn-ghost" href="{{ url_for('crear_organizacion') }}" data-i18n="plan_cta">Empezar gratis</a>
+
+        <div class="psec" data-i18n="sec_sync">NeuralSync</div>
+        <ul class="flist2">
+          {{ rowf(hasSync,'f_nsync','NeuralSync para Windows/Mac') }}
+        </ul>
+
+        <a class="btn {{ 'btn-primary' if pk == 'premium' else 'btn-ghost' }}" href="{{ url_for('crear_organizacion') }}" data-i18n="plan_cta">Empezar gratis</a>
       </div>
+      {% endfor %}
     </div>
     <div class="pricing-note" data-i18n="pricing_note">Puedes ampliar almacenamiento y asientos cuando quieras · Cambia o cancela tu plan en cualquier momento.</div>
   </div>
@@ -384,6 +417,23 @@
       prem_desc:"All the power, including sync with your DAW.",
       pr_li1:"Everything in Plus", pr_li2:"NeuralSync (Logic / Ableton)", pr_li3:"MIDI Clock and multiple MIDI outputs", pr_li4:"10 musician seats", pr_li5:"200 GB storage for your tracks",
       plan_cta:"Start free",
+      meta_trial:"7-day free trial",
+      sec_general:"General", sec_charts:"NeuralCharts", sec_play:"NeuralPlay", sec_sync:"NeuralSync",
+      lbl_asientos:"musician seats", lbl_almacen:"storage for your tracks",
+      f_repertorios:"Setlist creation", f_pads:"Load pads", f_multitracks:"Upload multitracks",
+      f_cifprop:"Upload your own chord charts", f_notasmidi:"Store MIDI notes",
+      f_exlyrics:"Export lyrics for presentation software", f_expdf:"Export charts to PDF",
+      f_charts:"Charts (chords + lyrics)", f_synccif:"Sync your charts with NeuralPlay",
+      f_reproens:"Multitrack rehearsal player (synced with charts)", f_disp:"Available for iPhone, iPad and Android",
+      f_reprostems:"Multitrack/Stem player", f_tonotempo:"Offline key/tempo change to all 12 keys",
+      f_variosrep:"Create and save multiple setlists", f_syncvivo:"Live sync in NeuralCharts",
+      f_tiempo:"Adjust start and end time", f_padsamb:"Play ambient pads with songs",
+      f_loop:"Loop sections with Loop/Infinite Loop", f_midiasig:"MIDI/keyboard/controller mapping",
+      f_npmac:"NeuralPlay for Mac / iPad", f_padadv:"Advanced Pad Player interface",
+      f_out32:"Up to 32 MultiOuts® with buses", f_out2:"2 outputs",
+      f_clicks:"Add a click section at the end of songs", f_midisync:"MIDI note playback in sync",
+      f_midimulti:"Multiple MIDI outputs for lyrics/lights and effects", f_midiclock:"MIDI Clock",
+      f_gestalm:"On-device storage management", f_nsync:"NeuralSync for Windows/Mac",
       pricing_note:"Add storage and seats anytime · Change or cancel your plan whenever you want.",
       final_h2:"Take your church's worship to the next level",
       final_p:"Try NeuralWorship free for 7 days with your team.",

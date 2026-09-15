@@ -761,7 +761,7 @@ def home():
         if session.get("rol") == "admin":
             return redirect(url_for("admin"))
         return redirect(url_for("principal"))
-    return render_template("landing.html")
+    return render_template("landing.html", paquetes=PAQUETES)
 
 
 @app.route("/robots.txt")
