@@ -1522,8 +1522,18 @@ def admin():
     pads_lista = []
     for _p in _pads_cargar():
         pads_lista.append({**_p, **_pad_estado(_p["id"])})
+    # Uso de almacenamiento (para la barrita en la Biblioteca)
+    _org_alm = usuarios.obtener_organizacion(org_actual()) or {}
+    _alm_lim_gb = int(_org_alm.get("almacen_gb") or 0)
+    _alm_usado_b = _uso_almacen_bytes(org_actual())
+    _alm_lim_b = _alm_lim_gb * (1024 ** 3)
+    _alm_pct = int(min(100, round(_alm_usado_b / _alm_lim_b * 100))) if _alm_lim_b else 0
+    _alm_usado_gb = round(_alm_usado_b / (1024 ** 3), 2)
     return render_template(
         "admin.html",
+        almacen_usado_gb=_alm_usado_gb,
+        almacen_limite_gb=_alm_lim_gb,
+        almacen_pct=_alm_pct,
         biblioteca=biblioteca_ordenada,
         pads=pads_lista,
         setlists=setlists_full,
