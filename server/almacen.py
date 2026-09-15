@@ -143,7 +143,41 @@ def borrar_prefijo(prefix):
             _s3().delete_objects(Bucket=_bucket(), Delete={"Objects": objs})
 
 
+_presign_client = None
+def _s3_presign():
+    """Cliente S3 en estilo virtual-hosted (bucket como subdominio). Necesario para que
+    la URL presignada siga siendo válida al cambiar el host al del CDN."""
+    global _presign_client
+    if _presign_client is None:
+        with _lock:
+            if _presign_client is None:
+                import boto3
+                from botocore.client import Config
+                c = _load()
+                _presign_client = boto3.client(
+                    "s3",
+                    region_name=c["spaces_region"],
+                    endpoint_url=c["spaces_endpoint"],
+                    aws_access_key_id=c["spaces_key"],
+                    aws_secret_access_key=c["spaces_secret"],
+                    config=Config(signature_version="s3v4",
+                                  s3={"addressing_style": "virtual"},
+                                  retries={"max_attempts": 3}),
+                )
+    return _presign_client
+
+
 def url_firmada(key, expira=3600):
-    """URL temporal (presigned) para descargar un objeto privado."""
-    return _s3().generate_presigned_url(
+    """URL temporal (presigned). Si hay CDN configurado (spaces_cdn), la sirve por el edge
+    del CDN, que está más cerca del usuario => descarga mucho más rápida."""
+    u = _s3_presign().generate_presigned_url(
         "get_object", Params={"Bucket": _bucket(), "Key": key}, ExpiresIn=expira)
+    c = _load()
+    cdn = c.get("spaces_cdn")
+    if cdn:
+        origin_host = c["spaces_endpoint"].split("://", 1)[-1].strip("/")
+        cdn_host = cdn.split("://", 1)[-1].strip("/")
+        vhost = _bucket() + "." + origin_host      # host virtual-hosted del origen
+        if vhost in u:
+            u = u.replace(vhost, cdn_host)
+    return u
