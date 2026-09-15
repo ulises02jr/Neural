@@ -2379,9 +2379,9 @@ def _uso_almacen_bytes(org_id):
 # nombre = etiqueta visible; la clave interna (basico/premium/ministerio) NO cambia
 # para no romper la base de datos. midi = habilita la sección MIDI y NeuralPlay completo.
 PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 10.0, "asientos": 3,  "gb": 50,  "midi": False, "salidas": 2,  "tipo": "iglesia"},
-    "premium":    {"nombre": "Plus",    "precio": 20.0, "asientos": 5,  "gb": 100,  "midi": True,  "salidas": 32, "tipo": "iglesia"},
-    "ministerio": {"nombre": "Premium", "precio": 30.0, "asientos": 10, "gb": 200, "midi": True,  "salidas": 32, "tipo": "iglesia"},
+    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 2,  "gb": 50,  "midi": False, "salidas": 2,  "tipo": "iglesia"},
+    "premium":    {"nombre": "Plus",    "precio": 10.0, "asientos": 5,  "gb": 100,  "midi": True,  "salidas": 32, "tipo": "iglesia"},
+    "ministerio": {"nombre": "Premium", "precio": 20.0, "asientos": 10, "gb": 200, "midi": True,  "salidas": 32, "tipo": "iglesia"},
     # Plan "sync" (para DAW): NeuralCharts (charts/musicos) + NeuralSync. Sin NeuralPlay.
     "sync":        {"nombre": "NeuralSync", "precio": 10.0, "asientos": 3, "gb": 25, "midi": False, "salidas": 2,  "tipo": "sync"},
 }
