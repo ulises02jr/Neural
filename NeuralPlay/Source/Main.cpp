@@ -109,7 +109,13 @@ static bool httpDownload (const juce::String& url, const juce::String& token, co
             if (onProgress && expected > 0) onProgress ((double) written / (double) expected);
         }
     }
-    if (expected > 0 && written != expected) return false;      // descarga incompleta -> descartar el temporal
+    // Regla estricta: solo confirmamos el archivo si la descarga se completó de verdad.
+    //  - Con Content-Length: exigir que se hayan escrito exactamente esos bytes.
+    //  - Sin Content-Length (expected<=0): exigir que el stream llegó a EOF real (isExhausted),
+    //    no que simplemente se cortó la lectura. Así una caída de red NUNCA deja media canción.
+    const bool reachedEnd = in->isExhausted();
+    if (expected > 0) { if (written != expected)               return false; }
+    else              { if (! reachedEnd || written <= 0)      return false; }
     return tmp.overwriteTargetFileWithTemporary();
 }
 
@@ -956,10 +962,22 @@ struct RepertoireLoader : public juce::Thread
                                       + juce::URL::addEscapeChars (fn, false) + "?t=" + juce::String (e.tono);
                     const int kk = k, ii = i;
                     bool ok = false;
-                    for (int intento = 0; intento < 3 && ! ok && ! threadShouldExit(); ++intento)
+                    int intento = 0;
+                    // Reintenta hasta lograrlo o hasta que el usuario cierre la app: si se cae
+                    // la red, NO avanza dejando la canción a medias, sino que espera y reanuda
+                    // cuando vuelve la conexión (espera escalonada 2s,4s,... hasta 15s).
+                    while (! ok && ! threadShouldExit())
+                    {
                         ok = httpDownload (durl, token, dest,
                                 [this, ii, kk, N] (double p) { progress (ii, (kk + p) / (double) N); },
                                 [this] { return threadShouldExit(); });
+                        if (ok || threadShouldExit()) break;
+                        ++intento;
+                        status (juce::String::fromUTF8 ("Sin conexi\xc3\xb3n\xe2\x80\xa6 reanudando: ") + e.titulo);
+                        const int waitMs = juce::jmin (15000, 2000 * intento);
+                        for (int w = 0; w < waitMs && ! threadShouldExit(); w += 200) wait (200);
+                    }
+                    if (! ok) return;   // salida por cierre: el repertorio queda incompleto y NO se marca como listo
                 }
                 progress (i, (double) (k + 1) / (double) N);
             }
@@ -5685,8 +5703,15 @@ private:
     void downloadRepertoireOffline (juce::String id)   // baja TODO un repertorio al caché, sin cambiar la vista
     {
         if (serverToken.isEmpty()) return;
+        // Si ya hay una descarga en curso, NO rechazar: encolar y bajarla a continuación.
         if (offlineLoader && offlineLoader->isThreadRunning())
-        { connStatus.setText (juce::String::fromUTF8 ("Ya hay una descarga en curso\xe2\x80\xa6"), juce::dontSendNotification); return; }
+        {
+            if (id == offlineId || offlineQueue.contains (id)) return;   // ya se está bajando o ya está en cola
+            offlineQueue.add (id);
+            setPickerDlPct (id, 0);                                      // muestra que quedó pendiente
+            connStatus.setText ("En cola (" + juce::String (offlineQueue.size()) + ") - pendiente", juce::dontSendNotification);
+            return;
+        }
         offlineId = id; offlineTotal = 1; offlinePct = 0;
         for (auto& it : repPicker.items) if (it.id == id) { offlineTotal = juce::jmax (1, it.nCanciones); break; }
         setPickerDlPct (id, 0);
@@ -5700,14 +5725,28 @@ private:
             const int pct = (int) juce::jlimit (0.0, 100.0, ((i + f) / (double) juce::jmax (1, sp->offlineTotal)) * 100.0);
             sp->offlinePct = pct; sp->setPickerDlPct (sp->offlineId, pct);
         };
-        offlineLoader->onDone     = [sp] (juce::Array<SongEntry>)
+        offlineLoader->onDone     = [sp] (juce::Array<SongEntry> songs)
         {
             if (! sp) return;
-            for (auto& it : sp->repPicker.items) if (it.id == sp->offlineId) { it.dlPct = -1; it.cached = true; break; }
+            // Solo marcar "listo" si TODAS las canciones quedaron realmente en caché.
+            bool complete = true;
+            for (auto& e : songs) if (! sp->cacheReady (e)) { complete = false; break; }
+            for (auto& it : sp->repPicker.items)
+                if (it.id == sp->offlineId) { it.dlPct = -1; it.cached = complete; break; }
             if (sp->repPicker.isVisible()) sp->repPicker.repaint();
-            sp->connStatus.setText (juce::String::fromUTF8 ("Repertorio descargado \xe2\x9c\x93"), juce::dontSendNotification);
+            sp->connStatus.setText (complete
+                ? juce::String::fromUTF8 ("Repertorio descargado \xe2\x9c\x93")
+                : juce::String::fromUTF8 ("Descarga incompleta - revis\xc3\xa1 tu conexi\xc3\xb3n"),
+                juce::dontSendNotification);
             sp->offlineId.clear(); sp->offlinePct = -1;
             sp->refreshStorageStats();
+            // Arrancar la siguiente de la cola, si hay.
+            if (! sp->offlineQueue.isEmpty())
+            {
+                const auto next = sp->offlineQueue[0];
+                sp->offlineQueue.remove (0);
+                sp->downloadRepertoireOffline (next);
+            }
         };
         offlineLoader->startThread();
         connStatus.setText (juce::String::fromUTF8 ("Descargando repertorio para offline\xe2\x80\xa6"), juce::dontSendNotification);
@@ -7262,6 +7301,7 @@ private:
     std::unique_ptr<RepertoireLoader> offlineLoader;   // descarga de un repertorio para offline (no cambia la UI)
     juce::String offlineId;                            // repertorio que se está bajando para offline
     int offlineTotal = 0, offlinePct = -1;
+    juce::StringArray offlineQueue;                    // repertorios en espera (cola de descargas offline)
 
     juce::AudioFormatManager formatManager;
     juce::AudioThumbnailCache thumbCache { 1 };
