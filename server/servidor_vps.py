@@ -50,6 +50,7 @@ from transposicion import transponer_cancion, NOTA_A_INDICE
 import usuarios
 import emails as emails_module
 import almacen
+import pagos
 
 
 # ───────────────────────── Configuración base ─────────────────────────
@@ -1793,6 +1794,80 @@ def api_live_status():
         "activo": activo,
         "ip": cfg.get("mac_local_ip") if activo else None,
     })
+
+
+@app.route("/api/webhooks/lemonsqueezy", methods=["POST"])
+def api_webhook_lemonsqueezy():
+    """Webhook de Lemon Squeezy: activa/cambia el plan de la organizacion al pagar.
+    - Verifica la firma HMAC (seguridad).
+    - Identifica la organizacion por el custom_data.org_id que mandamos en el checkout
+      (o, de respaldo, por el email del cliente).
+    - Mapea la variante comprada -> plan interno y actualiza paquete/asientos/GB/estado.
+    Idempotente: es seguro recibir el mismo evento varias veces.
+    Queda inactivo (503) hasta que se configure lemonsqueezy_signing_secret en secrets.json."""
+    raw = request.get_data()  # cuerpo CRUDO (necesario para validar la firma)
+    firma = request.headers.get("X-Signature", "")
+    if not pagos.habilitado():
+        return jsonify({"ok": False, "error": "pagos no configurados"}), 503
+    if not pagos.firma_valida(raw, firma):
+        logging.warning("webhook LS con firma invalida")
+        return jsonify({"ok": False, "error": "firma invalida"}), 401
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return jsonify({"ok": False, "error": "json"}), 400
+
+    meta = payload.get("meta") or {}
+    evento = (meta.get("event_name") or "").lower()
+    custom = meta.get("custom_data") or {}
+    attrs = (payload.get("data") or {}).get("attributes") or {}
+
+    # 1) Identificar la organizacion
+    org_id = custom.get("org_id")
+    if not org_id:
+        email = (attrs.get("user_email") or "").strip().lower()
+        if email:
+            u = usuarios.buscar_por_email(email)
+            if u:
+                org_id = u.get("org_id")
+    try:
+        org_id = int(org_id)
+    except Exception:
+        logging.warning("webhook LS sin org_id valido (evento %s)", evento)
+        return jsonify({"ok": True, "warn": "sin org_id"}), 200  # 200 para que LS no reintente infinito
+
+    # 2) Plan segun la variante comprada
+    variant_id = attrs.get("variant_id")
+    plan = pagos.plan_de_variante(variant_id)
+    status = (attrs.get("status") or "").lower()  # active, on_trial, past_due, cancelled, expired, unpaid, paused
+
+    # 3) Estado segun evento + status
+    if evento == "subscription_expired" or status in ("expired", "unpaid"):
+        usuarios.actualizar_organizacion(org_id, estado_suscripcion="sin_plan")
+        logging.info("LS org %s -> sin_plan (%s/%s)", org_id, evento, status)
+        return jsonify({"ok": True}), 200
+
+    if status == "cancelled":
+        # Cancelada pero sigue activa hasta fin de periodo; LS mandara 'expired' al terminar.
+        logging.info("LS org %s cancelacion programada (%s)", org_id, evento)
+        return jsonify({"ok": True}), 200
+
+    if evento in ("subscription_created", "subscription_updated", "subscription_payment_success",
+                  "subscription_resumed", "subscription_unpaused") or status in ("active", "on_trial"):
+        estado = "prueba" if status == "on_trial" else "activa"
+        campos = {"estado_suscripcion": estado}
+        if plan and plan in PAQUETES:
+            campos["paquete"] = plan
+            campos["max_musicos"] = PAQUETES[plan]["asientos"]
+            campos["almacen_gb"] = PAQUETES[plan]["gb"]
+        elif plan is None:
+            logging.warning("LS variante %s sin mapeo de plan (org %s)", variant_id, org_id)
+        usuarios.actualizar_organizacion(org_id, **campos)
+        logging.info("LS org %s -> %s plan=%s (%s)", org_id, estado, plan, evento)
+        return jsonify({"ok": True}), 200
+
+    logging.info("LS evento no manejado: %s status=%s org=%s", evento, status, org_id)
+    return jsonify({"ok": True}), 200
 
 
 @app.route("/admin/live_off", methods=["POST"])
