@@ -4,7 +4,7 @@
 
 ## Ecosistema (3 apps)
 - **NeuralPlay** — reproductor multipista nativo macOS (C++/JUCE 8, un solo `Main.cpp` ~6.8k líneas). App en desarrollo activo. Proyecto **CMake**, target `NeuralPlaySpike` (PRODUCT_NAME `NeuralPlay`).
-- **Server** — Flask en VPS `root@64.227.10.28`, en `/home/charts/charts_app` (usuario `charts`), gunicorn `127.0.0.1:5051`, nginx + Let's Encrypt. Panel admin + charts + API `/api/live/...`.
+- **Server** — Flask en VPS `root@68.183.106.62`, en `/home/charts/charts_app` (usuario `charts`), gunicorn `127.0.0.1:5051`, nginx + Let's Encrypt. Panel admin + charts + API `/api/live/...`.
 - **NeuralSync** — app puente (Python/rumps) para músicos que tocan desde su propio DAW; sincroniza la sesión en vivo con los charts.
 
 Dominio: `miworship.miiglesiainternacional.org`. Repo: `github.com/ulises02jr/Neural` (monorepo: `NeuralPlay/`, `NeuralSync/`, `server/`, `docs/`).

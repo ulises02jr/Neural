@@ -67,7 +67,7 @@ Traé el `config.json` (con el token) desde la **carpeta privada del VPS**
 (solo por SSH, no está en la web ni en el repo):
 
 ```bash
-scp root@64.227.10.28:/home/charts/secretos/neuralworship-config.json config.json
+scp root@68.183.106.62:/home/charts/secretos/neuralworship-config.json config.json
 ```
 
 > Alternativa manual: `cp config.example.json config.json` y pegar el token a mano.
@@ -123,11 +123,11 @@ Se activan al subir el archivo correspondiente al VPS:
 
 ```bash
 # Mac
-scp NeuralWorship.zip root@64.227.10.28:/home/charts/charts_app/descargas/NeuralWorship-Mac.zip
+scp NeuralWorship.zip root@68.183.106.62:/home/charts/charts_app/descargas/NeuralWorship-Mac.zip
 # Windows
-scp NeuralWorship-Setup.exe root@64.227.10.28:/home/charts/charts_app/descargas/NeuralWorship-Windows-Setup.exe
+scp NeuralWorship-Setup.exe root@68.183.106.62:/home/charts/charts_app/descargas/NeuralWorship-Windows-Setup.exe
 # y darles dueño charts:
-ssh root@64.227.10.28 'chown charts:charts /home/charts/charts_app/descargas/*'
+ssh root@68.183.106.62 'chown charts:charts /home/charts/charts_app/descargas/*'
 ```
 
 ---
