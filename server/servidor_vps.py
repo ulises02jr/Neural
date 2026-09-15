@@ -764,6 +764,39 @@ def home():
     return render_template("landing.html")
 
 
+@app.route("/robots.txt")
+def robots_txt():
+    """Guia a los buscadores: indexar lo publico, no el area privada."""
+    cuerpo = (
+        "User-agent: *\n"
+        "Disallow: /admin\n"
+        "Disallow: /api\n"
+        "Disallow: /inicio\n"
+        "Disallow: /cancion\n"
+        "Disallow: /logout\n"
+        "Allow: /\n"
+        "Sitemap: https://neuralworship.com/sitemap.xml\n"
+    )
+    return app.response_class(cuerpo, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    """Mapa del sitio (paginas publicas) para Google."""
+    hoy = _hoy_iso()
+    urls = [
+        ("https://neuralworship.com/", "1.0"),
+        ("https://neuralworship.com/crear-organizacion", "0.8"),
+    ]
+    items = "".join(
+        "<url><loc>%s</loc><lastmod>%s</lastmod><changefreq>weekly</changefreq><priority>%s</priority></url>"
+        % (u, hoy, p) for u, p in urls
+    )
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>'
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">%s</urlset>' % items)
+    return app.response_class(xml, mimetype="application/xml")
+
+
 @app.route("/inicio")
 @login_required("musico")
 def principal():
