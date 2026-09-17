@@ -7587,8 +7587,16 @@ public:
             setFullScreen (true);
            #else
             setResizable (true, true);
-            setResizeLimits (1040, 860, 8000, 6000);   // tamaño mínimo: no se encoge más de 1040x860
-            centreWithSize (getWidth(), getHeight());
+            // Respetar el área utilizable de la pantalla: la ventana no debe pasar por
+            // debajo del Dock (barra de iconos) ni de la barra de menús.
+            auto* disp = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+            auto ua = (disp != nullptr) ? disp->userArea : juce::Rectangle<int> (0, 0, 1440, 860);
+            const int maxW = juce::jmax (1040, ua.getWidth());
+            const int maxH = juce::jmax (700,  ua.getHeight());   // tope = alto utilizable (arriba del Dock)
+            setResizeLimits (juce::jmin (1040, maxW), juce::jmin (860, maxH), maxW, maxH);
+            int w = juce::jmin (getWidth(),  maxW);
+            int h = juce::jmin (getHeight(), maxH);
+            setBounds (ua.getCentreX() - w / 2, ua.getY(), w, h);
            #endif
             setVisible (true);
         }
