@@ -474,12 +474,6 @@
                         {% for tn in _tonos %}<option value="{{ tn }}" {% if tn == c.tono %}selected{% endif %}>{{ tn }}</option>{% endfor %}
                       </select>
                     </form>
-                    {% if c.es_override %}
-                    <form method="POST" action="{{ url_for('admin_setlist_resetear_tono', setlist_id=s.id, numero=c.id) }}" style="display:inline">
-<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-                      <button type="submit" class="t-orig" title="Volver al tono original ({{ c.tono_original }})">↺</button>
-                    </form>
-                    {% endif %}
                   </div>
                   <div class="actions">
                     <form method="POST" action="{{ url_for('admin_setlist_mover', setlist_id=s.id) }}" style="display:inline">
