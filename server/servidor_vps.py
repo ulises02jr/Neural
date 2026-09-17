@@ -351,7 +351,26 @@ def _proteger_csrf():
     token = session.get("_csrf")
     enviado = request.form.get("_csrf") or request.headers.get("X-CSRFToken")
     if not token or not enviado or not hmac.compare_digest(str(token), str(enviado)):
-        abort(400)
+        # Token vencido o formulario servido desde la caché del navegador: en vez de
+        # un "Bad Request" crudo, devolvemos al usuario a la misma página con un aviso
+        # y un token fresco para que simplemente reintente.
+        flash("Tu sesión de seguridad expiró. Por favor, intentá de nuevo.", "error")
+        if request.path in ("/login", "/admin/login"):
+            destino = request.path            # volver al mismo login con token fresco
+        else:
+            ref = request.referrer or ""
+            destino = ref if ref.startswith(request.host_url) else url_for("home")
+        return redirect(destino)
+
+
+@app.after_request
+def _no_cache_login(resp):
+    # Las páginas de login NO deben cachearse: si el navegador sirve el formulario
+    # desde caché con un token CSRF viejo, el envío falla con "Bad Request".
+    if request.path in ("/login", "/admin/login"):
+        resp.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @app.context_processor
