@@ -12,6 +12,10 @@ add_subdirectory(JUCE)
 # ─────────────────────────────────────────────────────────────
 set(NP_PLATFORM_OPTS "")
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # Firma y versión mínima de iOS (Xcode ya no acepta menos de 15.0)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "iOS deployment target" FORCE)
+    set(CMAKE_XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "B9JRFBT9PG")
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic")
     set(NP_PLATFORM_OPTS
         BUNDLE_ID                        com.neuralworship.play
         BACKGROUND_AUDIO_ENABLED         TRUE
