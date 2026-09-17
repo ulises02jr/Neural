@@ -1613,28 +1613,7 @@ struct SettingsPanel : public juce::Component
         g.drawText (juce::String::fromUTF8 ("Men\xc3\xba"), panelBounds().removeFromTop (56).reduced (22, 0),
                     juce::Justification::centredLeft);
 
-        // Estado del puente: pelotita + texto, centrados en su propia línea
-        {
-            const juce::String txt = linked ? "enlazado" : (syncOn ? "esperando..." : "sin enlazar");
-            juce::GlyphArrangement ga; ga.addLineOfText (juce::Font (11.5f), txt, 0.0f, 0.0f);
-            const float tw = ga.getBoundingBox (0, -1, true).getWidth();
-            const float dotD = 10.0f, sp = 7.0f, total = dotD + sp + tw;
-            const float sx = (float) statusBounds.getCentreX() - total * 0.5f;
-            const float cy = (float) statusBounds.getCentreY();
-            juce::Rectangle<float> dot (sx, cy - dotD * 0.5f, dotD, dotD);
-            g.setColour (linked ? juce::Colour (0xff3ED66E) : juce::Colour (0xff3a3a3a));
-            g.fillEllipse (dot);
-            if (linked)
-            {
-                g.setColour (juce::Colour (0xff0a0a0a));
-                g.setFont (juce::Font (8.0f, juce::Font::bold));
-                g.drawText (juce::String::fromUTF8 ("\xe2\x9c\x93"), dot, juce::Justification::centred);
-            }
-            g.setColour (juce::Colour (0xffa3a3a3));
-            g.setFont (juce::Font (11.5f));
-            g.drawText (txt, juce::Rectangle<float> (sx + dotD + sp, cy - 9.0f, tw + 6.0f, 18.0f),
-                        juce::Justification::centredLeft);
-        }
+        // (La señal de estado de NeuralSync ahora se muestra bajo el botón Play, no aquí.)
     }
 
     void resized() override
@@ -3681,6 +3660,26 @@ public:
                         juce::Justification::centred, false);
         }
 
+        // Indicador de NeuralSync (bajo el botón Play): solo cuando NeuralSync está activo.
+        if (syncEnabled && ! syncBadgeBounds.isEmpty())
+        {
+            const bool lk = syncLinked.load();
+            const juce::String txt = lk ? juce::String::fromUTF8 ("NeuralSync conectado")
+                                        : juce::String::fromUTF8 ("NeuralSync \xc2\xb7 esperando\xe2\x80\xa6");
+            juce::GlyphArrangement ga; ga.addLineOfText (juce::Font (12.5f, juce::Font::bold), txt, 0.0f, 0.0f);
+            const float tw = ga.getBoundingBox (0, -1, true).getWidth();
+            const float dotD = 9.0f, sp = 7.0f, total = dotD + sp + tw;
+            const float sx = (float) syncBadgeBounds.getCentreX() - total * 0.5f;
+            const float cy = (float) syncBadgeBounds.getCentreY();
+            juce::Rectangle<float> dot (sx, cy - dotD * 0.5f, dotD, dotD);
+            g.setColour (lk ? juce::Colour (0xff3ED66E) : juce::Colour (0xff6b6b6b));
+            g.fillEllipse (dot);
+            g.setColour (lk ? juce::Colour (0xffdfe8df) : juce::Colour (0xff9a9a9a));
+            g.setFont (juce::Font (12.5f, juce::Font::bold));
+            g.drawText (txt, juce::Rectangle<float> (sx + dotD + sp, cy - 9.0f, tw + 8.0f, 18.0f),
+                        juce::Justification::centredLeft);
+        }
+
         // Nombre del repertorio centrado (debajo del botón de Play)
         if (! setlistBandBounds.isEmpty() && currentSetlistName.isNotEmpty())
         {
@@ -4233,6 +4232,10 @@ public:
         }
         connStatus.setVisible (false);
         area.removeFromTop (6);
+
+        // Franja del indicador de NeuralSync (bajo el Play), solo si NeuralSync está activo
+        if (syncEnabled) { syncBadgeBounds = area.removeFromTop (20); area.removeFromTop (3); }
+        else             syncBadgeBounds = {};
 
         // Franja con el nombre del repertorio centrado (solo si hay uno cargado)
         if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (22); area.removeFromTop (3); }
@@ -4806,6 +4809,8 @@ private:
             syncLinked.store (false);
         }
         settingsPanel.setState (syncEnabled, syncLinked.load());
+        resized();   // aparece/desaparece la franja del indicador bajo el Play
+        repaint();
     }
 
     void fetchLiveChartForCurrent()
@@ -5054,6 +5059,7 @@ private:
                 sp->syncLinked.store (activo);
                 if (sp->settingsPanel.isVisible())
                     sp->settingsPanel.setState (sp->syncEnabled, activo);
+                sp->repaint();   // actualiza el indicador "NeuralSync conectado" bajo el Play
             });
         });
     }
@@ -7497,6 +7503,7 @@ private:
     bool didStartupClean = false;
     juce::String lastSetlistId;   // setlist cargado (para "Actualizar")
     juce::String currentSetlistName;
+    juce::Rectangle<int> syncBadgeBounds;   // franja del indicador "NeuralSync conectado" (bajo el Play)
     int loadGen = 0;                 // generación de carga: descarta callbacks de cargas canceladas
     juce::Rectangle<int> setlistBandBounds;   // franja donde se dibuja el nombre del repertorio
     juce::Rectangle<int> compasBoxBounds;     // caja de Tempo/Compás (a la par del tiempo)
