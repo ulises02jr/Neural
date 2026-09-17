@@ -7587,7 +7587,7 @@ public:
             setFullScreen (true);
            #else
             setResizable (true, true);
-            setResizeLimits (900, 700, 8000, 6000);   // tamaño mínimo: no se encoge más de 900x700
+            setResizeLimits (1040, 860, 8000, 6000);   // tamaño mínimo: no se encoge más de 1040x860
             centreWithSize (getWidth(), getHeight());
            #endif
             setVisible (true);
