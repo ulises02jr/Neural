@@ -795,6 +795,12 @@ def privacidad():
     return render_template("privacidad.html")
 
 
+@app.route("/derechos")
+def derechos():
+    """Politica de Derechos de Autor y retiro/takedown (pagina publica)."""
+    return render_template("derechos.html")
+
+
 @app.route("/robots.txt")
 def robots_txt():
     """Guia a los buscadores: indexar lo publico, no el area privada."""
@@ -820,6 +826,7 @@ def sitemap_xml():
         ("https://neuralworship.com/crear-organizacion", "0.8"),
         ("https://neuralworship.com/terminos", "0.3"),
         ("https://neuralworship.com/privacidad", "0.3"),
+        ("https://neuralworship.com/derechos", "0.3"),
     ]
     items = "".join(
         "<url><loc>%s</loc><lastmod>%s</lastmod><changefreq>weekly</changefreq><priority>%s</priority></url>"
