@@ -1,0 +1,17 @@
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\bin\Release\net8.0-windows\AtemProbe.exe
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\bin\Release\net8.0-windows\AtemProbe.deps.json
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\bin\Release\net8.0-windows\AtemProbe.runtimeconfig.json
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\bin\Release\net8.0-windows\AtemProbe.dll
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\bin\Release\net8.0-windows\AtemProbe.pdb
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\bin\Release\net8.0-windows\Interop.BMDSwitcherAPI.dll
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.csproj.AssemblyReference.cache
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.AssemblyInfoInputs.cache
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.AssemblyInfo.cs
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.csproj.CoreCompileInputs.cache
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.csproj.Up2Date
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.dll
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\refint\AtemProbe.dll
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.pdb
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\AtemProbe.genruntimeconfig.cache
+C:\Users\miigl\Dev\AutoSwitcher\src\AtemProbe\obj\Release\net8.0-windows\ref\AtemProbe.dll
