@@ -47,16 +47,12 @@
     {% endfor %}
   {% endwith %}
 
-  <div class="info">
-    Comenzás con <strong>7 días de prueba</strong>. Vos serás el administrador de tu organización.
-  </div>
-
   <form method="POST">
     <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
 
     <div class="sec">Tu organización</div>
     <label for="org_nombre">Nombre de la iglesia / organización</label>
-    <input type="text" id="org_nombre" name="org_nombre" value="{{ org_nombre|default('') }}" required maxlength="80" placeholder="Ej: Mi Iglesia Central">
+    <input type="text" id="org_nombre" name="org_nombre" value="{{ org_nombre_form|default('') }}" required maxlength="80" placeholder="Ej: Mi Iglesia Central">
 
     <hr class="sep">
     <div class="sec">Tu cuenta de administrador</div>
@@ -79,7 +75,7 @@
 
     <label style="display:flex;gap:9px;align-items:flex-start;margin-top:16px;font-size:12px;color:#a2a6b4;line-height:1.5;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0">
       <input type="checkbox" name="acepto" required style="width:16px;height:16px;margin-top:2px;flex:0 0 auto;accent-color:#ffffff;cursor:pointer">
-      <span>Acepto los <a href="/terminos" target="_blank">Términos de Servicio</a>, la <a href="/privacidad" target="_blank">Política de Privacidad</a> y la <a href="/derechos" target="_blank">Política de Derechos de Autor</a>, y <strong style="color:#c9cdd8;font-weight:600">confirmo que soy propietario o cuento con las licencias/derechos</strong> del contenido que suba.</span>
+      <span>Acepto los <a href="/terminos" target="_blank">Términos de Servicio</a>, la <a href="/privacidad" target="_blank">Política de Privacidad</a> y la <a href="/derechos" target="_blank">Política de Derechos de Autor</a>.</span>
     </label>
     <button type="submit">Crear organización</button>
   </form>

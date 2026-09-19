@@ -661,7 +661,7 @@ def crear_organizacion():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
-        prev = dict(org_nombre=org_nombre, nombre=nombre, apellido=apellido, email=email)
+        prev = dict(org_nombre_form=org_nombre, nombre=nombre, apellido=apellido, email=email)
         if not org_nombre or not nombre or not apellido or not email or not password:
             flash("Completá todos los campos", "error")
             return render_template("crear_organizacion.html", **prev)
