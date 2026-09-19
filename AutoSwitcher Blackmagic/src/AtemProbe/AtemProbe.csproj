@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>AutoSwitcher.AtemProbe</RootNamespace>
+    <AssemblyName>AtemProbe</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Puente (interop) al COM del SDK oficial de Blackmagic, pre-generado
+       en /lib con herramientas de Windows. Asi el 'dotnet build' funciona
+       sin necesitar Visual Studio ni MSBuild completo. -->
+  <ItemGroup>
+    <Reference Include="Interop.BMDSwitcherAPI">
+      <HintPath>..\..\lib\Interop.BMDSwitcherAPI.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
