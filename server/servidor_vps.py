@@ -671,6 +671,9 @@ def crear_organizacion():
         if len(password) < 6:
             flash("La contraseña debe tener al menos 6 caracteres", "error")
             return render_template("crear_organizacion.html", **prev)
+        if not request.form.get("acepto"):
+            flash("Debés aceptar los Términos y confirmar que tenés los derechos del contenido que subís.", "error")
+            return render_template("crear_organizacion.html", **prev)
         ok, res = usuarios.crear_org_con_dueno(org_nombre, nombre, apellido, email, password)
         if not ok:
             flash(res, "error")
