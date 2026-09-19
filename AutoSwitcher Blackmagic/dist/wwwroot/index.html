@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoSwitcher</title>
+<style>
+  :root{
+    --bg:#0d0d0f; --card:#161619; --card2:#1d1d21; --border:#2a2a31;
+    --text:#ececee; --muted:#8b8b93; --on:#f5f5f7; --onText:#111114;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Arial,sans-serif;
+    background:var(--bg);color:var(--text);min-height:100vh;padding:18px;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:760px;margin:0 auto;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:6px 4px 20px;}
+  .brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700;letter-spacing:.3px;}
+  .brand svg{width:22px;height:22px;stroke:var(--text);}
+  .conn{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555;}
+  .dot.live{background:#4ade80;box-shadow:0 0 8px #4ade80;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;
+    padding:20px;margin-bottom:16px;}
+  .h{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;
+    color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px;}
+  .h svg{width:16px;height:16px;stroke:var(--muted);}
+  .grid{display:grid;gap:9px;}
+  .g2{grid-template-columns:repeat(2,1fr);} .g3{grid-template-columns:repeat(3,1fr);}
+  .g4{grid-template-columns:repeat(4,1fr);}
+  .opt{padding:12px;background:var(--card2);border:1px solid var(--border);
+    border-radius:11px;text-align:center;cursor:pointer;font-weight:600;font-size:14px;
+    transition:.15s;user-select:none;color:var(--text);}
+  .opt:hover{border-color:#3a3a44;}
+  .opt.on{background:var(--on);color:var(--onText);border-color:var(--on);}
+  .cam.off{opacity:.4;text-decoration:line-through;}
+  .now{text-align:center;padding:8px 0;}
+  .now .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+  .now .cam{font-size:52px;font-weight:800;letter-spacing:-1px;margin:6px 0;}
+  .now .timer{font-size:16px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;
+    font-size:12px;font-weight:600;background:var(--card2);border:1px solid var(--border);}
+  .badge.live .d{width:7px;height:7px;border-radius:50%;background:#4ade80;}
+  .badge .d{width:7px;height:7px;border-radius:50%;background:#f59e0b;}
+  input{width:100%;padding:12px;background:var(--card2);border:1px solid var(--border);
+    border-radius:10px;color:var(--text);font-size:14px;font-family:inherit;}
+  input:focus{outline:none;border-color:#4a4a55;}
+  .btn{padding:12px 16px;border:none;border-radius:10px;cursor:pointer;font-weight:600;
+    font-size:14px;font-family:inherit;transition:.15s;}
+  .btn:hover{opacity:.9;}
+  .btn.primary{background:var(--on);color:var(--onText);}
+  .btn.ghost{background:var(--card2);color:var(--text);border:1px solid var(--border);}
+  .btn.full{width:100%;}
+  .row{display:flex;gap:9px;align-items:center;}
+  .listItem{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;
+    background:var(--card2);border:1px solid var(--border);border-radius:11px;margin-bottom:8px;}
+  .listItem .meta{display:flex;flex-direction:column;gap:2px;}
+  .listItem .meta .n{font-weight:600;font-size:14px;} .listItem .meta .s{font-size:12px;color:var(--muted);}
+  .listItem .acts{display:flex;gap:6px;}
+  .mini{padding:8px 12px;font-size:13px;border-radius:8px;border:1px solid var(--border);
+    background:transparent;color:var(--text);cursor:pointer;}
+  .mini:hover{background:var(--card2);}
+  .mini.x{color:#f87171;border-color:#3a2a2e;}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .stat{background:var(--card2);border:1px solid var(--border);border-radius:11px;padding:14px;text-align:center;}
+  .stat .l{color:var(--muted);font-size:12px;} .stat .v{font-size:24px;font-weight:700;margin-top:2px;}
+  .hidden{display:none !important;}
+  .muted{color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
+      AutoSwitcher
+    </div>
+    <div class="row" style="gap:14px">
+      <div class="conn"><span class="dot" id="cDot"></span><span id="cText">Sin conexión</span></div>
+      <button class="mini" onclick="toggleConfig()" title="Configuración">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- MENU DE CONFIGURACION -->
+  <div id="config" class="card hidden">
+    <div class="h">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+      Dispositivos
+    </div>
+    <!-- Estado conectado -->
+    <div id="connectedBlock" class="hidden"></div>
+
+    <!-- Opciones de conexion (solo cuando NO hay conexion) -->
+    <div id="connectBlock">
+      <div id="deviceList"></div>
+      <div class="row" style="margin-top:12px">
+        <input id="devIp" placeholder="IP del ATEM (ej. 172.28.135.97)" style="flex:2">
+        <button class="btn primary" onclick="connectNew()" style="flex:1">Conectar</button>
+      </div>
+      <button class="btn ghost full" id="btnDiscover" onclick="discover()" style="margin-top:10px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        Buscar ATEMs en la red
+      </button>
+      <div id="foundList" style="margin-top:8px"></div>
+    </div>
+
+    <div id="nameSection" class="hidden" style="margin-top:20px">
+      <div class="h">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        Nombres de cámaras
+      </div>
+      <div id="nameList"></div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="main" class="hidden">
+    <div class="card now">
+      <div style="text-align:center;margin-bottom:10px"><span class="badge" id="modeBadge"><span class="d"></span><span id="modeText">AUTO</span></span></div>
+      <div class="lbl">Al aire</div>
+      <div class="cam" id="curCam">—</div>
+      <div class="timer" id="timer">—</div>
+    </div>
+
+    <div class="card">
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Intervalo</div>
+      <div class="grid g3" id="intervals"></div>
+    </div>
+
+    <div class="card">
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>Cámaras en rotación</div>
+      <div class="grid g2" id="cameras"></div>
+    </div>
+
+    <div class="card">
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>Transición</div>
+      <div class="grid g2">
+        <div class="opt" id="tCut" onclick="setTransition('cut')">Corte</div>
+        <div class="opt" id="tMix" onclick="setTransition('mix')">Mezcla</div>
+      </div>
+      <div id="fadeBlock" class="hidden" style="margin-top:12px">
+        <div class="muted" style="margin-bottom:8px">Tiempo de mezcla</div>
+        <div class="grid g4" id="fades"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>Control</div>
+      <div class="grid g2" style="margin-bottom:14px">
+        <button class="btn ghost" id="btnPause" onclick="pause()">⏸ Pausar</button>
+        <button class="btn primary hidden" id="btnResume" onclick="resume()">▶ Reanudar</button>
+      </div>
+      <div class="muted" style="margin-bottom:8px">Forzar cámara</div>
+      <div class="grid g2" id="forceBtns"></div>
+    </div>
+
+    <div class="card">
+      <div class="h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-8a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v8"/><path d="M15 3v4a1 1 0 0 0 1 1h4"/><path d="M5 21V5a2 2 0 0 1 2-2h10l4 4v14"/></svg>Presets</div>
+      <div id="presetList"></div>
+      <div class="row" style="margin-top:12px">
+        <input id="presetName" placeholder="Nombre del preset (ej. Alabanza)" style="flex:2">
+        <button class="btn primary" onclick="savePreset()" style="flex:1">Guardar</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="l">Cambios</div><div class="v" id="count">0</div></div>
+      <div class="stat"><div class="l">Tiempo activo</div><div class="v" id="uptime">0m</div></div>
+    </div>
+  </div>
+
+</div>
+<script>
+const INTERVALS=[5,7,10,15,20,30], FADES=[0.5,1,1.5,2];
+let cur={cameras:[],available:[],devices:[],presets:[]}, nextTs=0, camSig="", nameSig="";
+
+const iv=document.getElementById('intervals');
+INTERVALS.forEach(n=>{const d=document.createElement('div');d.className='opt';d.id='iv'+n;
+  d.textContent=n+'s';d.onclick=()=>setIntv(n);iv.appendChild(d);});
+const fdc=document.getElementById('fades');
+FADES.forEach(f=>{const d=document.createElement('div');d.className='opt';d.id='fd'+String(f).replace('.','_');
+  d.textContent=f+'s';d.onclick=()=>setFade(f);fdc.appendChild(d);});
+
+function toggleConfig(){document.getElementById('config').classList.toggle('hidden');}
+function openConfig(){document.getElementById('config').classList.remove('hidden');}
+
+async function refresh(){
+  let res; try{ res=await fetch('/api/status'); }catch{ return; }
+  if(res.status===401){ showLogin(); return; }
+  const d=await res.json();
+  cur=d;
+  // Conexion
+  const live=!!d.connected;
+  document.getElementById('cDot').className='dot'+(live?' live':'');
+  document.getElementById('cText').textContent = live ? (d.product||'Conectado')
+      : (d.reconnecting ? 'Reconectando…' : 'Sin conexión');
+  document.getElementById('main').classList.toggle('hidden',!live);
+  document.getElementById('connectBlock').classList.toggle('hidden',live);
+  document.getElementById('connectedBlock').classList.toggle('hidden',!live);
+  if(live) renderConnected(d);
+  document.getElementById('nameSection').classList.toggle('hidden',!live);
+  if(!live) document.getElementById('config').classList.remove('hidden');
+  renderDevices(d.devices||[]);
+  renderPresets(d.presets||[]);
+  if(!live) return;
+
+  nextTs=Date.now()/1000+(d.secondsUntilNext||0);
+  document.getElementById('curCam').textContent='CAM '+d.current;
+  document.getElementById('count').textContent=d.count;
+  document.getElementById('uptime').textContent=d.uptime;
+  const mb=document.getElementById('modeBadge');
+  mb.className='badge'+(d.autoMode?' live':'');
+  document.getElementById('modeText').textContent=d.autoMode?'AUTO':'MANUAL';
+  document.getElementById('btnPause').classList.toggle('hidden',!d.autoMode);
+  document.getElementById('btnResume').classList.toggle('hidden',d.autoMode);
+  INTERVALS.forEach(n=>document.getElementById('iv'+n).classList.toggle('on',n===d.interval));
+  document.getElementById('tCut').classList.toggle('on',d.transition==='cut');
+  document.getElementById('tMix').classList.toggle('on',d.transition==='mix');
+  document.getElementById('fadeBlock').classList.toggle('hidden',d.transition!=='mix');
+  FADES.forEach(f=>document.getElementById('fd'+String(f).replace('.','_')).classList.toggle('on',f===d.fadeDuration));
+  renderCameras(d);
+  renderNames(d.cameras);
+}
+
+function renderNames(cams){
+  const sig=cams.map(c=>c.id).join(',');
+  if(sig===nameSig) return; // no reconstruir mientras el usuario escribe
+  nameSig=sig;
+  const el=document.getElementById('nameList'); el.innerHTML='';
+  cams.forEach(c=>{
+    const row=document.createElement('div'); row.className='row'; row.style.marginBottom='8px';
+    const inp=document.createElement('input'); inp.value=c.name||('CAM '+c.id); inp.style.flex='2';
+    inp.onkeydown=(e)=>{ if(e.key==='Enter') renameCamera(c.id, inp.value); };
+    const b=document.createElement('button'); b.className='mini'; b.textContent='Guardar';
+    b.onclick=()=>renameCamera(c.id, inp.value);
+    row.appendChild(inp); row.appendChild(b); el.appendChild(row);
+  });
+}
+
+function renderFound(list){
+  const el=document.getElementById('foundList'); el.innerHTML='';
+  const saved=(cur.devices||[]).map(d=>d.ip);
+  const nuevos=list.filter(a=>!saved.includes(a.ip));
+  if(nuevos.length===0){ el.innerHTML='<div class="muted">No se encontraron ATEMs nuevos.</div>'; return; }
+  nuevos.forEach(a=>{
+    const row=document.createElement('div'); row.className='listItem';
+    row.innerHTML=`<div class="meta"><span class="n">${a.name}</span><span class="s">${a.ip}</span></div>`;
+    const b=document.createElement('button'); b.className='mini'; b.textContent='Conectar';
+    b.onclick=()=>connectTo(a.ip);
+    const acts=document.createElement('div'); acts.className='acts'; acts.appendChild(b);
+    row.appendChild(acts); el.appendChild(row);
+  });
+}
+
+function renderCameras(d){
+  const sig=d.cameras.map(c=>c.id).join(',');
+  if(sig!==camSig){
+    camSig=sig;
+    const cc=document.getElementById('cameras'); cc.innerHTML='';
+    const fb=document.getElementById('forceBtns'); fb.innerHTML='';
+    d.cameras.forEach(c=>{
+      const e=document.createElement('div'); e.className='opt cam'; e.id='cam'+c.id;
+      e.textContent=c.name||('CAM '+c.id); e.onclick=()=>toggleCam(c.id); cc.appendChild(e);
+      const b=document.createElement('div'); b.className='opt'; b.textContent=c.name||('CAM '+c.id);
+      b.onclick=()=>force(c.id); fb.appendChild(b);
+    });
+  }
+  d.cameras.forEach(c=>{const el=document.getElementById('cam'+c.id);
+    const on=d.available.includes(c.id); el.classList.toggle('on',on); el.classList.toggle('off',!on);});
+}
+
+function renderDevices(list){
+  const el=document.getElementById('deviceList'); el.innerHTML='';
+  if(list.length===0){el.innerHTML='<div class="muted">No hay dispositivos guardados.</div>';return;}
+  list.forEach(dev=>{
+    const row=document.createElement('div'); row.className='listItem';
+    row.innerHTML=`<div class="meta"><span class="n">${dev.name||'ATEM'}</span><span class="s">${dev.ip}</span></div>`;
+    const acts=document.createElement('div'); acts.className='acts';
+    const con=document.createElement('button'); con.className='mini'; con.textContent='Conectar';
+    con.onclick=()=>connectTo(dev.ip);
+    const del=document.createElement('button'); del.className='mini x'; del.textContent='✕';
+    del.onclick=()=>removeDevice(dev.ip);
+    acts.appendChild(con); acts.appendChild(del); row.appendChild(acts); el.appendChild(row);
+  });
+}
+
+function renderPresets(list){
+  const el=document.getElementById('presetList'); el.innerHTML='';
+  if(list.length===0){el.innerHTML='<div class="muted">Aún no hay presets guardados.</div>';return;}
+  list.forEach(name=>{
+    const row=document.createElement('div'); row.className='listItem';
+    row.innerHTML=`<div class="meta"><span class="n">${name}</span></div>`;
+    const acts=document.createElement('div'); acts.className='acts';
+    const ld=document.createElement('button'); ld.className='mini'; ld.textContent='Cargar';
+    ld.onclick=()=>loadPreset(name);
+    const del=document.createElement('button'); del.className='mini x'; del.textContent='✕';
+    del.onclick=()=>deletePreset(name);
+    acts.appendChild(ld); acts.appendChild(del); row.appendChild(acts); el.appendChild(row);
+  });
+}
+
+function showLogin(){ /* contraseña deshabilitada */ }
+
+async function doLogin(){
+  const pw=document.getElementById('loginPw').value;
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({password:pw})});
+  if(r.ok){
+    document.getElementById('loginOverlay').classList.add('hidden');
+    document.getElementById('loginErr').classList.add('hidden');
+    document.getElementById('loginPw').value=''; refresh();
+  } else { document.getElementById('loginErr').classList.remove('hidden'); }
+}
+
+function savePassword(){
+  const pw=document.getElementById('pwInput').value;
+  post('/api/config/password',{password:pw});
+  document.getElementById('pwInput').value='';
+  alert(pw ? 'Contraseña guardada.' : 'Contraseña quitada.');
+}
+
+async function post(url,body){
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):null});
+  if(r.status===401){ showLogin(); return r; }
+  await refresh(); return r;
+}
+async function del(url){ await fetch(url,{method:'DELETE'}); await refresh(); }
+
+function renderConnected(d){
+  const el=document.getElementById('connectedBlock'); el.innerHTML='';
+  const row=document.createElement('div'); row.className='listItem';
+  row.innerHTML=`<div class="meta"><span class="n">${d.product||'ATEM'}</span><span class="s">${d.ip||''}</span></div>`;
+  const b=document.createElement('button'); b.className='mini x'; b.textContent='Desconectar';
+  b.onclick=disconnect;
+  const acts=document.createElement('div'); acts.className='acts'; acts.appendChild(b);
+  row.appendChild(acts); el.appendChild(row);
+}
+
+async function connectTo(ip){
+  const r=await post('/api/connect',{ip});
+  if(!r.ok){ const e=await r.json().catch(()=>({})); alert('No se pudo conectar: '+(e.error||'')); }
+}
+async function connectNew(){
+  const ip=document.getElementById('devIp').value.trim();
+  if(!ip){ alert('Escribe la IP del ATEM'); return; }
+  await connectTo(ip);
+  document.getElementById('devIp').value='';
+}
+function removeDevice(ip){ del('/api/devices/'+encodeURIComponent(ip)); }
+function disconnect(){ post('/api/disconnect'); }
+
+async function discover(){
+  const btn=document.getElementById('btnDiscover');
+  const old=btn.innerHTML; btn.textContent='Buscando…'; btn.disabled=true;
+  try{ renderFound(await (await fetch('/api/discover')).json()); }
+  catch{ renderFound([]); }
+  btn.innerHTML=old; btn.disabled=false;
+}
+async function renameCamera(id,name){
+  await fetch('/api/cameras/rename',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id,name})});
+  camSig=''; nameSig=''; await refresh();
+}
+
+function savePreset(){
+  const name=document.getElementById('presetName').value.trim();
+  if(!name){ alert('Ponle nombre al preset'); return; }
+  post('/api/presets',{name}); document.getElementById('presetName').value='';
+}
+function loadPreset(name){ post('/api/presets/load',{name}); }
+function deletePreset(name){ del('/api/presets/'+encodeURIComponent(name)); }
+
+function setIntv(n){ post('/api/config/interval',{interval:n}); }
+function setFade(f){ post('/api/config/fadetime',{duration:f}); }
+function setTransition(m){ post('/api/config/transition',{mode:m}); }
+function pause(){ post('/api/pause'); }
+function resume(){ post('/api/resume'); }
+function force(id){ post('/api/force/'+id); }
+function toggleCam(id){
+  let l=(cur.available||[]).slice();
+  if(l.includes(id)) l=l.filter(x=>x!==id); else l.push(id);
+  post('/api/config/cameras',{cameras:l});
+}
+
+setInterval(()=>{
+  const t=document.getElementById('timer'); if(!cur.connected) return;
+  if(!cur.autoMode){ t.textContent='Manual'; return; }
+  if((cur.available||[]).length===0){ t.textContent='Sin cámaras'; return; }
+  const left=Math.max(0,Math.ceil(nextTs-Date.now()/1000));
+  t.textContent='Próximo en '+left+'s';
+},200);
+
+setInterval(refresh,1000);
+refresh();
+</script>
+</body>
+</html>
