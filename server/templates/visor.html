@@ -316,7 +316,7 @@ function aplicarAcento(){
   if(c){ d.setProperty('--gold',c); d.setProperty('--gold-soft', hexRgbaV(c,0.16)); d.setProperty('--gold-ink', inkFor(c)); }
   else { d.removeProperty('--gold'); d.removeProperty('--gold-soft'); d.removeProperty('--gold-ink'); }
   marcarV('seg-acento', c||'');
-  var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#C9A96E'; }
+  var ci=document.getElementById('acento-custom-v'); if(ci){ ci.value=(c&&/^#[0-9a-fA-F]{6}$/.test(c))?c:'#9CA3AF'; }
 }
 function setAcento(val){ try{ if(val) localStorage.setItem('mw_acento',val); else localStorage.removeItem('mw_acento'); }catch(e){} try{ fetch('/api/perfil/acento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acento:val||''})}); }catch(e){} aplicarAcento(); }
 

@@ -147,7 +147,7 @@
   body[data-iconsize="lg"] .navicon{width:150px}
   body[data-iconsize="lg"] .ni-lbl{font-size:13px}
   /* Personalización: tema claro (modo día) */
-  body.tema-claro{--bg:#f2f2f5;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95;--accent:#C9A96E;--gold-soft:#f3ead9}
+  body.tema-claro{--bg:#f2f2f5;--surface:#ffffff;--raised:#ececef;--line:#dcdce2;--txt:#15151a;--txt2:#5b5b66;--txt3:#8a8a95;--accent:#9CA3AF;--gold-soft:#f3ead9}
   /* Personalización: menú en barras */
   body.nav-barras .launcher{align-items:flex-start;padding-top:24px;min-height:auto}
   body.nav-barras .iconnav{flex-direction:column;flex-wrap:nowrap;gap:10px;max-width:460px;width:100%;margin:0 auto}
@@ -757,7 +757,7 @@ function aplicarPrefs(){
   marcarSeg('seg-tema', PREFS.tema);
   marcarSeg('seg-nav', PREFS.nav);
   marcarSeg('seg-acento', PREFS.acento);
-  var _ci=document.getElementById('acento-custom'); if(_ci){ _ci.value = (PREFS.acento && /^#[0-9a-fA-F]{6}$/.test(PREFS.acento)) ? PREFS.acento : '#C9A96E'; }
+  var _ci=document.getElementById('acento-custom'); if(_ci){ _ci.value = (PREFS.acento && /^#[0-9a-fA-F]{6}$/.test(PREFS.acento)) ? PREFS.acento : '#9CA3AF'; }
 }
 function marcarSeg(id, val){
   var seg = document.getElementById(id); if(!seg) return;

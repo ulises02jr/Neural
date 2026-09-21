@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Secciones — {{ titulo }}</title>
 <style>
-  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#C9A96E; --txt:#fff; --muted:#8a8a8a; --blue:#2E6BE6; }
+  :root{ --bg:#0a0a0a; --raised:#1a1a1a; --line:#2a2a2a; --gold:#9CA3AF; --txt:#fff; --muted:#8a8a8a; --blue:#2E6BE6; }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px 16px;}
   .wrap{max-width:860px;margin:0 auto;}
@@ -237,9 +237,9 @@ function draw(){
   rows().forEach(function(tr){
     var i=+tr.getAttribute('data-i'); var v=parseT(inputFor(i).value); if(v===null) return;
     var x=v/DET.dur*W;
-    ctx.strokeStyle = (i===selI)?'#C9A96E':'#2E6BE6'; ctx.lineWidth=2;
+    ctx.strokeStyle = (i===selI)?'#9CA3AF':'#2E6BE6'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H-16); ctx.stroke();
-    ctx.fillStyle = (i===selI)?'#C9A96E':'#2E6BE6';
+    ctx.fillStyle = (i===selI)?'#9CA3AF':'#2E6BE6';
     ctx.fillRect(x, 0, 20, 15);
     ctx.fillStyle='#0a0a0a'; ctx.font='11px sans-serif'; ctx.fillText(i+1, x+5, 11);
   });
