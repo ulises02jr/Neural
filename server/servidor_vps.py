@@ -454,6 +454,15 @@ def cargar_biblioteca(org=None):
             with open(archivo, "r", encoding="utf-8") as f:
                 datos = json.load(f)
                 if "numero" in datos:
+                    # Auto-corregir la portada si el archivo no existe con esa extensión
+                    # (evita que se rompa la imagen si el JSON quedó apuntando a otra extensión)
+                    try:
+                        _p = datos.get("portada")
+                        if _p and not (BASE_DIR / "static" / _p).exists():
+                            _cands = sorted((BASE_DIR / "static" / "portadas").glob(str(datos["numero"]) + ".*"))
+                            datos["portada"] = ("portadas/" + _cands[0].name) if _cands else ""
+                    except Exception:
+                        pass
                     biblioteca[datos["numero"]] = datos
         except Exception as e:
             print(f"⚠️  Error leyendo {archivo.name}: {e}")
