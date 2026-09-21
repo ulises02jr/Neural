@@ -418,6 +418,30 @@ def eliminar_usuario(user_id, org_id=None):
         return cur.rowcount > 0
 
 
+def eliminar_organizacion(org_id):
+    """Borra por completo una organización de la base de datos: sus usuarios,
+    invitaciones, códigos de reset y el registro de la organización.
+    NO toca el sistema de archivos (eso lo hace el servidor). Devuelve (ok, msg)."""
+    try:
+        org_id = int(org_id)
+    except Exception:
+        return False, "org_id inválido"
+    try:
+        with _conexion() as conn:
+            conn.execute(
+                "DELETE FROM reset_codigos WHERE user_id IN "
+                "(SELECT id FROM usuarios WHERE org_id = ?)", (org_id,))
+            conn.execute("DELETE FROM usuarios WHERE org_id = ?", (org_id,))
+            try:
+                conn.execute("DELETE FROM invitaciones WHERE org_id = ?", (org_id,))
+            except Exception:
+                pass
+            cur = conn.execute("DELETE FROM organizations WHERE id = ?", (org_id,))
+        return (cur.rowcount > 0), ("Organización eliminada" if cur.rowcount > 0 else "La organización no existía")
+    except Exception as e:
+        return False, f"Error: {e}"
+
+
 def autenticar(email, password):
     """Login: valida email + password. Devuelve user dict o None."""
     u = buscar_por_email(email)

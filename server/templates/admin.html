@@ -545,25 +545,55 @@
       </div>
     </div>
 
-    {% macro fila(nombre, desc, valor, ok) -%}
-      <div style="display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)">
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:14px">{{ nombre }}</div>
-          <div style="font-size:12px;color:var(--txt2);margin-top:2px;line-height:1.5">{{ desc }}</div>
-        </div>
-        <div style="font-size:13px;font-weight:700;white-space:nowrap;color:{{ 'var(--live)' if ok else 'var(--txt3)' }}">{{ valor }}</div>
+    {% set sync = (pk == 'ministerio') %}
+    {% set export = (full or sync) %}
+    {% macro frow(on, texto) -%}
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px;color:{{ 'var(--txt)' if on else 'var(--txt3)' }}">
+        {% if on %}<span style="color:var(--live);font-weight:800;width:16px;text-align:center">✓</span>{% else %}<span style="color:var(--txt3);font-weight:800;width:16px;text-align:center">✕</span>{% endif %}
+        <span>{{ texto }}</span>
       </div>
     {%- endmacro %}
 
-    <div style="margin-bottom:18px;padding-top:16px;border-top:1px solid var(--line)">
+    <div style="margin-bottom:6px;padding-top:16px;border-top:1px solid var(--line)">
       <div class="col-h"><span>Qué incluye tu plan</span></div>
-      {{ fila('Charts', 'Acceso a los charts (acordes + letra) que creás, y su sincronización en vivo con NeuralPlay.', '✓ Incluido', true) }}
-      {{ fila('NeuralPlay', 'App reproductora de multipistas para tocar en vivo con tu banda.', ('Completo (32 salidas + MIDI)' if full else 'Básico (2 salidas, estéreo)'), true) }}
-      {{ fila('NeuralSync', 'Puente para sincronizar tu propio DAW (Logic, Ableton…) con los músicos.', ('✓ Incluido' if full else 'No incluido'), full) }}
-      {{ fila('Exportar PDF', 'Exportá tus charts a PDF para imprimir o compartir.', ('✓ Incluido' if full else 'No incluido'), full) }}
-      {{ fila('Sección MIDI', 'Mapeo y control MIDI completo en NeuralPlay (cajas, notas y faders).', ('✓ Incluido' if full else 'No incluido'), full) }}
-      {{ fila('Asientos', 'Cantidad de músicos que pueden entrar a tu organización.', p.asientos ~ ' músicos', true) }}
-      {{ fila('Almacenamiento', 'Espacio para tus canciones, pistas y los tonos que generés.', p.gb ~ ' GB', true) }}
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:16px 0 4px">General</div>
+      {{ frow(true, p.asientos ~ ' asientos de músicos') }}
+      {{ frow(true, p.gb ~ ' GB de almacenamiento para tus tracks') }}
+      {{ frow(true, 'Creación de Repertorios') }}
+      {{ frow(true, 'Cargar Pads') }}
+      {{ frow(true, 'Cargar Multitracks') }}
+      {{ frow(true, 'Cargar tus propios cifrados') }}
+      {{ frow(full, 'Almacenar Notas MIDI') }}
+      {{ frow(export, 'Exportar Lyrics para presentación') }}
+      {{ frow(export, 'Exportar Charts en PDF') }}
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:18px 0 4px">NeuralCharts</div>
+      {{ frow(true, 'Charts (cifrado + letras)') }}
+      {{ frow(true, 'Sincroniza tus Cifrados con NeuralPlay') }}
+      {{ frow(true, 'Reproductor de Multitracks para ensayo (sincronizado con Cifrados)') }}
+      {{ frow(true, 'Disponible para iPhone, iPad y Android') }}
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:18px 0 4px">NeuralPlay</div>
+      {{ frow(true, 'Reproductor de Multitracks/Stems') }}
+      {{ frow(true, 'Cambio de Tono/Tempo fuera de línea a los 12 tonos') }}
+      {{ frow(true, 'Crea y guarda varios repertorios') }}
+      {{ frow(true, 'Sincronización en vivo en NeuralCharts') }}
+      {{ frow(full, 'Ajusta tiempo inicial y final') }}
+      {{ frow(true, 'Reproduce pads ambientales con canciones') }}
+      {{ frow(full, 'Repite secciones con Loop/Loop Infinito') }}
+      {{ frow(full, 'Asignación MIDI/Teclado/Controlador') }}
+      {{ frow(true, 'NeuralPlay para Mac / iPad') }}
+      {{ frow(true, 'Interfaz avanzada de Pad Player') }}
+      {{ frow(true, ('Hasta 32 MultiOuts® con buses' if full else '2 salidas')) }}
+      {{ frow(full, 'Añadir sección de clicks a las canciones al final') }}
+      {{ frow(full, 'Reproductor de Notas MIDI en Sincronización') }}
+      {{ frow(full, 'Múltiples Salidas MIDI para Lyrics/Luces y Efectos') }}
+      {{ frow(full, 'MIDI Clock') }}
+      {{ frow(true, 'Gestión de almacenamiento en dispositivo') }}
+
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:18px 0 4px">NeuralSync</div>
+      {{ frow(sync, 'NeuralSync para Windows/Mac') }}
     </div>
 
   </div>

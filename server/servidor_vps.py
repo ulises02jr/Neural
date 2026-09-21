@@ -2629,6 +2629,41 @@ def superadmin_org_actualizar(org_id):
     return redirect(url_for("superadmin"))
 
 
+@app.route("/superadmin/org/<int:org_id>/eliminar", methods=["POST"])
+@super_admin_required
+def superadmin_org_eliminar(org_id):
+    """Elimina por completo una organización: base de datos + archivos (canciones,
+    pistas, pads, config). Irreversible. Protegida: no toca la org operadora, y
+    exige teclear el nombre exacto como confirmación."""
+    if int(org_id) == OPERADOR_ORG_ID:
+        flash("No se puede eliminar la organización operadora.", "error")
+        return redirect(url_for("superadmin"))
+    org = usuarios.obtener_organizacion(org_id)
+    if not org:
+        flash("La organización no existe.", "error")
+        return redirect(url_for("superadmin"))
+    confirmar = (request.form.get("confirmar") or "").strip()
+    if confirmar != (org.get("nombre") or "").strip():
+        flash("El nombre de confirmación no coincide. No se eliminó nada.", "error")
+        return redirect(url_for("superadmin"))
+    # 1) Borrar los archivos de la organización (viven en orgs/<id>/…)
+    try:
+        import shutil
+        base = CARPETA_ORGS / str(int(org_id))
+        if base.exists():
+            shutil.rmtree(base, ignore_errors=True)
+    except Exception as e:
+        logging.error("eliminar archivos org %s: %s", org_id, e)
+    # 2) Borrar de la base de datos (usuarios, invitaciones, org)
+    ok, msg = usuarios.eliminar_organizacion(org_id)
+    if ok:
+        logging.info("SUPERADMIN eliminó org %s '%s'", org_id, org.get("nombre"))
+        flash("✓ Organización '%s' eliminada por completo (datos y archivos)." % org.get("nombre"), "success")
+    else:
+        flash("No se pudo eliminar: %s" % msg, "error")
+    return redirect(url_for("superadmin"))
+
+
 @app.route("/admin/planes")
 @login_required("admin")
 def admin_planes():

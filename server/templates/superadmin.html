@@ -206,6 +206,19 @@
       </div>
       <button type="submit">Guardar</button>
     </form>
+    {% if o.id != 1 %}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)">
+      {% if o.owner_email and '@' in o.owner_email %}
+      <a href="mailto:{{ o.owner_email }}?subject={{ ('NeuralWorship — Aviso sobre ' ~ o.nombre)|urlencode }}&body={{ ('Hola, te escribimos desde NeuralWorship en relación a tu organización «' ~ o.nombre ~ '». ')|urlencode }}"
+         style="display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;color:#eaeaf0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14)">✉ Contactar dueño</a>
+      {% endif %}
+      <form method="POST" action="{{ url_for('superadmin_org_eliminar', org_id=o.id) }}" onsubmit="return borrarOrg(this, {{ o.nombre|tojson }})" style="margin:0">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirmar" value="">
+        <button type="submit" style="padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;color:#ff8080;background:rgba(220,70,70,.10);border:1px solid rgba(220,70,70,.45)">🗑 Eliminar organización</button>
+      </form>
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
 <script>
@@ -222,6 +235,13 @@
       v.textContent = '$' + (modo === 'anio' ? v.dataset.anio : v.dataset.mes);
     });
     document.querySelectorAll('.per').forEach(function(s){ s.textContent = (modo === 'anio' ? 'por año' : 'por mes'); });
+  }
+  function borrarOrg(form, nombre){
+    var r = prompt('⚠️ Esto BORRA la organización y TODO su contenido (canciones, pistas, usuarios) de forma permanente e irreversible.\n\nEscribí el nombre EXACTO para confirmar:\n\n' + nombre);
+    if(r === null) return false;
+    if(r.trim() !== String(nombre).trim()){ alert('El nombre no coincide. No se borró nada.'); return false; }
+    form.confirmar.value = r.trim();
+    return true;
   }
   var PAQUETES = {{ paquetes|tojson }};
   function aplicarPaquete(sel){
