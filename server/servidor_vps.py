@@ -1907,6 +1907,42 @@ def api_live_status():
     })
 
 
+def _extras_org(org_id):
+    """Suma de ampliaciones (add-ons) ACTIVAS de la organizacion, leidas de su config.
+       Devuelve (extra_gb, extra_asientos)."""
+    extra_gb = 0
+    extra_seats = 0
+    try:
+        cfg = get_config(org_id)
+        for sub in (cfg.get("ls_addons") or {}).values():
+            if not sub.get("activo"):
+                continue
+            q = int(sub.get("cantidad") or 1)
+            if sub.get("tipo") == "gb":
+                extra_gb += 50 * q
+            elif sub.get("tipo") == "seat":
+                extra_seats += 1 * q
+    except Exception:
+        pass
+    return extra_gb, extra_seats
+
+
+def _aplicar_limites_org(org_id, plan=None, estado=None):
+    """Fija asientos/GB = plan base + ampliaciones activas. Opcional: cambia paquete/estado."""
+    org = usuarios.obtener_organizacion(org_id) or {}
+    plan = plan or org.get("paquete") or "basico"
+    base = PAQUETES.get(plan, PAQUETES["basico"])
+    extra_gb, extra_seats = _extras_org(org_id)
+    campos = {
+        "paquete": plan,
+        "max_musicos": base["asientos"] + extra_seats,
+        "almacen_gb": base["gb"] + extra_gb,
+    }
+    if estado:
+        campos["estado_suscripcion"] = estado
+    usuarios.actualizar_organizacion(org_id, **campos)
+
+
 @app.route("/api/webhooks/lemonsqueezy", methods=["POST"])
 def api_webhook_lemonsqueezy():
     """Webhook de Lemon Squeezy: activa/cambia el plan de la organizacion al pagar.
@@ -1947,14 +1983,52 @@ def api_webhook_lemonsqueezy():
         logging.warning("webhook LS sin org_id valido (evento %s)", evento)
         return jsonify({"ok": True, "warn": "sin org_id"}), 200  # 200 para que LS no reintente infinito
 
-    # 2) Plan segun la variante comprada (por ID mapeado o, de respaldo, por nombre)
-    variant_id = attrs.get("variant_id")
-    plan = pagos.plan_de_variante(variant_id)
-    if plan is None:
-        plan = pagos.plan_de_nombre(attrs.get("product_name"), attrs.get("variant_name"))
+    # 2) Datos del producto comprado
+    product_name = attrs.get("product_name")
+    variant_name = attrs.get("variant_name")
     status = (attrs.get("status") or "").lower()  # active, on_trial, past_due, cancelled, expired, unpaid, paused
+    sub_id = str((payload.get("data") or {}).get("id") or "")
+    try:
+        cantidad = int((attrs.get("first_subscription_item") or {}).get("quantity") or 1)
+    except Exception:
+        cantidad = 1
+    activo_sub = status in ("active", "on_trial") and evento != "subscription_expired"
 
-    # 3) Estado segun evento + status
+    def _guardar_portal():
+        try:
+            urls = attrs.get("urls") or {}
+            portal = urls.get("customer_portal") or urls.get("customer_portal_update_subscription")
+            if portal:
+                cfg = get_config(org_id)
+                cfg["ls_portal_url"] = portal
+                guardar_config(cfg, org_id)
+        except Exception as e:
+            logging.error("guardar portal LS org %s: %s", org_id, e)
+
+    # 3a) AMPLIACION (add-on): +50 GB o +1 asiento. Se suma al plan base, no lo reemplaza.
+    addon = pagos.tipo_de_addon(product_name, variant_name)
+    if addon and sub_id:
+        try:
+            cfg = get_config(org_id)
+            addons = cfg.get("ls_addons") or {}
+            if evento == "subscription_expired" or status in ("expired", "unpaid"):
+                addons.pop(sub_id, None)
+            else:
+                addons[sub_id] = {"tipo": addon, "cantidad": cantidad, "activo": activo_sub}
+            cfg["ls_addons"] = addons
+            guardar_config(cfg, org_id)
+        except Exception as e:
+            logging.error("guardar addon LS org %s: %s", org_id, e)
+        _aplicar_limites_org(org_id)   # recomputa asientos/GB = plan base + extras activos
+        _guardar_portal()
+        logging.info("LS org %s add-on %s x%s activo=%s (%s)", org_id, addon, cantidad, activo_sub, evento)
+        return jsonify({"ok": True}), 200
+
+    # 3b) PLAN base (basico/premium/ministerio)
+    plan = pagos.plan_de_variante(attrs.get("variant_id"))
+    if plan is None:
+        plan = pagos.plan_de_nombre(product_name, variant_name)
+
     if evento == "subscription_expired" or status in ("expired", "unpaid"):
         usuarios.actualizar_organizacion(org_id, estado_suscripcion="sin_plan")
         logging.info("LS org %s -> sin_plan (%s/%s)", org_id, evento, status)
@@ -1968,24 +2042,12 @@ def api_webhook_lemonsqueezy():
     if evento in ("subscription_created", "subscription_updated", "subscription_payment_success",
                   "subscription_resumed", "subscription_unpaused") or status in ("active", "on_trial"):
         estado = "prueba" if status == "on_trial" else "activa"
-        campos = {"estado_suscripcion": estado}
         if plan and plan in PAQUETES:
-            campos["paquete"] = plan
-            campos["max_musicos"] = PAQUETES[plan]["asientos"]
-            campos["almacen_gb"] = PAQUETES[plan]["gb"]
-        elif plan is None:
-            logging.warning("LS variante %s sin mapeo de plan (org %s)", variant_id, org_id)
-        usuarios.actualizar_organizacion(org_id, **campos)
-        # Guardar el link del portal de cliente de Lemon Squeezy (gestionar/cambiar/cancelar)
-        try:
-            urls = attrs.get("urls") or {}
-            portal = urls.get("customer_portal") or urls.get("customer_portal_update_subscription")
-            if portal:
-                cfg = get_config(org_id)
-                cfg["ls_portal_url"] = portal
-                guardar_config(cfg, org_id)
-        except Exception as e:
-            logging.error("guardar portal LS org %s: %s", org_id, e)
+            _aplicar_limites_org(org_id, plan=plan, estado=estado)   # base + extras
+        else:
+            usuarios.actualizar_organizacion(org_id, estado_suscripcion=estado)
+            logging.warning("LS sin mapeo de plan (org %s, producto %s)", org_id, product_name)
+        _guardar_portal()
         logging.info("LS org %s -> %s plan=%s (%s)", org_id, estado, plan, evento)
         return jsonify({"ok": True}), 200
 
@@ -2448,6 +2510,12 @@ LS_CHECKOUT = {
     "ministerio": "https://neuralworship.lemonsqueezy.com/checkout/buy/33ae6bf1-badd-4f2f-bdac-adb09a1fd980",
 }
 
+# Links de checkout de las AMPLIACIONES (add-ons). Se contratan aparte del plan.
+LS_ADDONS = {
+    "gb":   "https://neuralworship.lemonsqueezy.com/checkout/buy/6e1a42cc-cafb-4584-8216-6bd2f1a69e15",
+    "seat": "https://neuralworship.lemonsqueezy.com/checkout/buy/0a6713e6-7a83-4915-9b82-9c1b5859b7e5",
+}
+
 
 def _features(paquete):
     """Flags de funciones que la app (NeuralPlay) debe respetar según el plan."""
@@ -2693,12 +2761,13 @@ def admin_planes():
         portal_url = get_config(org_actual()).get("ls_portal_url")
     except Exception:
         portal_url = None
+    _eg, _es = _extras_org(org_actual())
     return render_template("planes.html", paquetes=PAQUETES,
                            actual=(org or {}).get("paquete"),
                            estado=(org or {}).get("estado_suscripcion"),
                            es_operador=(int(org_actual()) == OPERADOR_ORG_ID),
-                           ls_checkout=LS_CHECKOUT, org_id=org_actual(),
-                           portal_url=portal_url)
+                           ls_checkout=LS_CHECKOUT, ls_addons=LS_ADDONS, org_id=org_actual(),
+                           portal_url=portal_url, extra_gb=_eg, extra_asientos=_es)
 
 
 @app.route("/admin/planes/elegir", methods=["POST"])

@@ -62,6 +62,20 @@ def plan_de_variante(variant_id):
     return m.get(str(variant_id))
 
 
+def tipo_de_addon(product_name, variant_name=None):
+    """Detecta si el producto comprado es una AMPLIACION (add-on) y de qué tipo.
+       Devuelve 'gb' (+50 GB de almacenamiento), 'seat' (+1 asiento de músico) o None."""
+    txt = ((product_name or "") + " " + (variant_name or "")).lower()
+    if not txt.strip():
+        return None
+    # Ojo: chequear add-ons ANTES que los planes (no confundir con Plus/Premium)
+    if "gb" in txt or "almacen" in txt or "storage" in txt:
+        return "gb"
+    if "asiento" in txt or "músico" in txt or "musico" in txt or "seat" in txt or "asientos" in txt:
+        return "seat"
+    return None
+
+
 def plan_de_nombre(product_name, variant_name=None):
     """Mapea por NOMBRE del producto/variante -> plan interno (no necesita IDs numéricos).
        Plus  -> premium (clave interna del plan de $10)
