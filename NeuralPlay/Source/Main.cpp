@@ -2730,8 +2730,12 @@ public:
                 if (! anyFocus && sp->kbShown) { sp->kbShown = false; sp->resized(); sp->repaint(); }
             });
         };
+       #if JUCE_IOS || JUCE_ANDROID
         email.onFocus = onFocus; email.onBlur = onBlur;
         pass.onFocus  = onFocus; pass.onBlur  = onBlur;
+       #else
+        juce::ignoreUnused (onFocus, onBlur);
+       #endif
 
         entrar.setButtonText (juce::String::fromUTF8 ("Entrar"));
         entrar.setColour (juce::TextButton::buttonColourId,    juce::Colour (0xfff2f2f2));
@@ -4444,9 +4448,7 @@ private:
                     sp->guardarConfigCuenta();
                     sp->connStatus.setText (msg, juce::dontSendNotification);
                     sp->mostrarLoginDialog();
-                   #if JUCE_IOS || JUCE_ANDROID
                     if (sp->loginOverlay != nullptr) sp->loginOverlay->showError (msg);
-                   #endif
                     return;
                 }
                 sp->aplicarPlan (feats);
@@ -4523,22 +4525,18 @@ private:
                     sp->connStatus.setText (juce::String::fromUTF8 ("Sesion: ")
                                             + v.getProperty ("org_nombre", "").toString(),
                                             juce::dontSendNotification);
-                   #if JUCE_IOS || JUCE_ANDROID
                     if (sp->loginOverlay != nullptr) { sp->loginOverlay->setVisible (false); sp->loginOverlay->reset(); }
-                   #endif
                 }
                 else
                 {
                     auto msg = v.getProperty ("mensaje", "").toString();
                     if (msg.isEmpty()) msg = juce::String::fromUTF8 ("No se pudo conectar. Revisa el servidor y tu conexion.");
                     sp->connStatus.setText (msg, juce::dontSendNotification);
-                   #if JUCE_IOS || JUCE_ANDROID
                     if (sp->loginOverlay != nullptr && sp->loginOverlay->isVisible())
                         sp->loginOverlay->showError (msg);
                     else
-                   #endif
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                                            juce::String::fromUTF8 ("Iniciar sesion"), msg);
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                                juce::String::fromUTF8 ("Iniciar sesion"), msg);
                 }
             });
         });
@@ -4563,8 +4561,7 @@ private:
 
     void mostrarLoginDialog()
     {
-       #if JUCE_IOS || JUCE_ANDROID
-        // En tactil usamos un panel propio (tarjeta centrada) en vez del AlertWindow.
+        // Overlay de login a pantalla completa (tapa toda la interfaz) en TODAS las plataformas.
         if (loginOverlay == nullptr)
         {
             loginOverlay = std::make_unique<NeuralLoginOverlay>();
@@ -4581,28 +4578,6 @@ private:
         loginOverlay->setBounds (getLocalBounds());
         loginOverlay->setVisible (true);
         loginOverlay->toFront (true);
-        return;
-       #endif
-        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Iniciar sesion en NeuralPlay"),
-                                          juce::String::fromUTF8 ("Entra con tu cuenta para cargar tu organizacion."),
-                                          juce::MessageBoxIconType::NoIcon);
-        aw->addTextEditor ("email", "", juce::String::fromUTF8 ("Email:"));
-        aw->addTextEditor ("pass", "", juce::String::fromUTF8 ("Contrasena:"), true);
-        aw->addButton ("Entrar", 1, juce::KeyPress (juce::KeyPress::returnKey));
-        aw->addButton ("Cancelar", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-        presentModalAlert (aw);
-        juce::Component::SafePointer<MainComponent> sp (this);
-        aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
-        {
-            if (r == 1 && sp != nullptr)
-            {
-                const juce::String srv = sp->serverUrl.isNotEmpty() ? sp->serverUrl
-                                                                    : juce::String ("https://neuralworship.com");
-                sp->doLogin (srv,
-                             aw->getTextEditorContents ("email").trim(),
-                             aw->getTextEditorContents ("pass"));
-            }
-        }), true);
     }
 
     void cerrarSesion()   // "Cambiar cuenta": olvida el token y pide login de nuevo
