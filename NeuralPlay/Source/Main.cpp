@@ -4507,6 +4507,14 @@ private:
                     }
                     sp->serverUrl   = url;
                     sp->serverToken = v.getProperty ("token", "").toString();
+                    // Nueva sesion: empezar con el repertorio limpio (no arrastrar el de la cuenta anterior)
+                    sp->lastSetlistId.clear();
+                    sp->currentSetlistName.clear();
+                    sp->repertoire.clearQuick();
+                    sp->rebuildRepertoireStrip();
+                    sp->clearSong();
+                    sp->refreshEditAvailability();
+                    sp->repaint();
                     sp->aplicarPlan (feats);
                     sp->guardarConfigCuenta();
                     sp->fetchPadPacks();
@@ -4612,6 +4620,7 @@ private:
         npCacheDir().deleteRecursively();
         npAppDir().getChildFile ("perfiles.json").deleteFile();
         { const juce::ScopedLock l (chartLock); perfilesJson = "[]"; }
+        repaint();
         mostrarLoginDialog();
     }
 
