@@ -62,6 +62,22 @@ def plan_de_variante(variant_id):
     return m.get(str(variant_id))
 
 
+def plan_de_nombre(product_name, variant_name=None):
+    """Mapea por NOMBRE del producto/variante -> plan interno (no necesita IDs numéricos).
+       Plus  -> premium (clave interna del plan de $10)
+       Premium -> ministerio (clave interna del plan de $20)"""
+    txt = ((product_name or "") + " " + (variant_name or "")).lower()
+    if not txt.strip():
+        return None
+    if "premium" in txt or "premiun" in txt:
+        return "ministerio"
+    if "plus" in txt:
+        return "premium"
+    if "basic" in txt or "básico" in txt or "basico" in txt:
+        return "basico"
+    return None
+
+
 def store_id():
     return _load().get("lemonsqueezy_store_id")
 

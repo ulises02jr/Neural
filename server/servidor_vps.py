@@ -1933,9 +1933,11 @@ def api_webhook_lemonsqueezy():
         logging.warning("webhook LS sin org_id valido (evento %s)", evento)
         return jsonify({"ok": True, "warn": "sin org_id"}), 200  # 200 para que LS no reintente infinito
 
-    # 2) Plan segun la variante comprada
+    # 2) Plan segun la variante comprada (por ID mapeado o, de respaldo, por nombre)
     variant_id = attrs.get("variant_id")
     plan = pagos.plan_de_variante(variant_id)
+    if plan is None:
+        plan = pagos.plan_de_nombre(attrs.get("product_name"), attrs.get("variant_name"))
     status = (attrs.get("status") or "").lower()  # active, on_trial, past_due, cancelled, expired, unpaid, paused
 
     # 3) Estado segun evento + status
@@ -2415,6 +2417,13 @@ PAQUETES = {
     "sync":        {"nombre": "NeuralSync", "precio": 10.0, "asientos": 3, "gb": 25, "midi": False, "salidas": 2,  "tipo": "sync"},
 }
 
+# Links de checkout de Lemon Squeezy por plan interno de iglesia.
+# Plus ($10)  -> plan interno "premium"    Premium ($20) -> plan interno "ministerio"
+LS_CHECKOUT = {
+    "premium":    "https://neuralworship.lemonsqueezy.com/checkout/buy/92c4d338-a9e0-4248-aa8b-795b7f1bf75b",
+    "ministerio": "https://neuralworship.lemonsqueezy.com/checkout/buy/33ae6bf1-badd-4f2f-bdac-adb09a1fd980",
+}
+
 
 def _features(paquete):
     """Flags de funciones que la app (NeuralPlay) debe respetar según el plan."""
@@ -2609,7 +2618,8 @@ def admin_planes():
     return render_template("planes.html", paquetes=PAQUETES,
                            actual=(org or {}).get("paquete"),
                            estado=(org or {}).get("estado_suscripcion"),
-                           es_operador=(int(org_actual()) == OPERADOR_ORG_ID))
+                           es_operador=(int(org_actual()) == OPERADOR_ORG_ID),
+                           ls_checkout=LS_CHECKOUT, org_id=org_actual())
 
 
 @app.route("/admin/planes/elegir", methods=["POST"])
@@ -2630,6 +2640,38 @@ def admin_planes_elegir():
         estado_suscripcion="activa")
     flash("✓ Plan " + PAQUETES[pk]["nombre"] + " activado. ¡Ya tenés todo habilitado!", "success")
     return redirect(url_for("admin"))
+
+
+@app.route("/admin/pagos-config", methods=["GET", "POST"])
+@login_required("admin")
+@super_admin_required
+def admin_pagos_config():
+    """Panel (solo superadmin) para pegar los secretos de Lemon Squeezy en secrets.json."""
+    sec_path = BASE_DIR / "secrets.json"
+    if request.method == "POST":
+        try:
+            data = json.loads(sec_path.read_text()) if sec_path.exists() else {}
+        except Exception:
+            data = {}
+        ss = (request.form.get("signing_secret") or "").strip()
+        ak = (request.form.get("api_key") or "").strip()
+        if ss:
+            data["lemonsqueezy_signing_secret"] = ss
+        if ak:
+            data["lemonsqueezy_api_key"] = ak
+        try:
+            sec_path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+            pagos.recargar()
+            flash("✓ Configuración de pagos guardada.", "success")
+        except Exception as e:
+            logging.error("guardar pagos config: %s", e)
+            flash("No se pudo guardar la configuración.", "error")
+        return redirect(url_for("admin_pagos_config"))
+    cfg = pagos.recargar()
+    return render_template("pagos_config.html",
+                           ss_set=bool(cfg.get("lemonsqueezy_signing_secret")),
+                           ak_set=bool(cfg.get("lemonsqueezy_api_key")),
+                           habilitado=pagos.habilitado())
 
 
 # ───────────────────────── Main ─────────────────────────
