@@ -1548,7 +1548,7 @@ struct SettingsPanel : public juce::Component
         storeBtn.onClick = [this] { if (onStorage) onStorage(); };
         addAndMakeVisible (storeBtn);
 
-        logoutBtn.setButtonText (juce::String::fromUTF8 ("Cambiar cuenta"));
+        logoutBtn.setButtonText (juce::String::fromUTF8 ("Cerrar sesión"));
         logoutBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         logoutBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         logoutBtn.onClick = [this] { if (onLogout) onLogout(); };
@@ -4601,6 +4601,17 @@ private:
     {
         serverToken.clear();
         guardarConfigCuenta();
+        // Limpiar el repertorio y la cancion cargada en memoria (no mostrar los de la cuenta anterior)
+        lastSetlistId.clear();
+        currentSetlistName.clear();
+        repertoire.clearQuick();
+        rebuildRepertoireStrip();
+        clearSong();
+        refreshEditAvailability();
+        // Borrar la cache descargada (audio/charts) y el roster de la organizacion anterior
+        npCacheDir().deleteRecursively();
+        npAppDir().getChildFile ("perfiles.json").deleteFile();
+        { const juce::ScopedLock l (chartLock); perfilesJson = "[]"; }
         mostrarLoginDialog();
     }
 
