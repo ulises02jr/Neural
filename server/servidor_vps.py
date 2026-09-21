@@ -2039,12 +2039,15 @@ def api_webhook_lemonsqueezy():
         plan = pagos.plan_de_nombre(product_name, variant_name)
 
     if evento == "subscription_expired" or status in ("expired", "unpaid"):
-        usuarios.actualizar_organizacion(org_id, estado_suscripcion="sin_plan")
-        logging.info("LS org %s -> sin_plan (%s/%s)", org_id, evento, status)
+        # Terminó el plan pagado -> vuelve al plan Básico (Gratis), sin cobro.
+        # NO se borra nada (canciones, notas MIDI, etc. quedan guardadas, solo se ocultan).
+        _aplicar_limites_org(org_id, plan="basico", estado="activa")
+        logging.info("LS org %s -> basico (plan pagado terminado: %s/%s)", org_id, evento, status)
         return jsonify({"ok": True}), 200
 
     if status == "cancelled":
         # Cancelada pero sigue activa hasta fin de periodo; LS mandara 'expired' al terminar.
+        # (Así respetamos el último mes que ya pagó, sin cortarle antes.)
         logging.info("LS org %s cancelacion programada (%s)", org_id, evento)
         return jsonify({"ok": True}), 200
 
@@ -2771,10 +2774,14 @@ def admin_planes():
     except Exception:
         portal_url = None
     _eg, _es = _extras_org(org_actual())
+    _actual = (org or {}).get("paquete")
+    _estado = (org or {}).get("estado_suscripcion") or "activa"
+    _tiene_sub_paga = (_actual in ("premium", "ministerio") and _estado in ("activa", "prueba"))
     return render_template("planes.html", paquetes=PAQUETES,
-                           actual=(org or {}).get("paquete"),
+                           actual=_actual,
                            estado=(org or {}).get("estado_suscripcion"),
                            es_operador=(int(org_actual()) == OPERADOR_ORG_ID),
+                           tiene_sub_paga=_tiene_sub_paga,
                            ls_checkout=LS_CHECKOUT, ls_addons=LS_ADDONS, org_id=org_actual(),
                            portal_url=portal_url, extra_gb=_eg, extra_asientos=_es)
 
@@ -2791,10 +2798,15 @@ def admin_planes_elegir():
     if int(org_actual()) == OPERADOR_ORG_ID:
         flash("Tu organización tiene el plan fijo.", "error")
         return redirect(url_for("admin"))
-    usuarios.actualizar_organizacion(
-        org_actual(), paquete=pk,
-        max_musicos=PAQUETES[pk]["asientos"], almacen_gb=PAQUETES[pk]["gb"],
-        estado_suscripcion="activa")
+    # Si ya tiene un plan PAGADO activo, no se cambia directo (rompería la sincronía con
+    # Lemon Squeezy y seguiría el cobro). El cambio/cancelación va por el portal.
+    org_actual_obj = usuarios.obtener_organizacion(org_actual()) or {}
+    if (org_actual_obj.get("paquete") in ("premium", "ministerio")
+            and (org_actual_obj.get("estado_suscripcion") or "activa") in ("activa", "prueba")):
+        flash("Ya tenés una suscripción activa. Cambiá o cancelá tu plan desde “Gestionar mi suscripción”.", "error")
+        return redirect(url_for("admin_planes"))
+    # Cambio de plan directo (sin cobro): solo aplica para planes gratis (básico).
+    _aplicar_limites_org(org_actual(), plan=pk, estado="activa")
     flash("✓ Plan " + PAQUETES[pk]["nombre"] + " activado. ¡Ya tenés todo habilitado!", "success")
     return redirect(url_for("admin"))
 
