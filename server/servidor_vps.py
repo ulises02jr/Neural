@@ -2515,14 +2515,14 @@ PAQUETES = {
 # Links de checkout de Lemon Squeezy por plan interno de iglesia.
 # Plus ($10)  -> plan interno "premium"    Premium ($20) -> plan interno "ministerio"
 LS_CHECKOUT = {
-    "premium":    "https://neuralworship.lemonsqueezy.com/checkout/buy/92c4d338-a9e0-4248-aa8b-795b7f1bf75b",
-    "ministerio": "https://neuralworship.lemonsqueezy.com/checkout/buy/33ae6bf1-badd-4f2f-bdac-adb09a1fd980",
+    "premium":    "https://pagos.neuralworship.com/checkout/buy/92c4d338-a9e0-4248-aa8b-795b7f1bf75b",
+    "ministerio": "https://pagos.neuralworship.com/checkout/buy/33ae6bf1-badd-4f2f-bdac-adb09a1fd980",
 }
 
 # Links de checkout de las AMPLIACIONES (add-ons). Se contratan aparte del plan.
 LS_ADDONS = {
-    "gb":   "https://neuralworship.lemonsqueezy.com/checkout/buy/6e1a42cc-cafb-4584-8216-6bd2f1a69e15",
-    "seat": "https://neuralworship.lemonsqueezy.com/checkout/buy/0a6713e6-7a83-4915-9b82-9c1b5859b7e5",
+    "gb":   "https://pagos.neuralworship.com/checkout/buy/6e1a42cc-cafb-4584-8216-6bd2f1a69e15",
+    "seat": "https://pagos.neuralworship.com/checkout/buy/0a6713e6-7a83-4915-9b82-9c1b5859b7e5",
 }
 
 
