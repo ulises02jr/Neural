@@ -678,6 +678,15 @@ def crear_organizacion():
         if not ok:
             flash(res, "error")
             return render_template("crear_organizacion.html", **prev)
+        # Entra directo con el plan Básico (Gratis) ACTIVO — valores desde PAQUETES.
+        try:
+            usuarios.actualizar_organizacion(
+                res["org_id"], paquete="basico",
+                max_musicos=PAQUETES["basico"]["asientos"],
+                almacen_gb=PAQUETES["basico"]["gb"],
+                estado_suscripcion="activa")
+        except Exception as e:
+            logging.error("activar basico org %s: %s", res.get("org_id"), e)
         # Crear el config.json de la organización con su token
         try:
             _crear_config_org(res["org_id"], res["token"], org_nombre)
@@ -690,7 +699,7 @@ def crear_organizacion():
         session["rol"] = "admin"
         session["nombre"] = nombre
         session["org_id"] = res["org_id"]
-        flash("✓ ¡Organización creada! Bienvenido a NeuralWorship.", "success")
+        flash("✓ ¡Organización creada! Ya tenés activo el plan Básico (Gratis). Bienvenido a NeuralWorship.", "success")
         return redirect(url_for("admin"))
     return render_template("crear_organizacion.html")
 

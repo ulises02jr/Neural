@@ -122,7 +122,8 @@
   .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
 
   .launcher{min-height:calc(100vh - 130px);display:flex;align-items:center;justify-content:center}
-  .iconnav{display:flex;justify-content:center;flex-wrap:wrap;gap:18px;max-width:660px}
+  .iconnav{display:grid;grid-template-columns:repeat(3,124px);justify-content:center;gap:18px}
+  @media(max-width:460px){.iconnav{grid-template-columns:repeat(2,124px)}}
   .navicon{display:flex;flex-direction:column;align-items:center;gap:11px;cursor:pointer;text-decoration:none;
     color:var(--txt2);width:124px;padding:10px 6px;border-radius:18px;transition:color .15s}
   .navicon:hover{color:var(--txt)}

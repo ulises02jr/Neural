@@ -683,7 +683,7 @@ def asegurar_org_inicial(nombre="Neural Worship", token=None, paquete="ministeri
 
 
 def crear_org_con_dueno(org_nombre, nombre, apellido, email, password,
-                        paquete="basico", max_musicos=3, almacen_gb=20):
+                        paquete="basico", max_musicos=2, almacen_gb=25):
     """Crea una organización nueva + su usuario admin dueño (activo), atómicamente.
     Devuelve (ok, dict_con_datos | mensaje_error).
     dict = {org_id, user_id, token, nombre_org}."""
@@ -693,10 +693,11 @@ def crear_org_con_dueno(org_nombre, nombre, apellido, email, password,
     # Validar email libre ANTES de crear la organización
     if buscar_por_email(email):
         return False, "Ya existe una cuenta con ese email"
-    # Nace SIN plan activo: el menú queda bloqueado hasta que el dueño elige un plan.
+    # Nace con el plan Básico (Gratis) ACTIVO: entra directo, sin pasar por elegir plan.
+    # Si quiere más, va a Suscripción a mejorar.
     ok, org_id = crear_organizacion(org_nombre, paquete=paquete,
                                     max_musicos=max_musicos, almacen_gb=almacen_gb,
-                                    estado="sin_plan")
+                                    estado="activa")
     if not ok:
         return False, org_id  # mensaje de error
     ok2, res = crear_usuario(nombre, apellido, email, password, rol="admin", estado="activo")
