@@ -218,6 +218,14 @@
     {% endfor %}
   </div>
 
+  {% if portal_url and not es_operador %}
+  <div style="text-align:center;margin-top:26px">
+    <a href="{{ portal_url }}" target="_blank" rel="noopener"
+       style="display:inline-block;padding:11px 22px;font-size:13px;font-weight:700;color:var(--txt);background:var(--raised);border:1px solid var(--line);border-radius:999px;text-decoration:none">Gestionar mi suscripción</a>
+    <div style="font-size:11px;color:var(--txt3);margin-top:8px">Cambiá de plan, actualizá tu tarjeta o cancelá cuando quieras.</div>
+  </div>
+  {% endif %}
+
   <p class="note">El pago se procesa de forma segura con Lemon Squeezy.<br>El plan Gratis se activa al instante; los de pago se activan al completar la suscripción.</p>
 
   {% if false %}  {# Sección de herramientas oculta por ahora — la usaremos más adelante #}

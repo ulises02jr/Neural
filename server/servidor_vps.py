@@ -1962,6 +1962,16 @@ def api_webhook_lemonsqueezy():
         elif plan is None:
             logging.warning("LS variante %s sin mapeo de plan (org %s)", variant_id, org_id)
         usuarios.actualizar_organizacion(org_id, **campos)
+        # Guardar el link del portal de cliente de Lemon Squeezy (gestionar/cambiar/cancelar)
+        try:
+            urls = attrs.get("urls") or {}
+            portal = urls.get("customer_portal") or urls.get("customer_portal_update_subscription")
+            if portal:
+                cfg = get_config(org_id)
+                cfg["ls_portal_url"] = portal
+                guardar_config(cfg, org_id)
+        except Exception as e:
+            logging.error("guardar portal LS org %s: %s", org_id, e)
         logging.info("LS org %s -> %s plan=%s (%s)", org_id, estado, plan, evento)
         return jsonify({"ok": True}), 200
 
@@ -2615,11 +2625,16 @@ def superadmin_org_actualizar(org_id):
 def admin_planes():
     """Pantalla para elegir/cambiar de plan (3 tiras)."""
     org = usuarios.obtener_organizacion(org_actual())
+    try:
+        portal_url = get_config(org_actual()).get("ls_portal_url")
+    except Exception:
+        portal_url = None
     return render_template("planes.html", paquetes=PAQUETES,
                            actual=(org or {}).get("paquete"),
                            estado=(org or {}).get("estado_suscripcion"),
                            es_operador=(int(org_actual()) == OPERADOR_ORG_ID),
-                           ls_checkout=LS_CHECKOUT, org_id=org_actual())
+                           ls_checkout=LS_CHECKOUT, org_id=org_actual(),
+                           portal_url=portal_url)
 
 
 @app.route("/admin/planes/elegir", methods=["POST"])
