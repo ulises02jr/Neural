@@ -199,8 +199,8 @@
       <div>
         <label>Estado</label>
         <select name="estado_suscripcion">
-          {% for e in ['sin_plan','activa','prueba','suspendida'] %}
-          <option value="{{ e }}" {% if (o.estado_suscripcion or 'activa') == e %}selected{% endif %}>{{ e|capitalize }}</option>
+          {% for e in ['activa','suspendida'] %}
+          <option value="{{ e }}" {% if (o.estado_suscripcion or 'activa') == e %}selected{% endif %}>{{ 'Activa' if e == 'activa' else 'Suspendida' }}</option>
           {% endfor %}
         </select>
       </div>

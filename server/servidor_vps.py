@@ -2582,7 +2582,9 @@ def _contabilidad(filas):
 @app.route("/superadmin")
 @super_admin_required
 def superadmin():
-    orgs = usuarios.listar_organizaciones()
+    # La organización operadora (la tuya) NO aparece ni cuenta: solo las que se suscriben.
+    orgs = [o for o in usuarios.listar_organizaciones()
+            if int(o.get("id") or 0) != OPERADOR_ORG_ID]
     filas = []
     total_mrr = 0.0
     for o in orgs:
