@@ -122,8 +122,8 @@
     <button class="tab" data-tab="tiempos" onclick="tab('tiempos')">Time de Secciones</button>
     {% if features.charts %}<button class="tab" data-tab="cifrado" onclick="tab('cifrado')">Cifrado</button>{% endif %}
     <button class="tab" data-tab="transposicion" onclick="tab('transposicion')">Transposición</button>
-    <button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>
-    {% if features.charts %}<button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>{% endif %}
+    {% if features.midi %}<button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>{% endif %}
+    {% if features.export_pdf %}<button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>{% endif %}
     <button class="tab" data-tab="eliminar" onclick="tab('eliminar')">Eliminar Canción</button>
   </div>
 
@@ -410,7 +410,7 @@
 </div>
 
 <script>
-const TABS = {{ (['info','multitracks','tiempos','cifrado','transposicion','midi','letras','eliminar'] if features.charts else ['info','multitracks','tiempos','transposicion','midi','eliminar'])|tojson }};
+const TABS = {{ (['info','multitracks','tiempos'] + (['cifrado'] if features.charts else []) + ['transposicion'] + (['midi'] if features.midi else []) + (['letras'] if features.export_pdf else []) + ['eliminar'])|tojson }};
 let tabActual = 'multitracks';
 function uiGenerando(form){ var b=form.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='Generando…'; } return true; }
 document.addEventListener('DOMContentLoaded', function(){

@@ -210,6 +210,52 @@ def enviar_email_invitacion(destino, org_nombre, link, en_background=True):
     return enviar_email(destino, asunto, html)
 
 
+def enviar_email_bienvenida_admin(destino, nombre, org_nombre, en_background=True):
+    """Correo de bienvenida/confirmación al crear una organización nueva (admin dueño)."""
+    asunto = "¡Bienvenido a NeuralWorship! Tu organización está lista"
+    contenido = f"""
+        <h2 style="margin:0 0 16px;color:#222">¡Bienvenido, {nombre}!</h2>
+        <p style="color:#444;line-height:1.6">Tu organización <strong>{org_nombre}</strong> fue creada correctamente
+           y ya tenés activo el plan <strong>Básico (Gratis)</strong>. Ya podés cargar tus canciones,
+           armar repertorios e invitar a tus músicos.</p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="{URL_APP}/admin/login"
+             style="display:inline-block;background:{ACENTO};color:#000;padding:14px 32px;
+                    border-radius:8px;text-decoration:none;font-weight:700">
+            Entrar a mi panel
+          </a>
+        </div>
+        <p style="color:#888;font-size:13px;line-height:1.5">
+          ¿Querés más asientos o funciones (MIDI, exportaciones, NeuralSync)? Podés mejorar tu plan
+          desde el panel cuando gustes.
+        </p>
+    """
+    html = _envoltura("BIENVENIDA", contenido)
+    if en_background:
+        _enviar_email_background(destino, asunto, html)
+        return True, "Email programado en background"
+    return enviar_email(destino, asunto, html)
+
+
+def enviar_email_suspension(destino, nombre, org_nombre, en_background=True):
+    """Aviso de suspensión temporal de la organización (para admin y músicos)."""
+    asunto = "Tu cuenta de NeuralWorship fue suspendida temporalmente"
+    contenido = f"""
+        <h2 style="margin:0 0 16px;color:#222">Hola {nombre},</h2>
+        <p style="color:#444;line-height:1.6">Te informamos que el acceso de
+           <strong>{org_nombre}</strong> en NeuralWorship fue
+           <strong>suspendido temporalmente</strong>. Mientras dure la suspensión no podrás
+           usar la plataforma.</p>
+        <p style="color:#444;line-height:1.6">Para más información o para regularizar tu situación,
+           escribinos a <a href="mailto:{SOPORTE_EMAIL}" style="color:{ACENTO}">{SOPORTE_EMAIL}</a>.</p>
+    """
+    html = _envoltura("CUENTA SUSPENDIDA", contenido)
+    if en_background:
+        _enviar_email_background(destino, asunto, html)
+        return True, "Email programado en background"
+    return enviar_email(destino, asunto, html)
+
+
 if __name__ == "__main__":
     # Test rápido: python emails.py <email-destino>
     import sys

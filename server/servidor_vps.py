@@ -692,6 +692,11 @@ def crear_organizacion():
             _crear_config_org(res["org_id"], res["token"], org_nombre)
         except Exception as e:
             logging.error("crear config org %s: %s", res.get("org_id"), e)
+        # Correo de bienvenida/confirmación al admin dueño
+        try:
+            emails_module.enviar_email_bienvenida_admin(email, nombre, org_nombre)
+        except Exception as e:
+            logging.error("email bienvenida admin %s: %s", email, e)
         # Iniciar sesión como admin dueño de la nueva organización
         session.permanent = True
         session.clear()
@@ -2620,13 +2625,26 @@ def superadmin_org_actualizar(org_id):
     if paquete and paquete in PAQUETES:
         max_musicos = PAQUETES[paquete]["asientos"]
         almacen_gb = PAQUETES[paquete]["gb"]
+    nuevo_estado = (request.form.get("estado_suscripcion") or "").strip()
+    estado_anterior = (usuarios.obtener_organizacion(org_id) or {}).get("estado_suscripcion")
     ok = usuarios.actualizar_organizacion(
         org_id,
         paquete=paquete,
         max_musicos=max_musicos,
         almacen_gb=almacen_gb,
-        estado_suscripcion=(request.form.get("estado_suscripcion") or None),
+        estado_suscripcion=(nuevo_estado or None),
     )
+    # Si se acaba de SUSPENDER (no estaba suspendida antes), avisar por correo
+    # al admin dueño y a todos los músicos de la organización.
+    if ok and nuevo_estado == "suspendida" and estado_anterior != "suspendida":
+        try:
+            org_obj = usuarios.obtener_organizacion(org_id) or {}
+            org_nom = org_obj.get("nombre") or "tu organización"
+            for u in usuarios.listar_usuarios(org_id=org_id):
+                if u.get("estado") == "activo" and u.get("email"):
+                    emails_module.enviar_email_suspension(u["email"], u.get("nombre") or "", org_nom)
+        except Exception as e:
+            logging.error("emails suspensión org %s: %s", org_id, e)
     flash("✓ Organización actualizada" if ok else "No se pudo actualizar", "success" if ok else "error")
     return redirect(url_for("superadmin"))
 
