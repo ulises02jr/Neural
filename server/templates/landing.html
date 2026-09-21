@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NeuralWorship — Cifrados, multitracks y sincronización en vivo para tu iglesia</title>
-<meta name="description" content="El ecosistema completo para el equipo de alabanza: cifrados, reproductor multipista y sincronización en vivo. En español. Prueba gratis 7 días.">
+<meta name="description" content="El ecosistema completo para el equipo de alabanza: cifrados, reproductor multipista y sincronización en vivo. En español. Empieza gratis.">
 <meta name="keywords" content="cifrados para iglesia, multitracks en español, pistas de adoración, secuencias para iglesia, reproductor multipista, cifrados de alabanza, worship multitracks, chord charts church">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://neuralworship.com/">
@@ -15,7 +15,7 @@
 <meta property="og:locale:alternate" content="en_US">
 <meta property="og:url" content="https://neuralworship.com/">
 <meta property="og:title" content="NeuralWorship — Herramientas para equipos de alabanza">
-<meta property="og:description" content="Cifrados, reproductor multipista y sincronización en vivo. Todo integrado y en español. Prueba gratis 7 días.">
+<meta property="og:description" content="Cifrados, reproductor multipista y sincronización en vivo. Todo integrado y en español. Empieza gratis.">
 <meta property="og:image" content="https://neuralworship.com/static/marca.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="NeuralWorship — Herramientas para equipos de alabanza">
@@ -170,7 +170,7 @@
         </div>
       </div>
       <button class="langtog" id="langBtn" onclick="toggleLang()">EN</button>
-      <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" style="padding:10px 18px" data-i18n="nav_trial">Prueba gratis</a>
+      <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" style="padding:10px 18px" data-i18n="nav_trial">Registrarse</a>
     </div>
   </div>
 </nav>
@@ -181,7 +181,7 @@
     <h1 data-i18n="hero_h1">El ecosistema completo para el equipo de alabanza de tu iglesia</h1>
     <p class="sub" data-i18n="hero_sub">Cifrados, reproductor multipista y sincronización en vivo.</p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" data-i18n="hero_cta1">Prueba gratis 7 días</a>
+      <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" data-i18n="hero_cta1">Registrarse gratis</a>
       <a class="btn btn-ghost" href="#planes" data-i18n="hero_cta2">Ver planes</a>
     </div>
     <div class="microcopy" data-i18n="hero_micro">Cancela cuando quieras</div>
@@ -254,7 +254,7 @@
       <div class="item"><h4 data-i18n="why3_h">Hecho para adoración</h4><p data-i18n="why3_p">Pensado para equipos de adoración de principio a fin.</p></div>
       <div class="item"><h4 data-i18n="why4_h">Todo integrado</h4><p data-i18n="why4_p">Charts, reproductor y sincronización trabajando juntos, sin apps sueltas.</p></div>
       <div class="item"><h4 data-i18n="why5_h">Sincronización en vivo</h4><p data-i18n="why5_p">La banda entera en la misma página durante el servicio.</p></div>
-      <div class="item"><h4 data-i18n="why6_h">Prueba gratis 7 días</h4><p data-i18n="why6_p">Pruébalo con tu equipo antes de pagar.</p></div>
+      <div class="item"><h4 data-i18n="why6_h">Plan gratis de entrada</h4><p data-i18n="why6_p">Comienza sin costo y sube de plan cuando quieras.</p></div>
     </div>
   </div>
 </section>
@@ -277,7 +277,7 @@
   <div class="wrap">
     <div class="sec-head">
       <h2 data-i18n="plans_h2">Selecciona tu plan</h2>
-      <p data-i18n="plans_p">Un plan por iglesia. Todos incluyen prueba gratis de 7 días.</p>
+      <p data-i18n="plans_p">Un plan por iglesia. Empieza gratis y sube de plan cuando quieras.</p>
     </div>
     <div class="plans">
       {% macro rowf(on, key, txt) -%}
@@ -293,7 +293,6 @@
         {% if pk == 'premium' %}<span class="badge" data-i18n="badge_rec">RECOMENDADO</span>{% endif %}
         <div class="pname">{{ p.nombre }}</div>
         <div class="price">{% if p.precio == 0 %}<span data-i18n="price_free">Gratis</span>{% else %}${{ '%.0f'|format(p.precio) }}<small data-i18n="per_mo"> /mes</small>{% endif %}</div>
-        {% if pk != 'basico' %}<div class="meta" data-i18n="meta_trial">Prueba gratis de 7 días</div>{% endif %}
 
         <div class="psec first" data-i18n="sec_general">General</div>
         <ul class="flist2">
@@ -349,7 +348,7 @@
         </div>
         {% endif %}
 
-        <a class="btn {{ 'btn-primary' if pk == 'premium' else 'btn-ghost' }}" href="{{ url_for('crear_organizacion') }}" data-i18n="plan_cta">Empezar gratis</a>
+        <a class="btn {{ 'btn-primary' if pk == 'premium' else 'btn-ghost' }}" href="{{ url_for('crear_organizacion') }}" data-i18n="plan_cta">Registrarse Ya</a>
       </div>
       {% endfor %}
     </div>
@@ -362,7 +361,7 @@
     <div class="card">
       <div class="glow2"></div>
       <h2 data-i18n="final_h2">Lleva la adoración de tu iglesia al siguiente nivel</h2>
-      <p data-i18n="final_p">Prueba NeuralWorship gratis por 7 días con tu equipo.</p>
+      <p data-i18n="final_p">Comienza gratis hoy con tu equipo.</p>
       <div class="cta-row" style="margin-top:30px">
         <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" data-i18n="final_cta">Empezar gratis ahora</a>
       </div>
@@ -387,11 +386,11 @@
 <script>
   var T = {
     en: {
-      nav_tools:"Tools", nav_plans:"Pricing", nav_login:"Log in", dd_admin:"Administrator", dd_music:"Musician", nav_trial:"Free trial",
+      nav_tools:"Tools", nav_plans:"Pricing", nav_login:"Log in", dd_admin:"Administrator", dd_music:"Musician", nav_trial:"Sign up",
       foot_terms:"Terms", foot_privacy:"Privacy", foot_rights:"Copyright", foot_copy:"© 2026 NeuralWorship. All rights reserved.",
       hero_h1:"The complete ecosystem for your church's worship team",
       hero_sub:"Chord charts, multitrack player and live sync.",
-      hero_cta1:"Start 7-day free trial", hero_cta2:"See pricing",
+      hero_cta1:"Sign up free", hero_cta2:"See pricing",
       hero_micro:"Cancel anytime",
       stat1_b:"3 apps", stat1_t:"one ecosystem", stat2_b:"Live", stat2_t:"your band in sync",
       tools_h2:"Our Ecosystem",
@@ -412,14 +411,14 @@
       why3_h:"Made for worship", why3_p:"Designed for worship teams from start to finish.",
       why4_h:"All integrated", why4_p:"Charts, player and sync working together, no scattered apps.",
       why5_h:"Live sync", why5_p:"The whole band on the same page during the service.",
-      why6_h:"7-day free trial", why6_p:"Try it with your team before paying.",
+      why6_h:"Free starter plan", why6_p:"Start at no cost and upgrade whenever you want.",
       steps_h2:"Get started in minutes",
       steps_p:"In three simple steps, your team plays in sync.",
       step1_h:"Create your organization", step1_p:"Register your church in a couple of minutes and get your code to invite musicians.",
       step2_h:"Upload your songs", step2_p:"Upload your charts and multitrack files. Transpose each song to any key you want.",
       step3_h:"Live sync", step3_p:"Your team opens the app, connects to the live service and everyone plays in time.",
       plans_h2:"Choose your plan",
-      plans_p:"One plan per church. All include a 7-day free trial.",
+      plans_p:"One plan per church. Start free and upgrade whenever you want.",
       basico_name:"Basic", per_mo:" /mo", price_free:"Free",
       basico_desc:"To start with the essentials of rehearsal and live.",
       b_li1:"NeuralCharts (charts + rehearsal)", b_li2:"NeuralPlay (2 outputs, stereo)", b_li3:"Live sync", b_li4:"2 musician seats", b_li5:"25 GB storage for your tracks",
@@ -428,8 +427,7 @@
       p_li1:"Everything in Basic", p_li2:"Up to 32 audio outputs + buses in NeuralPlay", p_li3:"MIDI, loops and advanced pad player in NeuralPlay", p_li4:"5 musician seats", p_li5:"100 GB storage for your tracks",
       prem_desc:"All the power, including sync with your DAW.",
       pr_li1:"Everything in Plus", pr_li2:"NeuralSync (Logic / Ableton)", pr_li3:"MIDI Clock and multiple MIDI outputs", pr_li4:"10 musician seats", pr_li5:"200 GB storage for your tracks",
-      plan_cta:"Start free", amp_h:"Add-ons", amp_gb:"+50 GB storage", amp_seat:"+1 musician seat",
-      meta_trial:"7-day free trial",
+      plan_cta:"Register now", amp_h:"Add-ons", amp_gb:"+50 GB storage", amp_seat:"+1 musician seat",
       sec_general:"General", sec_charts:"NeuralCharts", sec_play:"NeuralPlay", sec_sync:"NeuralSync",
       lbl_asientos:"musician seats", lbl_almacen:"storage for your tracks",
       f_repertorios:"Setlist creation", f_pads:"Load pads", f_multitracks:"Upload multitracks",
@@ -448,7 +446,7 @@
       f_gestalm:"On-device storage management", f_nsync:"NeuralSync for Windows/Mac",
       pricing_note:"On Plus and Premium you can add storage and seats · Change or cancel your plan whenever you want.",
       final_h2:"Take your church's worship to the next level",
-      final_p:"Try NeuralWorship free for 7 days with your team.",
+      final_p:"Start free today with your team.",
       final_cta:"Start free now",
       foot_copy:"© 2026 NeuralWorship. All rights reserved."
     }
