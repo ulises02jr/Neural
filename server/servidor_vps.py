@@ -2074,6 +2074,8 @@ def api_webhook_lemonsqueezy():
             usuarios.actualizar_organizacion(org_id, estado_suscripcion=estado)
             logging.warning("LS sin mapeo de plan (org %s, producto %s)", org_id, product_name)
         _set_cfg("ls_cancelado_hasta", None)   # activa de nuevo: se quita el aviso de cancelación
+        if sub_id:
+            _set_cfg("ls_subscription_id", sub_id)   # para poder cancelarla desde el panel
         _guardar_portal()
         logging.info("LS org %s -> %s plan=%s (%s)", org_id, estado, plan, evento)
         return jsonify({"ok": True}), 200
@@ -2746,6 +2748,29 @@ def superadmin_org_eliminar(org_id):
     if confirmar != (org.get("nombre") or "").strip():
         flash("El nombre de confirmación no coincide. No se eliminó nada.", "error")
         return redirect(url_for("superadmin"))
+    # 0) Cancelar la(s) suscripción(es) en Lemon Squeezy ANTES de borrar (para que no siga el cobro).
+    aviso_sub = ""
+    try:
+        _cfg_org = get_config(org_id)
+        sub_ids = []
+        if _cfg_org.get("ls_subscription_id"):
+            sub_ids.append(_cfg_org["ls_subscription_id"])
+        sub_ids += [s for s in (_cfg_org.get("ls_addons") or {}).keys() if s]
+        if sub_ids:
+            if pagos.api_key():
+                fallidas = []
+                for sid in sub_ids:
+                    okc, msgc = pagos.cancelar_suscripcion(sid)
+                    if not okc:
+                        fallidas.append(str(sid))
+                        logging.error("cancelar sub %s org %s: %s", sid, org_id, msgc)
+                aviso_sub = (" ⚠️ No se pudieron cancelar algunas suscripciones en Lemon (%s): cancelalas a mano."
+                             % ", ".join(fallidas)) if fallidas else " Suscripción cancelada en Lemon Squeezy."
+            else:
+                aviso_sub = (" ⚠️ Ojo: esta organización tenía suscripción en Lemon Squeezy y NO se canceló "
+                             "(falta la API Key). Cancelala a mano en Lemon para que no siga el cobro.")
+    except Exception as e:
+        logging.error("cancelar subs al eliminar org %s: %s", org_id, e)
     # 1) Borrar los archivos de la organización (viven en orgs/<id>/…)
     try:
         import shutil
@@ -2758,7 +2783,7 @@ def superadmin_org_eliminar(org_id):
     ok, msg = usuarios.eliminar_organizacion(org_id)
     if ok:
         logging.info("SUPERADMIN eliminó org %s '%s'", org_id, org.get("nombre"))
-        flash("✓ Organización '%s' eliminada por completo (datos y archivos)." % org.get("nombre"), "success")
+        flash(("✓ Organización '%s' eliminada por completo (datos y archivos)." % org.get("nombre")) + aviso_sub, "success")
     else:
         flash("No se pudo eliminar: %s" % msg, "error")
     return redirect(url_for("superadmin"))

@@ -98,3 +98,38 @@ def store_id():
 
 def api_key():
     return _load().get("lemonsqueezy_api_key")
+
+
+def cancelar_suscripcion(sub_id):
+    """Cancela una suscripción en Lemon Squeezy vía su API (DELETE /subscriptions/<id>).
+       La suscripción queda 'cancelled' y sigue activa hasta fin de período.
+       Requiere lemonsqueezy_api_key configurado. Devuelve (ok, mensaje)."""
+    key = api_key()
+    if not key:
+        return False, "sin api_key configurada"
+    if not sub_id:
+        return False, "sin sub_id"
+    import ssl
+    import urllib.request
+    import urllib.error
+    url = "https://api.lemonsqueezy.com/v1/subscriptions/" + str(sub_id)
+    req = urllib.request.Request(url, method="DELETE", headers={
+        "Authorization": "Bearer " + key,
+        "Accept": "application/vnd.api+json",
+        "Content-Type": "application/vnd.api+json",
+        "User-Agent": "NeuralWorship/1.0",
+    })
+    try:
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=25, context=ctx) as resp:
+            resp.read()
+        return True, "cancelada"
+    except urllib.error.HTTPError as e:
+        detalle = ""
+        try:
+            detalle = e.read().decode("utf-8", "replace")[:150]
+        except Exception:
+            pass
+        return False, "HTTP %s %s" % (e.code, detalle)
+    except Exception as e:
+        return False, "%s: %s" % (type(e).__name__, e)
