@@ -237,6 +237,25 @@ def enviar_email_bienvenida_admin(destino, nombre, org_nombre, en_background=Tru
     return enviar_email(destino, asunto, html)
 
 
+def enviar_email_eliminacion(destino, nombre, org_nombre, en_background=True):
+    """Aviso de que la organización fue eliminada por incumplir los Términos / normas."""
+    asunto = "Tu organización en NeuralWorship fue eliminada"
+    contenido = f"""
+        <h2 style="margin:0 0 16px;color:#222">Hola {nombre},</h2>
+        <p style="color:#444;line-height:1.6">Te informamos que la organización
+           <strong>{org_nombre}</strong> y todo su contenido fueron
+           <strong>eliminados de NeuralWorship</strong> por incumplir nuestros
+           <strong>Términos de Servicio</strong> y las normas de la comunidad.</p>
+        <p style="color:#444;line-height:1.6">Si creés que se trata de un error o querés más
+           información, escribinos a <a href="mailto:{SOPORTE_EMAIL}" style="color:{ACENTO}">{SOPORTE_EMAIL}</a>.</p>
+    """
+    html = _envoltura("ORGANIZACIÓN ELIMINADA", contenido)
+    if en_background:
+        _enviar_email_background(destino, asunto, html)
+        return True, "Email programado en background"
+    return enviar_email(destino, asunto, html)
+
+
 def enviar_email_suspension(destino, nombre, org_nombre, en_background=True):
     """Aviso de suspensión temporal de la organización (para admin y músicos)."""
     asunto = "Tu cuenta de NeuralWorship fue suspendida temporalmente"

@@ -2748,6 +2748,15 @@ def superadmin_org_eliminar(org_id):
     if confirmar != (org.get("nombre") or "").strip():
         flash("El nombre de confirmación no coincide. No se eliminó nada.", "error")
         return redirect(url_for("superadmin"))
+    org_nombre = org.get("nombre") or "tu organización"
+    # Capturar destinatarios ANTES de borrar (para avisarles por correo que se eliminó).
+    _destinatarios = []
+    try:
+        for u in usuarios.listar_usuarios(org_id=org_id):
+            if u.get("estado") == "activo" and u.get("email") and "@" in u["email"]:
+                _destinatarios.append((u["email"], u.get("nombre") or ""))
+    except Exception as e:
+        logging.error("listar destinatarios eliminacion org %s: %s", org_id, e)
     # 0) Cancelar la(s) suscripción(es) en Lemon Squeezy ANTES de borrar (para que no siga el cobro).
     aviso_sub = ""
     try:
@@ -2783,6 +2792,12 @@ def superadmin_org_eliminar(org_id):
     ok, msg = usuarios.eliminar_organizacion(org_id)
     if ok:
         logging.info("SUPERADMIN eliminó org %s '%s'", org_id, org.get("nombre"))
+        # Avisar por correo a los usuarios que la organización fue eliminada.
+        for _correo, _nom in _destinatarios:
+            try:
+                emails_module.enviar_email_eliminacion(_correo, _nom, org_nombre)
+            except Exception as e:
+                logging.error("email eliminacion %s: %s", _correo, e)
         flash(("✓ Organización '%s' eliminada por completo (datos y archivos)." % org.get("nombre")) + aviso_sub, "success")
     else:
         flash("No se pudo eliminar: %s" % msg, "error")
