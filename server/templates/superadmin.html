@@ -204,10 +204,15 @@
       <a href="mailto:{{ o.owner_email }}?subject={{ ('NeuralWorship — Aviso sobre ' ~ o.nombre)|urlencode }}&body={{ ('Hola, te escribimos desde NeuralWorship en relación a tu organización «' ~ o.nombre ~ '». ')|urlencode }}"
          style="display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;color:#eaeaf0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14)">✉ Contactar dueño</a>
       {% endif %}
-      <form method="POST" action="{{ url_for('superadmin_org_eliminar', org_id=o.id) }}" onsubmit="return borrarOrg(this, {{ o.nombre|tojson }})" style="margin:0">
+      <button type="button" onclick="document.getElementById('del-{{ o.id }}').style.display='block'; this.style.display='none'" style="padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;color:#ff8080;background:rgba(220,70,70,.10);border:1px solid rgba(220,70,70,.45)">🗑 Eliminar organización</button>
+      <form id="del-{{ o.id }}" method="POST" action="{{ url_for('superadmin_org_eliminar', org_id=o.id) }}" style="display:none;margin:10px 0 0;background:rgba(220,70,70,.08);border:1px solid rgba(220,70,70,.4);border-radius:10px;padding:14px">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <input type="hidden" name="confirmar" value="">
-        <button type="submit" style="padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;color:#ff8080;background:rgba(220,70,70,.10);border:1px solid rgba(220,70,70,.45)">🗑 Eliminar organización</button>
+        <div style="font-size:12.5px;color:#ff9a9a;line-height:1.5;margin-bottom:10px">⚠️ Esto borra la organización y TODO su contenido (canciones, pistas, usuarios) de forma permanente e irreversible, y cancela su suscripción en Lemon. Escribí <b>{{ o.nombre }}</b> para confirmar:</div>
+        <input type="text" name="confirmar" autocomplete="off" placeholder="{{ o.nombre }}" style="width:100%;box-sizing:border-box;padding:10px 12px;background:#0d0d14;border:1px solid var(--line);border-radius:8px;color:#fff;font-size:14px;margin-bottom:10px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="submit" style="padding:9px 16px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:#c0392b;border:1px solid #c0392b">Eliminar definitivamente</button>
+          <button type="button" onclick="var f=document.getElementById('del-{{ o.id }}'); f.style.display='none'; f.previousElementSibling.style.display='inline-block'" style="padding:9px 16px;border-radius:8px;font-size:13px;cursor:pointer;background:var(--raised);border:1px solid var(--line);color:var(--txt)">Cancelar</button>
+        </div>
       </form>
     </div>
     {% endif %}
