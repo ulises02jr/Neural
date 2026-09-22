@@ -130,10 +130,12 @@
           </tr>
           {% endfor %}
           <tr class="sub"><td>Subtotal suscripciones</td><td></td><td>${{ '%.2f'|format(conta.ing_susc) }}</td><td>${{ '%.0f'|format(conta.ing_susc*12) }}</td></tr>
+          {% if false %}  {# Ampliaciones desactivadas por ahora #}
           <tr class="grp"><td colspan="4">Amenidades / add-ons</td></tr>
           <tr><td>Asientos extra <span class="mut">($2 c/u)</span></td><td>{{ conta.addon_asientos_n }}</td><td>${{ '%.2f'|format(conta.ing_asientos) }}</td><td>${{ '%.0f'|format(conta.ing_asientos*12) }}</td></tr>
           <tr><td>Bloques +50 GB <span class="mut">($5 c/u)</span></td><td>{{ conta.addon_gb_bloques }}</td><td>${{ '%.2f'|format(conta.ing_gb) }}</td><td>${{ '%.0f'|format(conta.ing_gb*12) }}</td></tr>
           <tr class="sub"><td>Subtotal add-ons</td><td></td><td>${{ '%.2f'|format(conta.ing_addons) }}</td><td>${{ '%.0f'|format(conta.ing_addons*12) }}</td></tr>
+          {% endif %}
           <tr class="tot"><td>TOTAL INGRESOS</td><td></td><td>${{ '%.2f'|format(conta.ingresos) }}</td><td>${{ '%.0f'|format(conta.ingresos*12) }}</td></tr>
         </tbody>
       </table>
