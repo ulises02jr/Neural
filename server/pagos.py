@@ -100,6 +100,39 @@ def api_key():
     return _load().get("lemonsqueezy_api_key")
 
 
+def cancelar_suscripciones_de_email(email):
+    """Cancela TODAS las suscripciones activas de un correo vía la API de Lemon Squeezy.
+       Robusto: no depende de IDs guardados. Devuelve (canceladas, fallidas, mensaje)."""
+    key = api_key()
+    if not key:
+        return 0, 0, "sin api_key configurada"
+    if not email:
+        return 0, 0, "sin email"
+    import ssl
+    import json
+    import urllib.parse
+    import urllib.request
+    url = "https://api.lemonsqueezy.com/v1/subscriptions?filter[user_email]=" + urllib.parse.quote(email)
+    try:
+        req = urllib.request.Request(url, headers={
+            "Authorization": "Bearer " + key, "Accept": "application/vnd.api+json"})
+        with urllib.request.urlopen(req, timeout=25, context=ssl.create_default_context()) as r:
+            data = json.loads(r.read())
+    except Exception as e:
+        return 0, 0, "listar: %s" % e
+    canceladas = 0
+    fallidas = 0
+    for s in data.get("data", []):
+        st = ((s.get("attributes") or {}).get("status") or "")
+        if st in ("active", "on_trial", "past_due", "paused"):
+            okc, _ = cancelar_suscripcion(s.get("id"))
+            if okc:
+                canceladas += 1
+            else:
+                fallidas += 1
+    return canceladas, fallidas, "ok"
+
+
 def cancelar_suscripcion(sub_id):
     """Cancela una suscripción en Lemon Squeezy vía su API (DELETE /subscriptions/<id>).
        La suscripción queda 'cancelled' y sigue activa hasta fin de período.

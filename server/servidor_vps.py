@@ -2068,8 +2068,18 @@ def api_webhook_lemonsqueezy():
     if evento in ("subscription_created", "subscription_updated", "subscription_payment_success",
                   "subscription_resumed", "subscription_unpaused") or status in ("active", "on_trial"):
         estado = "prueba" if status == "on_trial" else "activa"
+        _prev_paquete = (usuarios.obtener_organizacion(org_id) or {}).get("paquete")
         if plan and plan in PAQUETES:
             _aplicar_limites_org(org_id, plan=plan, estado=estado)   # base + extras
+            # Correo de agradecimiento al CONTRATAR o SUBIR a un plan pagado (no en renovaciones).
+            if plan in ("premium", "ministerio") and plan != _prev_paquete:
+                try:
+                    _dest = (attrs.get("user_email") or "").strip()
+                    if _dest and "@" in _dest:
+                        emails_module.enviar_email_gracias_plan(
+                            _dest, attrs.get("user_name") or "", PAQUETES[plan]["nombre"])
+                except Exception as e:
+                    logging.error("email gracias plan org %s: %s", org_id, e)
         else:
             usuarios.actualizar_organizacion(org_id, estado_suscripcion=estado)
             logging.warning("LS sin mapeo de plan (org %s, producto %s)", org_id, product_name)
@@ -2760,24 +2770,29 @@ def superadmin_org_eliminar(org_id):
     # 0) Cancelar la(s) suscripción(es) en Lemon Squeezy ANTES de borrar (para que no siga el cobro).
     aviso_sub = ""
     try:
+        # Correo del dueño: cancelamos TODAS sus suscripciones activas (sin depender de IDs guardados).
+        _owner = usuarios.buscar_por_id(org.get("owner_user_id")) if org.get("owner_user_id") else None
+        _owner_email = (_owner or {}).get("email") or ""
         _cfg_org = get_config(org_id)
         sub_ids = []
         if _cfg_org.get("ls_subscription_id"):
             sub_ids.append(_cfg_org["ls_subscription_id"])
         sub_ids += [s for s in (_cfg_org.get("ls_addons") or {}).keys() if s]
-        if sub_ids:
-            if pagos.api_key():
-                fallidas = []
-                for sid in sub_ids:
-                    okc, msgc = pagos.cancelar_suscripcion(sid)
-                    if not okc:
-                        fallidas.append(str(sid))
-                        logging.error("cancelar sub %s org %s: %s", sid, org_id, msgc)
-                aviso_sub = (" ⚠️ No se pudieron cancelar algunas suscripciones en Lemon (%s): cancelalas a mano."
-                             % ", ".join(fallidas)) if fallidas else " Suscripción cancelada en Lemon Squeezy."
-            else:
-                aviso_sub = (" ⚠️ Ojo: esta organización tenía suscripción en Lemon Squeezy y NO se canceló "
-                             "(falta la API Key). Cancelala a mano en Lemon para que no siga el cobro.")
+        if pagos.api_key():
+            canc = fall = 0
+            if _owner_email:
+                canc, fall, _m = pagos.cancelar_suscripciones_de_email(_owner_email)
+            for sid in sub_ids:   # respaldo por si el correo del pago difiere
+                okc, _m = pagos.cancelar_suscripcion(sid)
+                if okc:
+                    canc += 1
+            if fall:
+                aviso_sub = " ⚠️ Algunas suscripciones no se pudieron cancelar en Lemon; revisalas a mano."
+            elif canc:
+                aviso_sub = " Suscripción(es) cancelada(s) en Lemon Squeezy."
+        elif sub_ids or _owner_email:
+            aviso_sub = (" ⚠️ Ojo: no se canceló la suscripción en Lemon (falta la API Key). "
+                         "Cancelala a mano para que no siga el cobro.")
     except Exception as e:
         logging.error("cancelar subs al eliminar org %s: %s", org_id, e)
     # 1) Borrar los archivos de la organización (viven en orgs/<id>/…)

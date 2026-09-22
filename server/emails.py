@@ -237,6 +237,29 @@ def enviar_email_bienvenida_admin(destino, nombre, org_nombre, en_background=Tru
     return enviar_email(destino, asunto, html)
 
 
+def enviar_email_gracias_plan(destino, nombre, plan_nombre, en_background=True):
+    """Agradecimiento cuando el admin contrata o sube a un plan pagado (Plus/Premium)."""
+    asunto = f"¡Gracias por activar el plan {plan_nombre}! — NeuralWorship"
+    contenido = f"""
+        <h2 style="margin:0 0 16px;color:#222">¡Gracias, {nombre}! 🎉</h2>
+        <p style="color:#444;line-height:1.6">Tu organización ahora tiene activo el plan
+           <strong>{plan_nombre}</strong>. Ya podés aprovechar todas las funciones que incluye.</p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="{URL_APP}/admin/login"
+             style="display:inline-block;background:{ACENTO};color:#000;padding:14px 32px;
+                    border-radius:8px;text-decoration:none;font-weight:700">Ir a mi panel</a>
+        </div>
+        <p style="color:#888;font-size:13px;line-height:1.5">
+          Podés gestionar o cancelar tu suscripción cuando quieras desde tu panel. ¡Gracias por confiar en NeuralWorship!
+        </p>
+    """
+    html = _envoltura("PLAN ACTIVADO", contenido)
+    if en_background:
+        _enviar_email_background(destino, asunto, html)
+        return True, "Email programado en background"
+    return enviar_email(destino, asunto, html)
+
+
 def enviar_email_eliminacion(destino, nombre, org_nombre, en_background=True):
     """Aviso de que la organización fue eliminada por incumplir los Términos / normas."""
     asunto = "Tu organización en NeuralWorship fue eliminada"
