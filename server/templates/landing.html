@@ -340,7 +340,7 @@
           {{ rowf(hasSync,'f_nsync','NeuralSync para Windows/Mac') }}
         </ul>
 
-        {% if pk in ['premium','ministerio'] %}
+        {% if false %}  {# Ampliaciones desactivadas por ahora #}
         <div style="border-top:1px dashed rgba(255,255,255,.14);margin-top:14px;padding-top:12px">
           <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;opacity:.55;margin-bottom:8px" data-i18n="amp_h">Ampliaciones</div>
           <div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;margin:5px 0"><span data-i18n="amp_gb">+50 GB de almacenamiento</span><span style="font-weight:700;white-space:nowrap">$5<small style="opacity:.6"> /mes</small></span></div>
@@ -353,7 +353,7 @@
     <div style="text-align:center;margin-top:34px">
       <a class="btn btn-primary" href="{{ url_for('crear_organizacion') }}" data-i18n="plan_cta" style="min-width:260px">Registrarme</a>
     </div>
-    <div class="pricing-note" data-i18n="pricing_note">En los planes Plus y Premium puedes ampliar almacenamiento y asientos · Cambia o cancela tu plan cuando quieras.</div>
+    <div class="pricing-note" data-i18n="pricing_note">Cambia o cancela tu plan cuando quieras.</div>
   </div>
 </section>
 
@@ -445,7 +445,7 @@
       f_clicks:"Add a click section at the end of songs", f_midisync:"MIDI note playback in sync",
       f_midimulti:"Multiple MIDI outputs for lyrics/lights and effects", f_midiclock:"MIDI Clock",
       f_gestalm:"On-device storage management", f_nsync:"NeuralSync for Windows/Mac",
-      pricing_note:"On Plus and Premium you can add storage and seats · Change or cancel your plan whenever you want.",
+      pricing_note:"Change or cancel your plan whenever you want.",
       final_h2:"Take your church's worship to the next level",
       final_p:"Start free today with your team.",
       final_cta:"Start free now",
