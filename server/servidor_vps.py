@@ -2745,7 +2745,7 @@ def superadmin_org_eliminar(org_id):
         flash("La organización no existe.", "error")
         return redirect(url_for("superadmin"))
     confirmar = (request.form.get("confirmar") or "").strip()
-    if confirmar != (org.get("nombre") or "").strip():
+    if confirmar.lower() != (org.get("nombre") or "").strip().lower():
         flash("El nombre de confirmación no coincide. No se eliminó nada.", "error")
         return redirect(url_for("superadmin"))
     org_nombre = org.get("nombre") or "tu organización"

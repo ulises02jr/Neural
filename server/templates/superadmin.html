@@ -231,7 +231,7 @@
   function borrarOrg(form, nombre){
     var r = prompt('⚠️ Esto BORRA la organización y TODO su contenido (canciones, pistas, usuarios) de forma permanente e irreversible.\n\nEscribí el nombre EXACTO para confirmar:\n\n' + nombre);
     if(r === null) return false;
-    if(r.trim() !== String(nombre).trim()){ alert('El nombre no coincide. No se borró nada.'); return false; }
+    if(r.trim().toLowerCase() !== String(nombre).trim().toLowerCase()){ alert('El nombre no coincide. No se borró nada.'); return false; }
     form.confirmar.value = r.trim();
     return true;
   }
