@@ -2038,17 +2038,31 @@ def api_webhook_lemonsqueezy():
     if plan is None:
         plan = pagos.plan_de_nombre(product_name, variant_name)
 
+    def _set_cfg(clave, valor):
+        try:
+            cfg = get_config(org_id)
+            if valor:
+                cfg[clave] = valor
+            else:
+                cfg.pop(clave, None)
+            guardar_config(cfg, org_id)
+        except Exception as e:
+            logging.error("guardar %s org %s: %s", clave, org_id, e)
+
     if evento == "subscription_expired" or status in ("expired", "unpaid"):
         # Terminó el plan pagado -> vuelve al plan Básico (Gratis), sin cobro.
         # NO se borra nada (canciones, notas MIDI, etc. quedan guardadas, solo se ocultan).
         _aplicar_limites_org(org_id, plan="basico", estado="activa")
+        _set_cfg("ls_cancelado_hasta", None)   # ya terminó: se limpia el aviso
         logging.info("LS org %s -> basico (plan pagado terminado: %s/%s)", org_id, evento, status)
         return jsonify({"ok": True}), 200
 
     if status == "cancelled":
         # Cancelada pero sigue activa hasta fin de periodo; LS mandara 'expired' al terminar.
         # (Así respetamos el último mes que ya pagó, sin cortarle antes.)
-        logging.info("LS org %s cancelacion programada (%s)", org_id, evento)
+        # Guardamos la fecha de fin para avisarle al usuario hasta cuándo tiene sus funciones.
+        _set_cfg("ls_cancelado_hasta", attrs.get("ends_at") or attrs.get("renews_at") or "")
+        logging.info("LS org %s cancelacion programada hasta %s (%s)", org_id, attrs.get("ends_at"), evento)
         return jsonify({"ok": True}), 200
 
     if evento in ("subscription_created", "subscription_updated", "subscription_payment_success",
@@ -2059,6 +2073,7 @@ def api_webhook_lemonsqueezy():
         else:
             usuarios.actualizar_organizacion(org_id, estado_suscripcion=estado)
             logging.warning("LS sin mapeo de plan (org %s, producto %s)", org_id, product_name)
+        _set_cfg("ls_cancelado_hasta", None)   # activa de nuevo: se quita el aviso de cancelación
         _guardar_portal()
         logging.info("LS org %s -> %s plan=%s (%s)", org_id, estado, plan, evento)
         return jsonify({"ok": True}), 200
@@ -2691,27 +2706,12 @@ def superadmin():
 @app.route("/superadmin/org/<int:org_id>/actualizar", methods=["POST"])
 @super_admin_required
 def superadmin_org_actualizar(org_id):
-    def _int(v):
-        try:
-            return int(v)
-        except Exception:
-            return None
-    paquete = request.form.get("paquete") or None
-    # La org del operador queda fija en ministerio (no se cambia).
-    if int(org_id) == OPERADOR_ORG_ID:
-        paquete = "ministerio"
-    # Asientos y GB NO se editan a mano: se derivan del paquete elegido.
-    max_musicos = almacen_gb = None
-    if paquete and paquete in PAQUETES:
-        max_musicos = PAQUETES[paquete]["asientos"]
-        almacen_gb = PAQUETES[paquete]["gb"]
+    # El súper-admin SOLO cambia el estado (activar / suspender). El paquete lo define
+    # la suscripción del cliente en Lemon Squeezy, así que aquí es de solo lectura.
     nuevo_estado = (request.form.get("estado_suscripcion") or "").strip()
     estado_anterior = (usuarios.obtener_organizacion(org_id) or {}).get("estado_suscripcion")
     ok = usuarios.actualizar_organizacion(
         org_id,
-        paquete=paquete,
-        max_musicos=max_musicos,
-        almacen_gb=almacen_gb,
         estado_suscripcion=(nuevo_estado or None),
     )
     # Si se acaba de SUSPENDER (no estaba suspendida antes), avisar por correo
@@ -2770,9 +2770,12 @@ def admin_planes():
     """Pantalla para elegir/cambiar de plan (3 tiras)."""
     org = usuarios.obtener_organizacion(org_actual())
     try:
-        portal_url = get_config(org_actual()).get("ls_portal_url")
+        _cfg = get_config(org_actual())
+        portal_url = _cfg.get("ls_portal_url")
+        cancelado_hasta = (_cfg.get("ls_cancelado_hasta") or "")[:10]   # solo la fecha (YYYY-MM-DD)
     except Exception:
         portal_url = None
+        cancelado_hasta = ""
     _eg, _es = _extras_org(org_actual())
     _actual = (org or {}).get("paquete")
     _estado = (org or {}).get("estado_suscripcion") or "activa"
@@ -2783,7 +2786,9 @@ def admin_planes():
                            es_operador=(int(org_actual()) == OPERADOR_ORG_ID),
                            tiene_sub_paga=_tiene_sub_paga,
                            ls_checkout=LS_CHECKOUT, ls_addons=LS_ADDONS, org_id=org_actual(),
-                           portal_url=portal_url, extra_gb=_eg, extra_asientos=_es)
+                           portal_url=portal_url, extra_gb=_eg, extra_asientos=_es,
+                           cancelado_hasta=cancelado_hasta,
+                           nombre_plan=(PAQUETES.get(_actual, {}) or {}).get("nombre", ""))
 
 
 @app.route("/admin/planes/elegir", methods=["POST"])

@@ -183,16 +183,8 @@
     <form class="edit" method="POST" action="{{ url_for('superadmin_org_actualizar', org_id=o.id) }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
       <div>
-        <label>Paquete</label>
-        {% if o.id == 1 %}
-        <input type="text" value="{{ paquetes[o.paquete].nombre }} · tu organización" readonly tabindex="-1" style="opacity:.6;cursor:not-allowed;background:rgba(255,255,255,.03)">
-        {% else %}
-        <select name="paquete" onchange="aplicarPaquete(this)">
-          {% for p in ['basico','premium','ministerio'] %}
-          <option value="{{ p }}" {% if o.paquete == p %}selected{% endif %}>{{ paquetes[p].nombre }}</option>
-          {% endfor %}
-        </select>
-        {% endif %}
+        <label>Paquete <span style="opacity:.5;font-size:11px">(lo define la suscripción del cliente)</span></label>
+        <input type="text" value="{{ paquetes[o.paquete].nombre }}{% if o.id == 1 %} · tu organización{% endif %}" readonly tabindex="-1" style="opacity:.6;cursor:not-allowed;background:rgba(255,255,255,.03)">
       </div>
       <div><label>Asientos <span style="opacity:.5;font-size:11px">(según paquete)</span></label><input type="number" class="f-asientos" value="{{ o.max_musicos }}" readonly tabindex="-1" style="opacity:.55;cursor:not-allowed;background:rgba(255,255,255,.03)"></div>
       <div><label>GB <span style="opacity:.5;font-size:11px">(según paquete)</span></label><input type="number" class="f-gb" value="{{ o.almacen_gb }}" readonly tabindex="-1" style="opacity:.55;cursor:not-allowed;background:rgba(255,255,255,.03)"></div>
