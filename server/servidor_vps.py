@@ -210,7 +210,10 @@ def _limpiar_local(*paths):
 
 
 def hash_password(plain):
-    return hashlib.sha256(plain.encode("utf-8")).hexdigest()
+    # Hash fuerte y salado (PBKDF2-SHA256). Antes se usaba SHA-256 sin sal para el
+    # 'password_musicos' (config heredada del viejo login compartido, hoy sin uso de
+    # verificación). Se delega a la misma función salada que usan los usuarios.
+    return usuarios.hash_password(plain)
 
 
 def cargar_config(org=1):
