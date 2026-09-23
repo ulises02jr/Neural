@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
 import '../models.dart';
+import '../widgets/brand.dart';
 import 'login_screen.dart';
 import 'chart_screen.dart';
 import 'settings_screen.dart';
@@ -123,13 +124,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
+        leadingWidth: 58,
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 16),
+          child: Center(child: NeuralChartsIcon(size: 26)),
+        ),
         title: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Text('NeuralCharts',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                style: TextStyle(fontFamily: NW.brand, fontSize: 15, fontWeight: FontWeight.w600)),
             Text(
                 Api.I.orgNombre.isNotEmpty
                     ? Api.I.orgNombre

@@ -84,7 +84,7 @@ class _ChartScreenState extends State<ChartScreen> {
   bool get _showLyric => _modo != 'acordes';
   Color get _chordColor => _colorAcorde ?? NW.chord;
   FontWeight get _chordWeight =>
-      _grosor == 'fino' ? FontWeight.w400 : (_grosor == 'grueso' ? FontWeight.w800 : FontWeight.w700);
+      _grosor == 'fino' ? FontWeight.w400 : (_grosor == 'grueso' ? FontWeight.w800 : FontWeight.w600);
 
   // Paleta segun tema (dia/noche)
   Color get _cBg => _claro ? const Color(0xFFF4F4F6) : NW.bg;

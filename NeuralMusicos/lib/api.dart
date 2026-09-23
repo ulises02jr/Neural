@@ -9,21 +9,50 @@ class Api {
   static const String baseUrl = 'https://neuralworship.com';
 
   String? token;
+  String? session; // token de sesión única por dispositivo
   String orgNombre = '';
   String nombre = '';
   String apellido = '';
   Map<String, dynamic> features = {};
+
+  /// Se dispara cuando el servidor cierra esta sesión porque se inició en otro
+  /// dispositivo. La UI lo usa para volver al login y avisar al usuario.
+  void Function(String mensaje)? onKicked;
+  bool _kicked = false;
 
   String get nombreCompleto => [nombre, apellido].where((s) => s.isNotEmpty).join(' ');
 
   static final Api I = Api._();
   Api._();
 
-  Map<String, String> get _authHeaders => {'Authorization': 'Bearer ${token ?? ''}'};
+  Map<String, String> get _authHeaders => {
+        'Authorization': 'Bearer ${token ?? ''}',
+        if (session != null && session!.isNotEmpty) 'X-Session-Token': session!,
+      };
+
+  /// Revisa si el servidor expulsó esta sesión (401 sesion_reemplazada).
+  /// Devuelve true si fue expulsada; en ese caso cierra sesión y avisa a la UI.
+  bool _revisarExpulsion(http.Response r) {
+    if (r.statusCode != 401) return false;
+    try {
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      if (j['error'] == 'sesion_reemplazada') {
+        final msg = (j['mensaje'] ?? 'Se inició sesión en otro dispositivo.').toString();
+        if (!_kicked) {
+          _kicked = true;
+          logout();
+          onKicked?.call(msg);
+        }
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
 
   // Sesion persistente via el archivo de preferencias nativo (neural/app).
   Future<void> cargarSesion() async {
     token = AppChannel.I.get('token');
+    session = AppChannel.I.get('session');
     orgNombre = (AppChannel.I.get('org', '') ?? '').toString();
     nombre = (AppChannel.I.get('nombre', '') ?? '').toString();
     apellido = (AppChannel.I.get('apellido', '') ?? '').toString();
@@ -34,6 +63,7 @@ class Api {
   Future<void> _guardarSesion() async {
     await AppChannel.I.setAll({
       'token': token,
+      'session': session,
       'org': orgNombre,
       'nombre': nombre,
       'apellido': apellido,
@@ -42,12 +72,21 @@ class Api {
   }
 
   Future<void> logout() async {
+    // Avisar al servidor para cerrar la sesión (best-effort).
+    final s = session;
+    if (s != null && s.isNotEmpty) {
+      try {
+        await http.post(Uri.parse('$baseUrl/api/auth/logout'),
+            headers: {'X-Session-Token': s}).timeout(const Duration(seconds: 6));
+      } catch (_) {}
+    }
     token = null;
+    session = null;
     orgNombre = '';
     nombre = '';
     apellido = '';
     features = {};
-    await AppChannel.I.remove(['token', 'org', 'nombre', 'apellido', 'features']);
+    await AppChannel.I.remove(['token', 'session', 'org', 'nombre', 'apellido', 'features']);
   }
 
   bool get logueado => token != null && token!.isNotEmpty;
@@ -65,10 +104,12 @@ class Api {
       final j = jsonDecode(r.body) as Map<String, dynamic>;
       if (r.statusCode == 200 && j['ok'] == true) {
         token = j['token']?.toString();
+        session = j['session']?.toString();
         orgNombre = (j['org_nombre'] ?? '').toString();
         nombre = (j['nombre'] ?? '').toString();
         apellido = (j['apellido'] ?? '').toString();
         features = Map<String, dynamic>.from(j['features'] ?? {});
+        _kicked = false;
         await _guardarSesion();
         return {'ok': true};
       }
@@ -145,6 +186,7 @@ class Api {
       final r = await http
           .get(Uri.parse('$baseUrl/api/live/setlists'), headers: _authHeaders)
           .timeout(const Duration(seconds: 20));
+      if (_revisarExpulsion(r)) return {'ok': false, 'error': 'kicked'};
       if (r.statusCode == 403) return {'ok': false, 'error': 'unauthorized'};
       final j = jsonDecode(r.body) as Map<String, dynamic>;
       if (j['ok'] != true) return {'ok': false};
@@ -168,6 +210,7 @@ class Api {
       final r = await http
           .get(Uri.parse('$baseUrl/api/live/chart/$numero?t=$sem'), headers: _authHeaders)
           .timeout(const Duration(seconds: 20));
+      if (_revisarExpulsion(r)) return null;
       final j = jsonDecode(r.body) as Map<String, dynamic>;
       if (j['ok'] != true) return null;
       return Chart.fromJson(j);
@@ -226,6 +269,7 @@ class Api {
       final r = await http
           .get(Uri.parse('$baseUrl/api/live/pistas/$numero?t=$sem'), headers: _authHeaders)
           .timeout(const Duration(seconds: 20));
+      if (_revisarExpulsion(r)) return null;
       if (r.statusCode != 200) return null;
       return jsonDecode(r.body) as Map<String, dynamic>;
     } catch (e) {

@@ -15,6 +15,15 @@ NeuralPlay/JUCE/
 NeuralPlay/build/
 NeuralPlay/stems/
 
+# ───── NeuralMusicos / NeuralCharts (Flutter) ─────
+NeuralMusicos/build/
+NeuralMusicos/.dart_tool/
+NeuralMusicos/.flutter-plugins
+NeuralMusicos/.flutter-plugins-dependencies
+NeuralMusicos/ios/Pods/
+NeuralMusicos/ios/.symlinks/
+NeuralMusicos/**/Flutter/ephemeral/
+
 # ───── NeuralSync (el puente, antes NeuralWorship) ─────
 NeuralSync/**/config.json
 NeuralSync/config.json

@@ -122,6 +122,15 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_invit_token ON invitaciones(token);
             CREATE INDEX IF NOT EXISTS idx_invit_org ON invitaciones(org_id);
+
+            CREATE TABLE IF NOT EXISTS sesiones (
+                user_id INTEGER PRIMARY KEY,
+                session_token TEXT UNIQUE NOT NULL,
+                device TEXT,
+                actualizado TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES usuarios(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_sesiones_token ON sesiones(session_token);
         """)
         try:
             conn.execute("ALTER TABLE usuarios ADD COLUMN acento TEXT")
@@ -459,6 +468,51 @@ def autenticar(email, password):
         except Exception:
             pass
     return u
+
+
+# ─────────────── Sesión única por dispositivo ───────────────
+# Cada usuario tiene UNA sola sesión activa. Al abrir sesión en un dispositivo
+# nuevo, se reemplaza el token anterior → el dispositivo viejo queda inválido.
+
+def abrir_sesion(user_id, device=None):
+    """Crea (o reemplaza) la sesión activa del usuario. Devuelve el session_token
+    nuevo. Cualquier sesión previa de ese usuario queda invalidada al instante."""
+    stoken = secrets.token_urlsafe(32)
+    with _conexion() as conn:
+        conn.execute(
+            "INSERT INTO sesiones (user_id, session_token, device, actualizado) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "session_token=excluded.session_token, device=excluded.device, "
+            "actualizado=excluded.actualizado",
+            (int(user_id), stoken, (device or "")[:120], _ahora_iso()),
+        )
+    return stoken
+
+
+def sesion_valida(session_token):
+    """True si ese session_token es la sesión activa de algún usuario."""
+    if not session_token:
+        return False
+    with _conexion() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM sesiones WHERE session_token = ?", (session_token,)
+        ).fetchone()
+    return row is not None
+
+
+def cerrar_sesion(session_token):
+    """Cierra (borra) la sesión con ese token, si existe."""
+    if not session_token:
+        return
+    with _conexion() as conn:
+        conn.execute("DELETE FROM sesiones WHERE session_token = ?", (session_token,))
+
+
+def cerrar_sesiones_usuario(user_id):
+    """Cierra todas las sesiones de un usuario (p.ej. al desactivarlo)."""
+    with _conexion() as conn:
+        conn.execute("DELETE FROM sesiones WHERE user_id = ?", (int(user_id),))
 
 
 def crear_codigo_reset(user_id):

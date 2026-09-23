@@ -24,6 +24,8 @@
   .header .links{display:flex;gap:8px;font-size:12px;flex-shrink:0}
   .header .links a{color:var(--txt3);text-decoration:none;padding:7px 11px;border:1px solid var(--line);border-radius:7px;transition:all 0.15s}
   .header .links a:hover{color:var(--txt);border-color:var(--txt2)}
+  .header .links a.super-link{color:var(--gold);border-color:color-mix(in srgb, var(--gold) 45%, transparent)}
+  .header .links a.super-link:hover{color:var(--gold);border-color:var(--gold);background:color-mix(in srgb, var(--gold) 10%, transparent)}
 
   .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:14px}
   .card h2{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
@@ -181,6 +183,7 @@
       </div>
     </div>
     <div class="links">
+      {% if es_super %}<a href="{{ url_for('superadmin') }}" class="super-link" title="Súper-admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;vertical-align:-2px;margin-right:5px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>Súper-admin</a>{% endif %}
       <a href="{{ url_for('logout') }}">Salir</a>
     </div>
   </div>
@@ -208,7 +211,7 @@
 
   <div id="launcher" class="launcher">
   <nav class="iconnav">
-    {% if features.neuralsync %}<a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('live'){% else %}avisoPlan(){% endif %}"><span class="ni-ico" style="padding:0;overflow:hidden"><img src="/static/neuralworship.png" alt="NeuralSync" style="width:100%;height:100%;object-fit:cover;border-radius:21px"></span><span class="ni-lbl">NeuralSync</span></a>{% endif %}
+    {% if false %}{# NeuralSync ya no se vende como app aparte; la tecnología de sincronía vive dentro de NeuralPlay #}<a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('live'){% else %}avisoPlan(){% endif %}"><span class="ni-ico" style="padding:0;overflow:hidden"><img src="/static/neuralworship.png" alt="NeuralSync" style="width:100%;height:100%;object-fit:cover;border-radius:21px"></span><span class="ni-lbl">NeuralSync</span></a>{% endif %}
     {# NeuralPlay se descarga desde el App Store: se quita el icono de descarga directa del admin #}
     {% if features.usuarios %}<a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('usuarios'){% else %}avisoPlan(){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="ni-lbl">Usuarios</span></a>{% endif %}
     <a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('repertorios'){% else %}avisoPlan(){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span class="ni-lbl">Repertorios</span></a>
@@ -216,11 +219,12 @@
     <a class="navicon {{ 'locked' if suspendida else '' }}" href="javascript:void(0)" onclick="{% if suspendida %}avisoPlan(){% else %}showSection('organizacion'){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span><span class="ni-lbl">Información de Organización</span></a>
     <a class="navicon {{ 'locked' if suspendida else '' }}" href="javascript:void(0)" onclick="{% if suspendida %}avisoPlan(){% else %}showSection('suscripcion'){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span><span class="ni-lbl">Suscripción</span></a>
     {% if features.usuarios %}<a class="navicon {{ '' if plan_activo else 'locked' }}" href="{% if plan_activo %}{{ url_for('principal') }}{% else %}javascript:void(0){% endif %}" {% if not plan_activo %}onclick="avisoPlan()"{% endif %}><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></span><span class="ni-lbl">Modo Músico</span></a>{% endif %}
-    {% if es_super %}<a class="navicon" href="{{ url_for('superadmin') }}"><span class="ni-ico" style="border-color:var(--gold);color:var(--gold)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span><span class="ni-lbl">Súper-admin</span></a>{% endif %}
+    {# Súper-admin movido al header (botón junto a Salir) para no dejar el grid impar #}
   </nav>
   </div>
 
   <!-- Live (Mac local) -->
+  {% if false %}{# NeuralSync ya no se distribuye como app aparte; la sincronía vive dentro de NeuralPlay #}
   <div class="card sec-card" id="live">
     <h2>NeuralSync</h2>
     <div style="font-size:13px;color:var(--txt2);margin:2px 0 16px"><b>NeuralSync</b> es el puente para quienes tocan desde su <b>propio DAW</b> (Logic, Ableton, etc.): al abrirlo en la computadora sincroniza tu sesión en vivo con los músicos, que ven el aviso “EN VIVO” en su pantalla para entrar a los charts. Si usás <b>NeuralPlay</b> como reproductor, esta función ya viene integrada. Descargá la app para tu sistema.</div>
@@ -249,6 +253,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   {# Sección de descarga directa de NeuralPlay eliminada: la app se distribuye por el App Store #}
 
@@ -600,21 +605,18 @@
       {{ frow(true, 'Cambio de Tono/Tempo fuera de línea a los 12 tonos') }}
       {{ frow(true, 'Crea y guarda varios repertorios') }}
       {{ frow(true, 'Sincronización en vivo en NeuralCharts') }}
-      {{ frow(full, 'Ajusta tiempo inicial y final') }}
+      {{ frow(true, 'Ajusta tiempo inicial y final') }}
       {{ frow(true, 'Reproduce pads ambientales con canciones') }}
       {{ frow(full, 'Repite secciones con Loop/Loop Infinito') }}
       {{ frow(full, 'Asignación MIDI/Teclado/Controlador') }}
       {{ frow(true, 'NeuralPlay para Mac / iPad') }}
       {{ frow(true, 'Interfaz avanzada de Pad Player') }}
       {{ frow(true, ('Hasta 32 MultiOuts® con buses' if full else '2 salidas')) }}
-      {{ frow(full, 'Añadir sección de clicks a las canciones al final') }}
+      {{ frow(true, 'Añadir sección de clicks a las canciones al final') }}
       {{ frow(full, 'Reproductor de Notas MIDI en Sincronización') }}
       {{ frow(full, 'Múltiples Salidas MIDI para Lyrics/Luces y Efectos') }}
       {{ frow(full, 'MIDI Clock') }}
       {{ frow(true, 'Gestión de almacenamiento en dispositivo') }}
-
-      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:18px 0 4px">NeuralSync</div>
-      {{ frow(sync, 'NeuralSync para Windows/Mac') }}
     </div>
 
   </div>

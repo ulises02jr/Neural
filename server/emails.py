@@ -180,27 +180,33 @@ def enviar_email_bienvenida(destino, nombre, en_background=True):
     return enviar_email(destino, asunto, html)
 
 
-def enviar_email_invitacion(destino, org_nombre, link, en_background=True):
-    """Email con el link de invitación para unirse a una organización."""
+def enviar_email_invitacion(destino, org_nombre, codigo, en_background=True):
+    """Email de invitación: el músico se une desde la app NeuralCharts con el código."""
     asunto = f"Te invitaron a {org_nombre} — NeuralWorship"
     contenido = f"""
         <h2 style="margin:0 0 16px;color:#222">¡Te invitaron a {org_nombre}!</h2>
         <p style="color:#444;line-height:1.6">Fuiste invitado a unirte al equipo de música de
            <strong>{org_nombre}</strong> en NeuralWorship.</p>
-        <p style="color:#444;line-height:1.6">Hacé clic en el botón para crear tu cuenta (queda lista al instante):</p>
-        <div style="text-align:center;margin:28px 0">
-          <a href="{link}"
-             style="display:inline-block;background:{ACENTO};color:#000;padding:14px 32px;
+        <p style="color:#444;line-height:1.6">Para entrar, descargá la app <strong>NeuralCharts</strong>
+           en tu teléfono o tablet, creá tu cuenta y unite a tu ministerio con este código:</p>
+        <div style="text-align:center;margin:26px 0 18px">
+          <div style="display:inline-block;background:#f4f4f5;border:1px dashed #cfcfd4;border-radius:10px;
+                      padding:14px 30px;font-size:26px;font-weight:800;letter-spacing:6px;color:#222;
+                      font-family:ui-monospace,Menlo,monospace">{codigo}</div>
+        </div>
+        <div style="text-align:center;margin:8px 0 22px">
+          <a href="{URL_APP}/descargar-app"
+             style="display:inline-block;background:{ACENTO};color:#000;padding:14px 34px;
                     border-radius:8px;text-decoration:none;font-weight:700">
-            Aceptar invitación
+            Descargar la app
           </a>
         </div>
-        <p style="color:#888;font-size:13px;line-height:1.5">
-          Si el botón no funciona, copiá este enlace:<br>
-          <a href="{link}" style="color:{ACENTO};word-break:break-all">{link}</a>
+        <p style="color:#888;font-size:12px;line-height:1.5;text-align:center">
+          El botón te lleva automáticamente a la App Store o a Google Play según tu dispositivo.
         </p>
-        <p style="color:#888;font-size:12px;line-height:1.5">
-          Este enlace vence en 7 días. Si no esperabas esta invitación, podés ignorar este mensaje.
+        <p style="color:#888;font-size:13px;line-height:1.5">
+          Cuando te unas con el código, el administrador de <strong>{org_nombre}</strong> aprobará tu ingreso.
+          Si no esperabas esta invitación, podés ignorar este mensaje.
         </p>
     """
     html = _envoltura("INVITACIÓN", contenido)
@@ -226,7 +232,7 @@ def enviar_email_bienvenida_admin(destino, nombre, org_nombre, en_background=Tru
           </a>
         </div>
         <p style="color:#888;font-size:13px;line-height:1.5">
-          ¿Querés más asientos o funciones (MIDI, exportaciones, NeuralSync)? Podés mejorar tu plan
+          ¿Querés más asientos o funciones (MIDI, exportaciones y más)? Podés mejorar tu plan
           desde el panel cuando gustes.
         </p>
     """

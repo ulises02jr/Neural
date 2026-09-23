@@ -5,6 +5,13 @@
 #include <functional>
 #include <map>
 #include <array>
+#if JUCE_IOS || JUCE_MAC
+ #include <ifaddrs.h>
+ #include <net/if.h>
+ #include <netinet/in.h>
+ #include <arpa/inet.h>
+ #include <cstring>
+#endif
 
 static inline float softClip (float x) noexcept
 {
@@ -35,6 +42,34 @@ static juce::File npAppDir()
              .getChildFile ("Library").getChildFile ("Application Support").getChildFile ("NeuralPlay");
 }
 static juce::File npCacheDir() { return npAppDir().getChildFile ("cache"); }
+
+// ── Dispositivo: en iPhone la interfaz es compacta y las salidas se capan a 4 ──
+static bool npEsIPhone()
+{
+   #if JUCE_IOS
+    if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+    {
+        auto r = d->userArea;                                   // en puntos lógicos
+        const int menor = juce::jmin (r.getWidth(), r.getHeight());
+        return menor > 0 && menor < 500;                        // iPhone <500pt · iPad >=744pt
+    }
+   #endif
+    return false;
+}
+static constexpr int NP_MAX_SALIDAS_IPHONE = 4;                 // interfaz chica
+static int npCapSalidas (int deseadas)                          // límite por dispositivo
+{
+    return npEsIPhone() ? juce::jmin (deseadas, NP_MAX_SALIDAS_IPHONE) : deseadas;
+}
+// Sensibilidad del arrastre sobre el mapa: en táctil (iPhone/iPad) más ágil que en Mac.
+static double npMapDragSens()
+{
+   #if JUCE_IOS || JUCE_ANDROID
+    return 1.15;
+   #else
+    return 0.5;
+   #endif
+}
 static juce::int64 npFolderSize (const juce::File& f)
 {
     juce::int64 s = 0;
@@ -48,17 +83,48 @@ static juce::String npFmtBytes (juce::int64 b)
     if (b >= 1024LL)       return juce::String ((double) (b / 1024LL), 0) + " KB";
     return juce::String (b) + " B";
 }
+// ── Sesión única por dispositivo ──
+// La app manda la cabecera "X-Session-Token". Si el servidor la invalida (se
+// inició sesión en otro dispositivo) responde 401 con error "sesion_reemplazada":
+// disparamos npOnSessionKicked una sola vez (la UI cierra sesión y avisa).
+static juce::String npSessionToken;
+static std::function<void (juce::String)> npOnSessionKicked;
+static std::atomic<bool> npKickAvisado { false };
+
+static juce::String npAuthHeaders (const juce::String& token)
+{
+    juce::String h = "Authorization: Bearer " + token;
+    if (npSessionToken.isNotEmpty()) h << "\r\nX-Session-Token: " << npSessionToken;
+    return h;
+}
+
+static void npCheckKick (int status, const juce::String& body)
+{
+    if (status == 401 && body.contains ("sesion_reemplazada"))
+    {
+        if (! npKickAvisado.exchange (true))
+        {
+            juce::String msg = juce::String::fromUTF8 (
+                "Se inici\xc3\xb3 sesi\xc3\xb3n en otro dispositivo. Por seguridad, cada "
+                "cuenta solo puede estar activa en un dispositivo a la vez.");
+            juce::MessageManager::callAsync ([msg] { if (npOnSessionKicked) npOnSessionKicked (msg); });
+        }
+    }
+}
+
 static juce::String httpGet (const juce::String& url, const juce::String& token)
 {
     juce::URL u (url);
     int status = 0;
     auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
-                    .withExtraHeaders ("Authorization: Bearer " + token)
+                    .withExtraHeaders (npAuthHeaders (token))
                     .withConnectionTimeoutMs (15000)
                     .withStatusCode (&status);
     std::unique_ptr<juce::InputStream> in (u.createInputStream (opts));
     if (in == nullptr) return {};
-    return in->readEntireStreamAsString();
+    auto body = in->readEntireStreamAsString();
+    npCheckKick (status, body);
+    return body;
 }
 static bool httpDownload (const juce::String& url, const juce::String& token, const juce::File& dest,
                           std::function<void (double)> onProgress = {},
@@ -68,7 +134,7 @@ static bool httpDownload (const juce::String& url, const juce::String& token, co
     // Spaces (respuesta 302 con URL presignada), NO arrastramos el header "Authorization:
     // Bearer" al saltar a Spaces (S3 rechaza mezclar presignada + header de auth => 400).
     juce::WebInputStream probe (juce::URL (url), false);
-    probe.withExtraHeaders ("Authorization: Bearer " + token)
+    probe.withExtraHeaders (npAuthHeaders (token))
          .withConnectionTimeout (30000)
          .withNumRedirectsToFollow (0);
     if (! probe.connect (nullptr)) return false;
@@ -140,20 +206,65 @@ static juce::String httpPostForm (const juce::String& baseUrl, juce::StringPairA
     for (auto& k : params.getAllKeys()) u = u.withParameter (k, params[k]);
     int status = 0;
     auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
-                    .withExtraHeaders ("Authorization: Bearer " + token)
+                    .withExtraHeaders (npAuthHeaders (token))
                     .withConnectionTimeoutMs (10000)
                     .withStatusCode (&status);
     std::unique_ptr<juce::InputStream> in (u.createInputStream (opts));
     if (in == nullptr) return {};
-    return in->readEntireStreamAsString();
+    auto body = in->readEntireStreamAsString();
+    npCheckKick (status, body);
+    return body;
 }
 
 static juce::String localLanIp()
 {
-    for (auto& a : juce::IPAddress::getAllAddresses (false))   // IPv4
-        if (! a.isNull() && a.toString() != "127.0.0.1")
-            return a.toString();
+   #if JUCE_IOS || JUCE_MAC
+    // Elegir la interfaz de Wi-Fi EXACTA (en0), no la de datos móviles (pdp_ip0).
+    // En el iPhone la IP 10.x puede ser el CGNAT del operador → el iPad no la alcanza.
+    struct ifaddrs* ifaddr = nullptr;
+    juce::String wifi, other;
+    if (getifaddrs (&ifaddr) == 0)
+    {
+        for (auto* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
+        {
+            if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET) continue;
+            if (! (ifa->ifa_flags & IFF_UP)) continue;
+            char buf[INET_ADDRSTRLEN] = { 0 };
+            auto* sin = (struct sockaddr_in*) ifa->ifa_addr;
+            inet_ntop (AF_INET, &sin->sin_addr, buf, sizeof (buf));
+            const juce::String ip (buf), name (ifa->ifa_name);
+            if (ip == "127.0.0.1" || ip.startsWith ("169.254.")) continue;
+            if (name.startsWith ("en")) { wifi = ip; break; }                  // en0/en1 = Wi-Fi (lo mejor)
+            if (other.isEmpty() && ! name.startsWith ("pdp") && ! name.startsWith ("lo")) other = ip;
+        }
+        freeifaddrs (ifaddr);
+    }
+    if (wifi.isNotEmpty())  return wifi;
+    if (other.isNotEmpty()) return other;
+   #endif
+    // Respaldo (otras plataformas): primera IPv4 no-loopback / no link-local.
+    for (auto& a : juce::IPAddress::getAllAddresses (false))
+    {
+        if (a.isNull()) continue;
+        const auto s = a.toString();
+        if (s != "127.0.0.1" && ! s.startsWith ("169.254.")) return s;
+    }
     return "127.0.0.1";
+}
+
+// En iOS, un servidor TCP entrante NO dispara por sí solo el aviso de "Red local",
+// así que iOS bloquea las conexiones del iPad en silencio. Enviar un datagrama a la
+// red local (multicast mDNS) fuerza a iOS a pedir el permiso → una vez otorgado,
+// el servidor de NeuralPlay queda accesible desde NeuralCharts.
+static void npTriggerLocalNetworkPermission()
+{
+   #if JUCE_IOS
+    juce::DatagramSocket s (true);          // permitir broadcast/multicast
+    s.bindToPort (0);
+    const char* msg = "neuralsync";
+    s.write ("224.0.0.251", 5353, msg, (int) std::strlen (msg));   // mDNS: la LAN
+    s.write ("255.255.255.255", 5353, msg, (int) std::strlen (msg));
+   #endif
 }
 
 struct MidiNoteEv { double seg = 0.0; int note = 0; int vel = 100; };
@@ -266,6 +377,30 @@ struct PillLNF : public juce::LookAndFeel_V4
     {
         setDefaultSansSerifTypefaceName ("Helvetica Neue");
         setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
+        // Cajas de selección con el mismo look oscuro y fino que los campos.
+        setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff202227));
+        setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff3a3d44));
+        setColour (juce::ComboBox::textColourId,       juce::Colour (0xfff2f2f2));
+        setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffbfc4cc));
+    }
+    // Fuente del CUERPO de la app: Inter (empaquetada), legible en tamaños chicos.
+    // El login usa Space Grotesk (marca) con su propia fuente explícita; los pads
+    // usan "Futura" con nombre propio. Ambos se respetan tal cual.
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font& f) override
+    {
+        const auto name = f.getTypefaceName();
+        const bool esDefault = name.isEmpty()
+                            || name == juce::Font::getDefaultSansSerifFontName()
+                            || name == "Helvetica Neue";
+        if (esDefault)
+        {
+            static juce::Typeface::Ptr reg = juce::Typeface::createSystemTypefaceFor (
+                BinaryData::InterRegular_ttf, (size_t) BinaryData::InterRegular_ttfSize);
+            static juce::Typeface::Ptr bld = juce::Typeface::createSystemTypefaceFor (
+                BinaryData::InterBold_ttf,    (size_t) BinaryData::InterBold_ttfSize);
+            return f.isBold() ? bld : reg;
+        }
+        return juce::LookAndFeel_V4::getTypefaceForFont (f);
     }
     void drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour& bg,
                                bool over, bool down) override
@@ -278,6 +413,23 @@ struct PillLNF : public juce::LookAndFeel_V4
         g.fillRoundedRectangle (r, rad);
         g.setColour (juce::Colour (0xff2a2a2a));
         g.drawRoundedRectangle (r, rad, 1.0f);
+    }
+    // Cajas de selección (ComboBox) con esquinas redondeadas, igual que los campos.
+    void drawComboBox (juce::Graphics& g, int width, int height, bool,
+                       int, int, int, int, juce::ComboBox& box) override
+    {
+        auto r = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height).reduced (0.7f);
+        g.setColour (box.findColour (juce::ComboBox::backgroundColourId));
+        g.fillRoundedRectangle (r, 10.0f);
+        g.setColour (box.findColour (juce::ComboBox::outlineColourId));
+        g.drawRoundedRectangle (r, 10.0f, 1.0f);
+        juce::Path p;                                   // flecha ▾
+        const float cx = (float) width - 18.0f, cy = (float) height * 0.5f;
+        p.startNewSubPath (cx - 5.0f, cy - 2.5f);
+        p.lineTo (cx,        cy + 3.0f);
+        p.lineTo (cx + 5.0f, cy - 2.5f);
+        g.setColour (box.findColour (juce::ComboBox::arrowColourId).withAlpha (0.9f));
+        g.strokePath (p, juce::PathStrokeType (1.6f));
     }
     juce::Font getTextButtonFont (juce::TextButton&, int h) override
     {
@@ -365,6 +517,7 @@ struct PlayIconButton : public juce::Button
 // Botón de Desvanecer: dibuja una rampa descendente (fade out) en un pill oscuro.
 struct FadeIconButton : public juce::Button
 {
+    bool flipped = false;   // true = fade activo (bajando): el icono se voltea
     FadeIconButton() : juce::Button ("fade") {}
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
@@ -383,6 +536,7 @@ struct FadeIconButton : public juce::Button
         ramp.lineTo         (c.x - hw, c.y + hh);
         ramp.lineTo         (c.x + hw, c.y + hh);
         ramp.closeSubPath();
+        if (flipped) ramp.applyTransform (juce::AffineTransform::scale (-1.0f, 1.0f, c.x, c.y));   // voltear horizontal al activarse
         g.setColour (isEnabled() ? juce::Colours::white.withAlpha (0.92f) : juce::Colours::white.withAlpha (0.4f));
         g.fillPath (ramp);
     }
@@ -467,7 +621,8 @@ struct SongCard : public juce::Component
     {
         auto r = getLocalBounds().toFloat();
         r.removeFromTop (6.0f);
-        return r.removeFromTop (r.getHeight() * 0.76f).reduced (1.0f);
+        // En iPhone el cover ocupa menos alto para que el título (2 líneas) no se corte.
+        return r.removeFromTop (r.getHeight() * (npEsIPhone() ? 0.62f : 0.76f)).reduced (1.0f);
     }
     juce::Rectangle<float> removeBtnRect() const { auto c = coverRect(); return { c.getRight() - 34.0f, c.getY() + 8.0f, 26.0f, 26.0f }; }
     juce::Rectangle<float> tonoBtnRect()   const { auto c = coverRect(); return { c.getCentreX() - 22.0f, c.getCentreY() - 18.0f, 44.0f, 36.0f }; }
@@ -511,7 +666,8 @@ struct SongCard : public juce::Component
     {
         auto r = getLocalBounds().toFloat();
         r.removeFromTop (6.0f);
-        auto cov = r.removeFromTop (r.getHeight() * 0.76f).reduced (1.0f);
+        // En iPhone el cover ocupa menos alto → el título tiene espacio para sus 2 líneas.
+        auto cov = r.removeFromTop (r.getHeight() * (npEsIPhone() ? 0.62f : 0.76f)).reduced (1.0f);
         {
             juce::Path clip; clip.addRoundedRectangle (cov, 9.0f);
             g.saveState(); g.reduceClipRegion (clip);
@@ -525,9 +681,18 @@ struct SongCard : public juce::Component
         auto txt = r.reduced (3.0f, 0.0f);
         juce::String linea = titulo;
         if (tono.isNotEmpty()) linea << "  (" << tono << ")";
-        g.setColour (active ? juce::Colour (0xffffffff) : juce::Colour (0xfff2f2f2));
-        g.setFont (juce::Font (17.0f, juce::Font::bold));
-        g.drawFittedText (linea, txt.toNearestInt(), juce::Justification::topLeft, 2);
+        // Tamaño FIJO grande (todos parejos). Si el título no cabe, se muestra lo que
+        // entre y se recorta (clip) en vez de encogerse. Se envuelve a 2 líneas.
+        {
+            juce::AttributedString as;
+            as.append (linea, juce::Font (npEsIPhone() ? 11.5f : 16.0f, juce::Font::bold),
+                       active ? juce::Colour (0xffffffff) : juce::Colour (0xfff2f2f2));
+            as.setJustification (juce::Justification::topLeft);
+            juce::TextLayout tl; tl.createLayout (as, (float) txt.getWidth());
+            juce::Graphics::ScopedSaveState ss (g);
+            g.reduceClipRegion (txt.toNearestInt());
+            tl.draw (g, txt);
+        }
 
         if (editMode)
         {
@@ -696,11 +861,12 @@ struct IconButton : public juce::Button
     {
         auto b = getLocalBounds().toFloat();
         auto r = b.reduced (1.0f);
+        const float rad = juce::jmin (r.getHeight() * 0.5f, 12.0f);   // pill, igual que el botón Pad
         g.setColour (active ? juce::Colour (0xff2E8BFF)
                             : (down ? juce::Colour (0xff2a2a2a) : (over ? juce::Colour (0xff262626) : juce::Colour (0xff1f1f1f))));
-        g.fillRoundedRectangle (r, 6.0f);
+        g.fillRoundedRectangle (r, rad);
         g.setColour (juce::Colour (0x22ffffff));
-        g.drawRoundedRectangle (r, 6.0f, 1.0f);
+        g.drawRoundedRectangle (r, rad, 1.0f);
 
         const juce::Colour ic = active ? juce::Colours::white : juce::Colour (0xffe6e6e6);
         if (kind == 0)
@@ -1106,19 +1272,23 @@ struct MidiPanel : public juce::Component
 
     void resized() override
     {
-        auto a = getLocalBounds().reduced (18, 14);
-        const int rh = juce::jmax (30, a.getHeight() / juce::jmax (1, rows.size()));
+        const bool ph = npEsIPhone();
+        auto a = getLocalBounds().reduced (ph ? 10 : 18, ph ? 6 : 14);
+        const int rh = juce::jmax (ph ? 22 : 30, a.getHeight() / juce::jmax (1, rows.size()));
+        // El alto del control SIEMPRE deja margen dentro de la banda, para no invadir
+        // la fila vecina ni montarse sobre la línea separadora.
+        const int ctrlH = juce::jmin (ph ? 24 : 32, rh - (ph ? 8 : 10));
         for (auto* r : rows)
         {
-            auto row = a.removeFromTop (rh).withSizeKeepingCentre (a.getWidth(), 32);
-            r->swatch = row.removeFromLeft (24);
-            r->name.setBounds (row.removeFromLeft (140));
-            r->on.setBounds   (row.removeFromRight (54));
-            row.removeFromRight (12);
+            auto row = a.removeFromTop (rh).withSizeKeepingCentre (a.getWidth(), ctrlH);
+            r->swatch = row.removeFromLeft (ph ? 18 : 24);
+            r->name.setBounds (row.removeFromLeft (ph ? 100 : 140));
+            r->on.setBounds   (row.removeFromRight (ph ? 40 : 54));
+            row.removeFromRight (ph ? 8 : 12);
             if (! r->noChan)
             {
-                r->chan.setBounds (row.removeFromRight (120));
-                row.removeFromRight (12);
+                r->chan.setBounds (row.removeFromRight (ph ? 92 : 120));
+                row.removeFromRight (ph ? 8 : 12);
             }
             r->port.setBounds (row);
         }
@@ -1184,7 +1354,8 @@ struct RepertoirePicker : public juce::Component
     std::function<void (juce::String)> onDelete;
     std::function<void (juce::String)> onDownload;
     std::function<void()> onNew;
-    juce::TextButton newBtn, loadBtn, closeBtn;
+    std::function<void()> onSaveAs;                 // duplicar el repertorio cargado (solo Mac por ahora)
+    juce::TextButton newBtn, loadBtn, closeBtn, saveBtn, saveAsBtn, deleteBtn;
 
     RepertoirePicker()
     {
@@ -1207,19 +1378,71 @@ struct RepertoirePicker : public juce::Component
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         closeBtn.onClick = [this] { setVisible (false); };
         addAndMakeVisible (closeBtn);
+
+        // ── Barra fija de acciones (solo Mac por ahora): Guardar · Guardar como Nuevo · Borrar ──
+        saveBtn.setButtonText ("Guardar");
+        saveBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff17361f));
+        saveBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff5CD98A));
+        saveBtn.onClick = [this]
+        {
+            if (selected >= 0 && selected < items.size() && canSave (selected) && onSave)
+            { savedAt = juce::Time::getMillisecondCounter(); onSave (items[selected].id); scheduleFlash(); repaint(); }
+        };
+        saveAsBtn.setButtonText (juce::String::fromUTF8 ("Guardar como Nuevo"));
+        saveAsBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        saveAsBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff7Cc6ff));
+        saveAsBtn.onClick = [this] { if (onSaveAs) onSaveAs(); };
+        deleteBtn.setButtonText ("Borrar");
+        deleteBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a1414));
+        deleteBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe05555));
+        deleteBtn.onClick = [this]
+        {
+            if (selected >= 0 && selected < items.size() && onDelete)
+            { auto id = items[selected].id; onDelete (id); }
+        };
+        addAndMakeVisible (saveBtn);
+        addAndMakeVisible (saveAsBtn);
+        addAndMakeVisible (deleteBtn);
+        // Todos con el mismo fondo; solo cambian las LETRAS (Guardar verde, Borrar rojo).
+        auto styleBtn = [] (juce::TextButton& b, juce::uint32 tx)
+        {
+            b.setColour (juce::TextButton::buttonColourId,  juce::Colour (0xff1f1f1f));
+            b.setColour (juce::TextButton::textColourOffId, juce::Colour (tx));
+        };
+        styleBtn (newBtn,    0xfff2f2f2);
+        styleBtn (loadBtn,   0xfff2f2f2);
+        styleBtn (saveBtn,   0xff5CD98A);   // verde
+        styleBtn (saveAsBtn, 0xfff2f2f2);
+        styleBtn (deleteBtn, 0xffe05555);   // rojo
         setAlwaysOnTop (true);
     }
 
+    // Habilitar/deshabilitar los botones fijos según la selección (Mac).
+    void updateActionButtons()
+    {
+        const bool sel = (selected >= 0 && selected < items.size());
+        loadBtn.setEnabled (sel);
+        saveBtn.setEnabled (sel && canSave (selected));
+        saveAsBtn.setEnabled (currentLoadedId.isNotEmpty());
+        deleteBtn.setEnabled (sel);
+    }
+
+    static constexpr int kBarN = 5;                       // botones apilados (una fila c/u)
+    int barBtnH() const { return npEsIPhone() ? 34 : 44; }
+    int barGap()  const { return npEsIPhone() ? 6 : 8; }
+    int barH()    const { return kBarN * barBtnH() + (kBarN - 1) * barGap(); }
+    int rowH()    const { return npEsIPhone() ? 46 : 54; }
     juce::Rectangle<int> panelBounds() const
     {
-        const int w = 440;
-        const int h = 150 + juce::jmax (1, items.size()) * 54;
-        return getLocalBounds().withSizeKeepingCentre (w, juce::jmin (h, getHeight() - 80));
+        const bool ph = npEsIPhone();
+        const int w = ph ? 420 : 460;
+        const int h = (ph ? 58 : 64) + juce::jmax (1, items.size()) * rowH() + 14 + barH() + (ph ? 12 : 18);
+        return getLocalBounds().withSizeKeepingCentre (w, juce::jmin (h, getHeight() - (ph ? 16 : 40)));
     }
     juce::Rectangle<int> rowBounds (int i) const
     {
         auto p = panelBounds();
-        return { p.getX() + 20, p.getY() + 64 + i * 54, p.getWidth() - 40, 48 };
+        return { p.getX() + 20, p.getY() + (npEsIPhone() ? 56 : 64) + i * rowH(), p.getWidth() - 40, npEsIPhone() ? 42 : 48 };
     }
     juce::Rectangle<int> chipRect (int i) const
     {
@@ -1303,21 +1526,6 @@ struct RepertoirePicker : public juce::Component
             g.setColour (cfg); g.setFont (juce::Font (11.5f, juce::Font::bold));
             g.drawText (ctxt, ch, juce::Justification::centred);
         }
-        // Menú de acciones sobre la fila tocada
-        if (menuRow >= 0 && menuRow < items.size())
-        {
-            const bool save = canSave (menuRow);
-            auto drawBtn = [&g] (juce::Rectangle<int> rb, juce::Colour bg, juce::Colour fg, const juce::String& t)
-            {
-                g.setColour (bg); g.fillRoundedRectangle (rb.toFloat(), 6.0f);
-                g.setColour (fg); g.setFont (juce::Font (11.5f, juce::Font::bold));
-                g.drawText (t, rb, juce::Justification::centred);
-            };
-            auto br = belowRects (menuRow);
-            int k = 0;
-            if (save) drawBtn (br[k++], juce::Colour (0xff17361f), juce::Colour (0xff5CD98A), "Guardar");
-            drawBtn (br[k], juce::Colour (0xff2a1414), juce::Colour (0xffe05555), "Borrar");
-        }
     }
 
     void resized() override { layoutButtons(); }
@@ -1325,9 +1533,17 @@ struct RepertoirePicker : public juce::Component
     {
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
-        auto brow = juce::Rectangle<int> (p.getX() + 20, p.getBottom() - 54, p.getWidth() - 40, 36);
-        newBtn.setBounds (brow.removeFromLeft (110));
-        loadBtn.setBounds (brow.removeFromRight (120));
+        // Un botón por fila, apilados a lo ancho de la ventana (iPhone, iPad y Mac).
+        const int bh = barBtnH(), gap = barGap();
+        auto col = juce::Rectangle<int> (p.getX() + 20, p.getBottom() - (npEsIPhone() ? 12 : 18) - barH(),
+                                         p.getWidth() - 40, barH());
+        juce::TextButton* bar[kBarN] = { &newBtn, &loadBtn, &saveBtn, &saveAsBtn, &deleteBtn };
+        for (int i = 0; i < kBarN; ++i)
+        {
+            bar[i]->setBounds (col.removeFromTop (bh));
+            if (i < kBarN - 1) col.removeFromTop (gap);
+        }
+        updateActionButtons();
     }
 
     void scheduleFlash()
@@ -1338,21 +1554,12 @@ struct RepertoirePicker : public juce::Component
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (menuRow >= 0 && menuRow < items.size())   // menú abierto: primero sus botones
-        {
-            const bool save = canSave (menuRow);
-            const auto id = items[menuRow].id;
-            auto br = belowRects (menuRow);
-            int k = 0;
-            if (save && br[k++].contains (e.getPosition())) { savedAt = juce::Time::getMillisecondCounter(); if (onSave) onSave (id); menuRow = -1; scheduleFlash(); repaint(); return; }
-            if (k < br.size() && br[k].contains (e.getPosition())) { menuRow = -1; if (onDelete) onDelete (id); return; }
-        }
         for (int i = 0; i < items.size(); ++i)   // chip de descarga a la derecha de la fila
             if (chipRect (i).contains (e.getPosition()))
             { if (items[i].dlPct < 0 && ! items[i].cached && onDownload) onDownload (items[i].id); return; }
-        for (int i = 0; i < items.size(); ++i)   // tocar una fila la selecciona y abre su menú
-            if (rowBounds (i).contains (e.getPosition())) { selected = i; menuRow = i; repaint(); return; }
-        if (menuRow >= 0) { menuRow = -1; repaint(); }          // clic fuera de filas: cerrar menú
+        for (int i = 0; i < items.size(); ++i)   // tocar una fila la selecciona (los botones actúan sobre ella)
+            if (rowBounds (i).contains (e.getPosition()))
+            { selected = i; updateActionButtons(); repaint(); return; }
         if (! panelBounds().contains (e.getPosition())) setVisible (false);
     }
 
@@ -1369,7 +1576,7 @@ struct RepertoirePicker : public juce::Component
 
 struct StoragePanel : public juce::Component
 {
-    juce::TextButton freeBtn, autoBtn, capMinus, capPlus, closeBtn;
+    juce::TextButton freeBtn, autoBtn, capMinus, capPlus, closeBtn, backBtn;
     juce::int64 total = 0, unused = 0;
     bool autoClean = false;
     int capGB = 0;                 // 0 = sin límite
@@ -1377,13 +1584,14 @@ struct StoragePanel : public juce::Component
     std::function<void()> onFreeUnused;
     std::function<void (bool)> onAutoClean;
     std::function<void (int)> onCap;
+    std::function<void()> onBack;                  // volver al Menú
 
     StoragePanel()
     {
         auto st = [] (juce::TextButton& b, juce::uint32 bg, juce::uint32 tx)
         { b.setColour (juce::TextButton::buttonColourId, juce::Colour (bg));
           b.setColour (juce::TextButton::textColourOffId, juce::Colour (tx)); };
-        st (freeBtn, 0xff2a2418, 0xffC9A96E);
+        st (freeBtn, 0xff1f1f1f, 0xfff2f2f2);
         freeBtn.onClick = [this] { if (onFreeUnused) onFreeUnused(); };
         addAndMakeVisible (freeBtn);
         st (autoBtn, 0xff1f1f1f, 0xfff2f2f2);
@@ -1398,6 +1606,9 @@ struct StoragePanel : public juce::Component
         st (closeBtn, 0xff1f1f1f, 0xfff2f2f2); closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.onClick = [this] { setVisible (false); };
         addAndMakeVisible (closeBtn);
+        st (backBtn, 0xff1f1f1f, 0xfff2f2f2); backBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xb9 Men\xc3\xba"));   // ‹ Menú
+        backBtn.onClick = [this] { setVisible (false); if (onBack) onBack(); };
+        addAndMakeVisible (backBtn);
         setAlwaysOnTop (true);
         refresh();
     }
@@ -1415,7 +1626,12 @@ struct StoragePanel : public juce::Component
         repaint();
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (440, 446); }
+    juce::Rectangle<int> panelBounds() const
+    {
+        const bool ph = npEsIPhone();
+        return getLocalBounds().withSizeKeepingCentre (ph ? 440 : 440,
+                                                       ph ? juce::jmin (446, getHeight() - 10) : 446);
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -1425,7 +1641,7 @@ struct StoragePanel : public juce::Component
         g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (pf, 14.0f, 1.2f);
         auto in = panelBounds().reduced (24, 0);
         g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
-        g.drawText (juce::String::fromUTF8 ("Almacenamiento"), in.removeFromTop (52), juce::Justification::centredLeft);
+        g.drawText (juce::String::fromUTF8 ("Almacenamiento"), in.removeFromTop (52).withTrimmedLeft (80), juce::Justification::centredLeft);
         g.setFont (15.0f); g.setColour (juce::Colour (0xffe8e8e8));
         g.drawText (juce::String::fromUTF8 ("Total en cach\xc3\xa9:   ") + npFmtBytes (total), in.removeFromTop (26), juce::Justification::centredLeft);
         g.setFont (13.5f); g.setColour (juce::Colour (0xffa3a3a3));
@@ -1435,7 +1651,7 @@ struct StoragePanel : public juce::Component
         // ── sección: Limpieza automática (agrupa el interruptor + el límite) ──
         g.setColour (juce::Colour (0x18ffffff));
         g.fillRect (juce::Rectangle<int> (in.getX(), autoHdrBounds.getY() - 8, in.getWidth(), 1));
-        g.setColour (juce::Colour (0xffC9A96E)); g.setFont (juce::Font (12.0f, juce::Font::bold));
+        g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (juce::Font (12.0f, juce::Font::bold));
         g.drawText (juce::String::fromUTF8 ("LIMPIEZA AUTOM\xc3\x81TICA"), autoHdrBounds, juce::Justification::centredLeft);
         g.setColour (juce::Colour (0xff8a8a8a)); g.setFont (12.0f);
         g.drawText (juce::String::fromUTF8 ("Borra solo el audio que no est\xc3\xa1 en ninguno de tus repertorios."),
@@ -1451,6 +1667,7 @@ struct StoragePanel : public juce::Component
     {
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
+        backBtn.setBounds (p.getX() + 14, p.getY() + 13, 76, 28);
         auto b = p.reduced (24);
         b.removeFromTop (52 + 26 + 22 + 22 + 16);      // título + stats
         const int bh = 44;
@@ -1599,7 +1816,18 @@ struct SettingsPanel : public juce::Component
         repaint();
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (380, 548); }
+    juce::Rectangle<int> panelBounds() const
+    {
+        const bool ph = npEsIPhone();
+        if (ph)
+        {
+            // iPhone: la tarjeta se ajusta a la altura del contenido (sin hueco abajo).
+            // MISMAS medidas que resized(): pad 15, título 30, 8 filas de 33, gap 9, status 16.
+            const int h = juce::jmin (15 + 30 + 8 * 33 + 8 * 9 + 16 + 15, getHeight() - 12);
+            return getLocalBounds().withSizeKeepingCentre (360, h);
+        }
+        return getLocalBounds().withSizeKeepingCentre (380, 548);
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -1620,8 +1848,9 @@ struct SettingsPanel : public juce::Component
     {
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
-        auto b = p.reduced (24); b.removeFromTop (44);
-        const int bh = 46, gap = 12;
+        const bool ph = npEsIPhone();
+        auto b = p.reduced (ph ? 15 : 24); b.removeFromTop (ph ? 30 : 44);
+        const int bh = ph ? 33 : 46, gap = ph ? 9 : 12;
         syncBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
         countInBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
         masterPSBtn.setBounds (b.removeFromTop (bh)); b.removeFromTop (gap);
@@ -1647,6 +1876,8 @@ struct AudioConfigPanel : public juce::Component
     juce::Label title, devLbl, chInfo;
     juce::OwnedArray<juce::Label> famLabels;
     juce::OwnedArray<juce::ComboBox> routeBoxes;
+    juce::Viewport famView;             // contenedor scrollable de las familias (arrastre táctil)
+    juce::Component famContent;         // contenido desplazable (labels + combos)
     juce::TextButton closeBtn, backBtn;
     juce::ComboBox srBox;                  // selector de frecuencia (sample rate)
     juce::Label srLbl;
@@ -1700,12 +1931,18 @@ struct AudioConfigPanel : public juce::Component
             auto* l = famLabels.add (new juce::Label());
             l->setText (juce::String::fromUTF8 (kRouteFam[i]), juce::dontSendNotification);
             l->setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
-            l->setFont (juce::Font (13.0f)); addAndMakeVisible (l);
+            l->setFont (juce::Font (13.0f)); famContent.addAndMakeVisible (l);
             auto* c = routeBoxes.add (new juce::ComboBox()); dark (*c);
             const int fi = i;
             c->onChange = [this, fi] { fireRoute (fi); };
-            addAndMakeVisible (c);
+            famContent.addAndMakeVisible (c);
         }
+        // Viewport scrollable para las familias (arrastre con el dedo en cualquier parte)
+        famView.setViewedComponent (&famContent, false);
+        famView.setScrollBarsShown (true, false);
+        famView.setScrollOnDragMode (juce::Viewport::ScrollOnDragMode::nonHover);
+        famView.setScrollBarThickness (8);
+        addAndMakeVisible (famView);
         closeBtn.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
         closeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         closeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
@@ -1788,7 +2025,12 @@ struct AudioConfigPanel : public juce::Component
         onRoute (fam, mode, base);
     }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (480, 624); }
+    juce::Rectangle<int> panelBounds() const
+    {
+        const bool ph = npEsIPhone();
+        return getLocalBounds().withSizeKeepingCentre (ph ? 480 : 480,
+                                                       ph ? juce::jmin (624, getHeight() - 10) : 624);
+    }
 
     void paint (juce::Graphics& g) override
     {
@@ -1800,33 +2042,59 @@ struct AudioConfigPanel : public juce::Component
 
     void resized() override
     {
+        const bool ph = npEsIPhone();
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
         backBtn.setBounds (p.getX() + 14, p.getY() + 13, 76, 28);
-        auto b = p.reduced (22);
-        title.setBounds (b.removeFromTop (34).withTrimmedLeft (78));
-        b.removeFromTop (4);
-        devLbl.setBounds (b.removeFromTop (16));
-        deviceBox.setBounds (b.removeFromTop (30));
-        chInfo.setBounds (b.removeFromTop (20));
-        b.removeFromTop (6);
-        srLbl.setBounds (b.removeFromTop (16));
-        srBox.setBounds (b.removeFromTop (30));
-        b.removeFromTop (8);
-        autoPanBtn.setBounds (b.removeFromTop (26));
-        b.removeFromTop (8);
+        auto b = p.reduced (ph ? 16 : 22);
+        title.setBounds (p.getX() + 96, p.getY() + 12, p.getWidth() - 148, 30);   // alineado con ‹Menú y ×
+        b.removeFromTop (ph ? 30 : 34);   // reservar la cabecera en el flujo
+        b.removeFromTop (ph ? 2 : 4);
+        devLbl.setBounds (b.removeFromTop (ph ? 14 : 16));
+        deviceBox.setBounds (b.removeFromTop (ph ? 28 : 30));
+        chInfo.setBounds (b.removeFromTop (ph ? 16 : 20));
+        b.removeFromTop (ph ? 4 : 6);
+        srLbl.setBounds (b.removeFromTop (ph ? 14 : 16));
+        srBox.setBounds (b.removeFromTop (ph ? 28 : 30));
+        b.removeFromTop (ph ? 5 : 8);
+        autoPanBtn.setBounds (b.removeFromTop (ph ? 24 : 26));
+        b.removeFromTop (ph ? 5 : 8);
+
+        // Lista de familias dentro de un Viewport scrollable (arrastre táctil en cualquier parte).
+        famView.setBounds (b);
+        const int rowH = ph ? 28 : 32, rowGap = ph ? 3 : 4, pitch = rowH + rowGap;
+        const int totalH = kNumFam * pitch;
+        const bool needsScroll = totalH > b.getHeight();
+        const int cw = b.getWidth() - (needsScroll ? 10 : 0);   // deja espacio a la barra si scrollea
+        famContent.setSize (cw, totalH);
         for (int i = 0; i < kNumFam; ++i)
         {
-            auto row = b.removeFromTop (32);
-            famLabels[i]->setBounds (row.removeFromLeft (160));
+            juce::Rectangle<int> row (0, i * pitch, cw, rowH);
+            famLabels[i]->setBounds (row.removeFromLeft (ph ? 130 : 160));
             routeBoxes[i]->setBounds (row.reduced (0, 2));
-            b.removeFromTop (4);
         }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (! panelBounds().contains (e.getPosition())) setVisible (false);
+    }
+};
+
+// Campo de texto con esquinas redondeadas (para el buscador de canciones).
+struct NPRoundEditLnF : public juce::LookAndFeel_V4
+{
+    void fillTextEditorBackground (juce::Graphics& g, int w, int h, juce::TextEditor& te) override
+    {
+        g.setColour (te.findColour (juce::TextEditor::backgroundColourId));
+        g.fillRoundedRectangle (0.0f, 0.0f, (float) w, (float) h, 11.0f);
+    }
+    void drawTextEditorOutline (juce::Graphics& g, int w, int h, juce::TextEditor& te) override
+    {
+        const bool foc = te.hasKeyboardFocus (true);
+        g.setColour (te.findColour (foc ? juce::TextEditor::focusedOutlineColourId
+                                        : juce::TextEditor::outlineColourId));
+        g.drawRoundedRectangle (0.6f, 0.6f, (float) w - 1.2f, (float) h - 1.2f, 11.0f, foc ? 1.4f : 1.0f);
     }
 };
 
@@ -1840,9 +2108,12 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     struct BibItem { int id = 0; juce::String titulo, tono, artista, portada; juce::Image cover; };
     juce::Array<BibItem> bib, bibAll;
     int bibScroll = 0;                 // desplazamiento vertical de la biblioteca
+    int bibDragStartY = 0, bibScrollStart = 0;   // scroll táctil (arrastre con el dedo)
+    bool bibDragging = false, bibMoved = false;
+    NPRoundEditLnF searchLnf;          // buscador con esquinas redondeadas
     juce::TextEditor searchBox;
 
-    int songId = 0; juce::String songTitle; bool addFlow = false;
+    int songId = 0; juce::String songTitle, songArtist; bool addFlow = false;
     struct Key { juce::String nombre; int sem = 0; bool rendered = false; };
     juce::Array<Key> keys;
     int renderingSem = 99, pendIdx = -1, progHechos = 0, progTotal = 0;
@@ -1927,6 +2198,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         searchBox.setColour (juce::TextEditor::textColourId, juce::Colours::white);
         searchBox.setColour (juce::TextEditor::outlineColourId, juce::Colour (0x33ffffff));
         searchBox.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (0x66ffffff));
+        searchBox.setLookAndFeel (&searchLnf);           // esquinas redondeadas
+        searchBox.setJustification (juce::Justification::centredLeft);
+        searchBox.setIndents (12, 0);
         searchBox.onTextChange = [this] { applyFilter(); };
         addChildComponent (searchBox);
 
@@ -1983,6 +2257,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     void openTono (int id, juce::String title, bool add, juce::Array<Key> ks, double inSec = -1.0, double outSec = -1.0,
                    bool pIntro = false, bool pOutro = false)
     { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
+      songArtist.clear(); for (auto& b : bibAll) if (b.id == id) { songArtist = b.artista; break; }   // artista para el subtítulo
       inOn = (inSec >= 0.0); outOn = (outSec >= 0.0);
       padIn = pIntro; padOut = pOutro;
       inEdit.setText (secsToMMSS (inSec >= 0.0 ? inSec : 0.0), false);
@@ -1993,23 +2268,34 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     void showBiblioteca()   // volver del grid de tonos a la lista de canciones
     { mode = Biblioteca; searchBox.setVisible (true); refreshInOut(); renderingSem = 99; stopTimer(); resized(); repaint(); }
 
-    juce::Rectangle<int> panelBounds() const { return getLocalBounds().withSizeKeepingCentre (470, 636); }
+    juce::Rectangle<int> panelBounds() const
+    {
+        const bool ph = npEsIPhone();
+        return getLocalBounds().withSizeKeepingCentre (ph ? 470 : 470,
+                                                       ph ? juce::jmin (636, getHeight() - 10) : 636);
+    }
+    // Offsets verticales compactos en iPhone para que todo el contenido quepa.
+    int rpTop()   const { return npEsIPhone() ? 44 : 58; }        // debajo del título
+    int rpCh()    const { return npEsIPhone() ? 36 : 46; }        // alto de cada botón de tono
+    int rpGap()   const { return npEsIPhone() ? 6  : 9;  }        // separación de la grilla
+    int rpPitch() const { return rpCh() + rpGap(); }             // paso de fila
+    int rpGapGrid() const { return npEsIPhone() ? 10 : 20; }      // debajo de la grilla
 
     juce::Rectangle<int> keyRect (int i) const
     {
-        auto p = panelBounds().reduced (22); p.removeFromTop (58);
-        const int cols = 4, gap = 9, cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = 46;
+        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop());
+        const int cols = 4, gap = rpGap(), cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = rpCh();
         return { p.getX() + (i % cols) * (cw + gap), p.getY() + (i / cols) * (ch + gap), cw, ch };
     }
     juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del grid de 3 filas
     {
         auto p = panelBounds().reduced (22);
-        p.removeFromTop (58 + 3 * 55 + 20);
-        return p.removeFromTop (108);
+        p.removeFromTop (rpTop() + 3 * rpPitch() + rpGapGrid());
+        return p.removeFromTop (npEsIPhone() ? 104 : 124);
     }
     juce::Rectangle<int> ioRow (int row) const   // row 0 = inicio, 1 = fin
     {
-        auto a = inOutArea(); a.removeFromTop (30);       // debajo del título
+        auto a = inOutArea(); a.removeFromTop (44);       // debajo del título + espacio para "min:seg"
         const int rh = 34, gap = 10;
         a.removeFromTop (row * (rh + gap));
         return a.removeFromTop (rh);
@@ -2020,8 +2306,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::Rectangle<int> padArea() const   // Pad Player, debajo de inicio/fin
     {
         auto p = panelBounds().reduced (22);
-        p.removeFromTop (58 + 3 * 55 + 20 + 108 + 14);
-        return p.removeFromTop (96);
+        p.removeFromTop (rpTop() + 3 * rpPitch() + rpGapGrid() + (npEsIPhone() ? 104 : 124) + (npEsIPhone() ? 8 : 14));
+        return p.removeFromTop (npEsIPhone() ? 84 : 96);
     }
     juce::Rectangle<int> padRow (int row) const
     {
@@ -2057,13 +2343,27 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (p, 14.0f);
         g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (p, 14.0f, 1.2f);
 
-        g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
-        auto title = (mode == Biblioteca) ? juce::String::fromUTF8 ("Agregar canci\xc3\xb3n")
-                                          : (juce::String::fromUTF8 ("Tono \xc2\xb7 ") + songTitle);
-        auto tarea = panelBounds().removeFromTop (52).reduced (22, 0);
-        if (mode == Tono) tarea = tarea.withTrimmedLeft (92).withTrimmedRight (48);   // lugar para Atrás (izq) y × (der)
-        else              tarea = tarea.withTrimmedRight (48);                        // lugar para la ×
-        g.drawText (title, tarea, juce::Justification::centredLeft);
+        if (mode == Biblioteca)
+        {
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
+            auto tarea = panelBounds().removeFromTop (52).reduced (22, 0).withTrimmedRight (48);
+            g.drawText (juce::String::fromUTF8 ("Agregar canci\xc3\xb3n"), tarea, juce::Justification::centredLeft);
+        }
+        else
+        {
+            // Tono: el nombre de la canción como título (centrado) y el artista debajo, más chico.
+            const int hy = panelBounds().getY();
+            auto midX = panelBounds().reduced (104, 0);   // recorte igual a ambos lados → centrado real (libra ‹ Atrás y ×)
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
+            if (songArtist.isNotEmpty())
+            {
+                g.drawText (songTitle, midX.withY (hy + 9).withHeight (24), juce::Justification::centred);
+                g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (12.0f));
+                g.drawText (songArtist, midX.withY (hy + 33).withHeight (16), juce::Justification::centred);
+            }
+            else
+                g.drawText (songTitle, midX.withY (hy + 13).withHeight (28), juce::Justification::centred);
+        }
 
         if (mode == Biblioteca)
         {
@@ -2106,7 +2406,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 g.drawText (k.nombre, r.withTrimmedBottom (k.rendered ? 0.0f : 13.0f), juce::Justification::centred);
                 if (! k.rendered)
                 { g.setColour (juce::Colour (0xff7a7a7a)); g.setFont (juce::Font (9.5f, juce::Font::bold));
-                  g.drawText (juce::String::fromUTF8 ("generar"), r.removeFromBottom (16.0f), juce::Justification::centred); }
+                  g.drawText (juce::String::fromUTF8 ("Generar"), r.removeFromBottom (16.0f), juce::Justification::centred); }
                 if (k.sem == renderingSem)
                 {
                     g.setColour (juce::Colour (0xAA000000)); g.fillRoundedRectangle (r, 9.0f);
@@ -2134,7 +2434,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 g.drawText (juce::String::fromUTF8 ("Iniciar en"), ioLabelRect (0), juce::Justification::centredLeft);
                 g.drawText (juce::String::fromUTF8 ("Terminar en"), ioLabelRect (1), juce::Justification::centredLeft);
                 g.setColour (juce::Colour (0xff777777)); g.setFont (juce::Font (10.5f));
-                g.drawText ("min:seg", ioEditRect (0).translated (0, -18).withHeight (16), juce::Justification::centred);
+                g.drawText ("min:seg", ioEditRect (0).translated (0, -17).withHeight (14), juce::Justification::centred);
 
                 // Pad Player (intro / outro)
                 auto pttl = padArea().removeFromTop (24);
@@ -2150,8 +2450,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     void resized() override
     {
         closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30);   // × siempre arriba-der
-        backBtn.setVisible (mode == Tono);
-        backBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);         // ‹ Atrás solo en tono
+        backBtn.setVisible (mode == Tono && addFlow);   // ‹ Atrás solo si venís del flujo de AGREGAR, no al editar
+        backBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);
         searchBox.setBounds (searchRect());
 
         inTgl.setBounds  (ioTglRect (0));  inEdit.setBounds  (ioEditRect (0));
@@ -2165,11 +2465,13 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     {
         if (! panelBounds().contains (e.getPosition())) { stopTimer(); renderingSem = 99; setVisible (false); return; }
         if (renderingSem != 99) return;   // ocupado renderizando
+        bibDragging = false; bibMoved = false;
         if (mode == Biblioteca)
         {
-            if (! bibListArea().contains (e.getPosition())) return;
-            for (int i = 0; i < bib.size(); ++i)
-                if (bibRect (i).contains (e.getPosition())) { if (onPickSong) onPickSong (bib[i].id); return; }
+            // Solo registrar el arranque; la selección se hace en mouseUp si NO hubo arrastre
+            // (así el dedo puede desplazar la lista sin abrir una canción).
+            if (bibListArea().contains (e.getPosition()))
+            { bibDragging = true; bibDragStartY = e.y; bibScrollStart = bibScroll; }
         }
         else
         {
@@ -2182,6 +2484,24 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                     return;
                 }
         }
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override   // scroll táctil de la biblioteca
+    {
+        if (! bibDragging) return;
+        const int dy = e.y - bibDragStartY;
+        if (std::abs (dy) > 4) bibMoved = true;
+        bibScroll = juce::jlimit (0, bibMaxScroll(), bibScrollStart - dy);
+        repaint();
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override      // tap (sin arrastre) = elegir canción
+    {
+        if (renderingSem != 99) { bibDragging = false; return; }
+        if (mode == Biblioteca && bibDragging && ! bibMoved && bibListArea().contains (e.getPosition()))
+            for (int i = 0; i < bib.size(); ++i)
+                if (bibRect (i).contains (e.getPosition())) { if (onPickSong) onPickSong (bib[i].id); break; }
+        bibDragging = false;
     }
 
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
@@ -2544,23 +2864,25 @@ struct PadPanel : public juce::Component
 
     void resized() override
     {
-        auto r = getLocalBounds().reduced (14);
-        auto fcol = r.removeFromRight (74);
-        rFaderLbl = fcol.removeFromBottom (20);
-        rFader = fcol.reduced (10, 8);
+        const bool ph = npEsIPhone();
+        auto r = getLocalBounds().reduced (ph ? 8 : 14);
+        auto fcol = r.removeFromRight (ph ? 58 : 74);
+        rFaderLbl = fcol.removeFromBottom (ph ? 16 : 20);
+        rFader = fcol.reduced (ph ? 8 : 10, ph ? 6 : 8);
         fader.setBounds (rFader);
-        r.removeFromRight (12);
+        r.removeFromRight (ph ? 8 : 12);
 
-        auto top = r.removeFromTop (60);
-        rLink = top.removeFromLeft (58).reduced (0, 8);
-        top.removeFromLeft (10);
-        rName = top.reduced (0, 6);                    // la barra de vidrio ocupa el resto
+        auto top = r.removeFromTop (ph ? 44 : 60);
+        rLink = top.removeFromLeft (ph ? 50 : 58).reduced (0, ph ? 6 : 8);
+        top.removeFromLeft (ph ? 8 : 10);
+        rName = top.reduced (0, ph ? 5 : 6);           // la barra de vidrio ocupa el resto
         { auto inner = rName.reduced (6); rPort = inner.removeFromLeft (inner.getHeight()); }   // portada cuadrada DENTRO de la barra
-        r.removeFromTop (8);
-        rStatus = r.removeFromTop (18);
-        r.removeFromTop (10);
+        r.removeFromTop (ph ? 4 : 8);
+        rStatus = r.removeFromTop (ph ? 14 : 18);
+        r.removeFromTop (ph ? 6 : 10);
 
-        const int cols = 3, rows = 4, gap = 10;
+        // Grilla estilo referencia: 6 columnas × 2 filas, celdas grandes llenando el área.
+        const int cols = 6, rows = 2, gap = ph ? 6 : 10;
         const int cw  = (r.getWidth()  - (cols - 1) * gap) / cols;
         const int chh = (r.getHeight() - (rows - 1) * gap) / rows;
         for (int i = 0; i < 12; ++i)
@@ -2581,7 +2903,7 @@ struct PadPanel : public juce::Component
         g.fillRoundedRectangle (rf, 12.0f);
         if (playing && ! active) { g.setColour (juce::Colour (0xff2E8BFF)); g.drawRoundedRectangle (rf.reduced (1.5f), 12.0f, 2.5f); }
         g.setColour (active ? juce::Colours::black : juce::Colour (0xfff2f2f2));
-        g.setFont (juce::Font (24.0f, juce::Font::bold));
+        g.setFont (juce::Font ("Futura", npEsIPhone() ? 22.0f : 30.0f, juce::Font::bold));   // fuente de los tonos
         g.drawText (txt, ready ? b : b.withTrimmedBottom (14), juce::Justification::centred);
         if (! ready)
         {
@@ -2673,17 +2995,223 @@ struct FocusTextEditor : public juce::TextEditor
     void focusLost   (FocusChangeType t) override { juce::TextEditor::focusLost (t);   if (onBlur)  onBlur();  }
 };
 
+// ───────── Fuente de marca Space Grotesk (empaquetada) ─────────
+// Se carga del binario para que se vea IDÉNTICA en iPhone, iPad y Mac
+// (no depende de que el sistema tenga la fuente instalada).
+static juce::Font npFontMarca (float alturaPx, bool bold = false)
+{
+    static juce::Typeface::Ptr reg = juce::Typeface::createSystemTypefaceFor (
+        BinaryData::SpaceGroteskRegular_ttf, (size_t) BinaryData::SpaceGroteskRegular_ttfSize);
+    static juce::Typeface::Ptr bld = juce::Typeface::createSystemTypefaceFor (
+        BinaryData::SpaceGroteskBold_ttf,    (size_t) BinaryData::SpaceGroteskBold_ttfSize);
+    juce::Font f (bold ? bld : reg);
+    f.setHeight (alturaPx);
+    return f;
+}
+
 // ───────── Panel de login para tactil (iOS/iPad): tarjeta centrada ─────────
 // Reemplaza al AlertWindow (que en pantalla completa se estira feo) por una
 // tarjeta propia con estilo NeuralPlay. En escritorio no se usa.
+// Campos de texto con esquinas redondeadas y borde fino (para el login).
+struct NPRoundFieldLnF : public juce::LookAndFeel_V4
+{
+    void fillTextEditorBackground (juce::Graphics& g, int w, int h, juce::TextEditor& te) override
+    {
+        g.setColour (te.findColour (juce::TextEditor::backgroundColourId));
+        g.fillRoundedRectangle (0.0f, 0.0f, (float) w, (float) h, 12.0f);
+    }
+    void drawTextEditorOutline (juce::Graphics& g, int w, int h, juce::TextEditor& te) override
+    {
+        const bool foc = te.hasKeyboardFocus (true);
+        g.setColour (te.findColour (foc ? juce::TextEditor::focusedOutlineColourId
+                                        : juce::TextEditor::outlineColourId));
+        g.drawRoundedRectangle (0.6f, 0.6f, (float) w - 1.2f, (float) h - 1.2f, 12.0f, foc ? 1.4f : 1.0f);
+    }
+    // Mismo tipo de letra (Space Grotesk) para el botón "Entrar".
+    juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override
+    {
+        return npFontMarca (juce::jmin (17.0f, buttonHeight * 0.42f), true);
+    }
+};
+
+// ── Diálogo estilo app (campos redondeados + calendario) para crear / duplicar repertorios.
+//    Reemplaza al AlertWindow feo. Se usa solo en Mac por ahora. ──
+struct NPDatePrompt : public juce::Component
+{
+    juce::String titulo, okText;
+    juce::TextEditor nameField;
+    juce::TextButton okBtn, cancelBtn, prevBtn, nextBtn;
+    NPRoundFieldLnF fieldLnf;
+    int calYear = 2025, calMonth = 0;                 // mes mostrado (0-11)
+    int selYear = 2025, selMonth = 0, selDay = 1;     // fecha elegida
+    std::function<void (juce::String, juce::String)> onOk;
+
+    NPDatePrompt()
+    {
+        nameField.setColour (juce::TextEditor::backgroundColourId,       juce::Colour (0xff202227));
+        nameField.setColour (juce::TextEditor::textColourId,             juce::Colour (0xfff2f2f2));
+        nameField.setColour (juce::TextEditor::outlineColourId,          juce::Colour (0xff3a3d44));
+        nameField.setColour (juce::TextEditor::focusedOutlineColourId,   juce::Colour (0xff8a94a6));
+        nameField.setLookAndFeel (&fieldLnf);
+        nameField.setFont (juce::Font (16.0f));
+        nameField.setJustification (juce::Justification::centredLeft);   // texto centrado verticalmente
+        nameField.setIndents (12, 0);
+        nameField.onReturnKey = [this] { grabKeyboardFocus(); };          // táctil: Return cierra el teclado
+        addAndMakeVisible (nameField);
+        setWantsKeyboardFocus (true);
+
+        okBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xfff2f2f2));
+        okBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0a0a0a));
+        okBtn.onClick = [this] { confirm(); };
+        addAndMakeVisible (okBtn);
+        cancelBtn.setButtonText ("Cancelar");
+        cancelBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        cancelBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        cancelBtn.onClick = [this] { setVisible (false); };
+        addAndMakeVisible (cancelBtn);
+        prevBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xb9"));
+        prevBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        prevBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        prevBtn.onClick = [this] { if (--calMonth < 0) { calMonth = 11; --calYear; } repaint(); };
+        addAndMakeVisible (prevBtn);
+        nextBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xba"));
+        nextBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        nextBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        nextBtn.onClick = [this] { if (++calMonth > 11) { calMonth = 0; ++calYear; } repaint(); };
+        addAndMakeVisible (nextBtn);
+        setAlwaysOnTop (true);
+    }
+    ~NPDatePrompt() override { nameField.setLookAndFeel (nullptr); }
+
+    void abrir (juce::String t, juce::String ok, juce::String nombre)
+    {
+        titulo = t; okText = ok; okBtn.setButtonText (ok);
+        nameField.setText (nombre, juce::dontSendNotification);
+        const auto now = juce::Time::getCurrentTime();
+        selYear = calYear = now.getYear();
+        selMonth = calMonth = now.getMonth();   // 0-11
+        selDay = now.getDayOfMonth();
+        setVisible (true); toFront (true);
+        resized(); repaint();
+       #if ! JUCE_IOS
+        nameField.grabKeyboardFocus();   // en táctil NO enfocamos: el teclado taparía el calendario/Crear
+       #endif
+    }
+
+    static int diasEnMes (int y, int m)
+    {
+        static const int d[12] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+        if (m == 1 && ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0)) return 29;
+        return d[m];
+    }
+    int primerDiaCol (int y, int m) const           // columna (0=Lun..6=Dom) del día 1
+    { juce::Time t (y, m, 1, 0, 0); return (t.getDayOfWeek() + 6) % 7; }
+    juce::String fechaStr() const
+    { return juce::String::formatted ("%04d-%02d-%02d", selYear, selMonth + 1, selDay); }
+
+    struct Metrics { int cardW, cardH, pad, titleY, nombreY, fieldY, fieldH, fechaY, gridTop, gridH, btnY, btnH; };
+    Metrics M() const
+    {   //                cardW cardH pad titY nomY fldY fldH fecY gTop gH  btnY btnH
+        if (npEsIPhone()) return { 400, 396, 18, 12, 40, 56, 34, 98, 156, 168, 344, 34 };
+        return              { 420, 500, 24, 20, 58, 78, 40, 126, 200, 240, 448, 40 };
+    }
+    juce::Rectangle<int> cardBounds() const { auto m = M(); return getLocalBounds().withSizeKeepingCentre (m.cardW, m.cardH); }
+    juce::Rectangle<int> gridArea() const
+    { auto m = M(); auto c = cardBounds().reduced (m.pad, 0); return { c.getX(), cardBounds().getY() + m.gridTop, c.getWidth(), m.gridH }; }
+    juce::Rectangle<int> cellRect (int col, int rowi) const
+    {
+        auto g = gridArea(); const int cw = g.getWidth() / 7, hdr = 24, ch = (g.getHeight() - hdr) / 6;
+        return { g.getX() + col * cw, g.getY() + hdr + rowi * ch, cw, ch };
+    }
+
+    void confirm()
+    {
+        auto n = nameField.getText().trim();
+        setVisible (false);
+        if (onOk) onOk (n, fechaStr());
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xC0000000));
+        auto c = cardBounds().toFloat();
+        g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (c, 16.0f);
+        g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (c, 16.0f, 1.2f);
+        auto m = M();
+        auto in = cardBounds().reduced (m.pad, 0);
+        g.setColour (juce::Colours::white); g.setFont (juce::Font (18.0f, juce::Font::bold));
+        g.drawText (titulo, juce::Rectangle<int> (in.getX(), cardBounds().getY() + m.titleY, in.getWidth(), 26), juce::Justification::centred);
+        g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (juce::Font (12.5f));
+        g.drawText ("Nombre", juce::Rectangle<int> (in.getX(), cardBounds().getY() + m.nombreY, in.getWidth(), 16), juce::Justification::centredLeft);
+        g.drawText ("Fecha",  juce::Rectangle<int> (in.getX(), cardBounds().getY() + m.fechaY, in.getWidth(), 16), juce::Justification::centredLeft);
+        g.setColour (juce::Colours::white); g.setFont (juce::Font (13.5f, juce::Font::bold));
+        g.drawText (fechaStr(), juce::Rectangle<int> (in.getX(), cardBounds().getY() + m.fechaY - 2, in.getWidth(), 18), juce::Justification::centredRight);
+
+        static const char* mesN[12] = { "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre" };
+        auto g0 = gridArea();
+        g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
+        g.drawText (juce::String (mesN[calMonth]) + " " + juce::String (calYear),
+                    juce::Rectangle<int> (g0.getX(), g0.getY() - 30, g0.getWidth(), 24), juce::Justification::centred);
+        static const char* dn[7] = { "L","M","M","J","V","S","D" };
+        g.setColour (juce::Colour (0xff8a8a8a)); g.setFont (juce::Font (11.5f, juce::Font::bold));
+        const int cw = g0.getWidth() / 7;
+        for (int i = 0; i < 7; ++i)
+            g.drawText (dn[i], juce::Rectangle<int> (g0.getX() + i * cw, g0.getY(), cw, 24), juce::Justification::centred);
+        const int dim = diasEnMes (calYear, calMonth), off = primerDiaCol (calYear, calMonth);
+        for (int d = 1; d <= dim; ++d)
+        {
+            const int idx = off + d - 1;
+            auto cr = cellRect (idx % 7, idx / 7).reduced (3);
+            const bool sel = (calYear == selYear && calMonth == selMonth && d == selDay);
+            if (sel) { g.setColour (juce::Colour (0xff2E6BE6)); g.fillRoundedRectangle (cr.toFloat(), 8.0f); }
+            g.setColour (sel ? juce::Colours::white : juce::Colour (0xffdedede));
+            g.setFont (juce::Font (13.0f, sel ? juce::Font::bold : juce::Font::plain));
+            g.drawText (juce::String (d), cr, juce::Justification::centred);
+        }
+    }
+
+    void resized() override
+    {
+        auto m = M();
+        auto in = cardBounds().reduced (m.pad, 0);
+        nameField.setBounds (juce::Rectangle<int> (in.getX(), cardBounds().getY() + m.fieldY, in.getWidth(), m.fieldH));
+        auto g0 = gridArea();
+        prevBtn.setBounds (g0.getX(), g0.getY() - 32, 34, 26);
+        nextBtn.setBounds (g0.getRight() - 34, g0.getY() - 32, 34, 26);
+        const int half = in.getWidth() / 2 - 6;
+        cancelBtn.setBounds (in.getX(), cardBounds().getY() + m.btnY, half, m.btnH);
+        okBtn.setBounds     (in.getRight() - half, cardBounds().getY() + m.btnY, half, m.btnH);
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const int dim = diasEnMes (calYear, calMonth), off = primerDiaCol (calYear, calMonth);
+        for (int d = 1; d <= dim; ++d)
+        {
+            const int idx = off + d - 1;
+            if (cellRect (idx % 7, idx / 7).contains (e.getPosition()))
+            { selDay = d; selMonth = calMonth; selYear = calYear; repaint(); return; }
+        }
+        if (! cardBounds().contains (e.getPosition())) setVisible (false);
+    }
+};
+
 class NeuralLoginOverlay : public juce::Component
 {
 public:
     std::function<void (juce::String, juce::String)> onSubmit;
 
+    ~NeuralLoginOverlay() override
+    {
+        email.setLookAndFeel (nullptr);   // soltar el LnF antes de que se destruya
+        pass.setLookAndFeel (nullptr);
+        entrar.setLookAndFeel (nullptr);
+    }
+
     NeuralLoginOverlay()
     {
         setInterceptsMouseClicks (true, true);
+        setWantsKeyboardFocus (true);   // para poder quitar el foco de los campos (ocultar el teclado)
 
         title.setText (juce::String::fromUTF8 ("NeuralPlay"), juce::dontSendNotification);
         title.setJustificationType (juce::Justification::centred);
@@ -2691,30 +3219,32 @@ public:
         title.setFont (juce::Font (30.0f, juce::Font::bold));
         addAndMakeVisible (title);
 
-        subtitle.setText (juce::String::fromUTF8 ("Entra con tu cuenta para cargar tu organizacion."),
+        subtitle.setText (juce::String::fromUTF8 ("Inicia sesi\xc3\xb3n con tus credenciales de administrador"),
                           juce::dontSendNotification);
         subtitle.setJustificationType (juce::Justification::centred);
         subtitle.setColour (juce::Label::textColourId, juce::Colour (0xff9aa0a6));
-        subtitle.setFont (juce::Font (15.0f));
+        subtitle.setFont (juce::Font (13.5f));
         addAndMakeVisible (subtitle);
 
-        auto styleField = [] (juce::TextEditor& t, const juce::String& ph, bool pass)
+        auto styleField = [this] (juce::TextEditor& t, const juce::String& ph, bool pass)
         {
             t.setColour (juce::TextEditor::backgroundColourId,       juce::Colour (0xff202227));
             t.setColour (juce::TextEditor::textColourId,            juce::Colour (0xfff2f2f2));
-            t.setColour (juce::TextEditor::outlineColourId,         juce::Colour (0xff34363c));
-            t.setColour (juce::TextEditor::focusedOutlineColourId,  juce::Colour (0xff7c8794));
+            t.setColour (juce::TextEditor::outlineColourId,         juce::Colour (0xff3a3d44));
+            t.setColour (juce::TextEditor::focusedOutlineColourId,  juce::Colour (0xff8a94a6));
             t.setColour (juce::CaretComponent::caretColourId,       juce::Colour (0xfff2f2f2));
-            t.setFont (juce::Font (18.0f));
+            t.setLookAndFeel (&fieldLnf);                            // esquinas redondeadas + borde fino
+            t.setFont (npFontMarca (16.0f, false));
             t.setTextToShowWhenEmpty (ph, juce::Colour (0xff6b7280));
-            t.setJustification (juce::Justification::centredLeft);
-            t.setIndents (12, 10);
+            t.setJustification (juce::Justification::centred);       // texto centrado en la cajita
+            t.setIndents (10, 0);
             if (pass) t.setPasswordCharacter ((juce_wchar) 0x2022);
         };
         styleField (email, juce::String::fromUTF8 ("Email"), false);
+        email.onReturnKey = [this] { pass.grabKeyboardFocus(); };   // Enter → salta a Contraseña
         addAndMakeVisible (email);
-        styleField (pass, juce::String::fromUTF8 ("Contrasena"), true);
-        pass.onReturnKey = [this] { submit(); };
+        styleField (pass, juce::String::fromUTF8 ("Contrase\xc3\xb1" "a"), true);
+        pass.onReturnKey = [this] { submit(); };                    // Enter en Contraseña → Entrar
         addAndMakeVisible (pass);
 
         // Subir la tarjeta cuando cualquiera de los campos toma foco (teclado en pantalla),
@@ -2740,6 +3270,7 @@ public:
         entrar.setButtonText (juce::String::fromUTF8 ("Entrar"));
         entrar.setColour (juce::TextButton::buttonColourId,    juce::Colour (0xfff2f2f2));
         entrar.setColour (juce::TextButton::textColourOffId,   juce::Colour (0xff0a0a0a));
+        entrar.setLookAndFeel (&fieldLnf);                      // fuente Avenir Next en el botón
         entrar.onClick = [this] { submit(); };
         addAndMakeVisible (entrar);
 
@@ -2785,26 +3316,53 @@ public:
 
     void resized() override
     {
-        const int cardW = juce::jmin (460, getWidth()  - 48);
-        const int cardH = 452;
         auto b = getLocalBounds();
-        int cy = b.getCentreY();
-        if (kbShown)
+
+        // ── Tarjeta de login IDÉNTICA en iPhone, iPad y Mac ──
+        //    Un solo layout (mismas medidas absolutas) + fuente fija "Avenir Next"
+        //    (existe igual en iOS y macOS → renderiza idéntico en las 3).
+        //    En táctil, si el teclado sube, el formulario se pega arriba y se
+        //    oculta el logo/subtítulo para ganar espacio.
+        auto safe = b;
+       #if JUCE_IOS || JUCE_ANDROID
+        if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+            safe = d->safeAreaInsets.subtractedFrom (b);
+       #endif
+        const bool brand = ! kbShown;
+
+        // Space Grotesk empaquetada: idéntica en las 3 plataformas.
+        // "NeuralPlay" en Bold 700, la descripción en Regular 400.
+        title.setFont    (npFontMarca (26.0f, true));
+        subtitle.setFont (npFontMarca (15.0f, false));
+
+        const int cardW = juce::jmin (430, b.getWidth() - 40);
+        const int hLogo = 60, hTitle = 34, hSub = 20, hField = 46, hErr = 16, hBtn = 48;
+        int cardH = 14 + hField + 11 + hField + 8 + hErr + 8 + hBtn + 14;   // form + paddings
+        if (brand) cardH += hLogo + 2 + hTitle + 0 + hSub + 16;
+        int top = kbShown ? (safe.getY() + 8)
+                          : juce::jmax (safe.getY() + 8, b.getCentreY() - cardH / 2);
+        card = juce::Rectangle<int> (b.getCentreX() - cardW / 2, top, cardW, cardH);
+        auto in = card.reduced (18, 14);
+        if (brand)
         {
-            // dejar el fondo de la tarjeta por encima del teclado en pantalla (~mitad inferior)
-            const int desiredBottom = (int) (b.getHeight() * 0.50f);
-            cy = juce::jmin (cy, desiredBottom - cardH / 2);
-            cy = juce::jmax (cy, b.getY() + 16 + cardH / 2);   // sin salir por arriba
+            logoBounds = in.removeFromTop (hLogo); in.removeFromTop (2);
+            title.setBounds    (in.removeFromTop (hTitle)); in.removeFromTop (0);
+            subtitle.setBounds (in.removeFromTop (hSub));   in.removeFromTop (16);
         }
-        card = juce::Rectangle<int> (0, 0, cardW, cardH).withCentre ({ b.getCentreX(), cy });
-        auto in = card.reduced (30);
-        logoBounds = in.removeFromTop (66); in.removeFromTop (10);
-        title.setBounds    (in.removeFromTop (38));
-        subtitle.setBounds (in.removeFromTop (42)); in.removeFromTop (14);
-        email.setBounds    (in.removeFromTop (48)); in.removeFromTop (12);
-        pass.setBounds     (in.removeFromTop (48)); in.removeFromTop (8);
-        error.setBounds    (in.removeFromTop (22)); in.removeFromTop (8);
-        entrar.setBounds   (in.removeFromTop (52));
+        else { logoBounds = {}; title.setBounds ({}); subtitle.setBounds ({}); }
+        title.setVisible (brand); subtitle.setVisible (brand);
+        email.setBounds  (in.removeFromTop (hField)); in.removeFromTop (11);
+        pass.setBounds   (in.removeFromTop (hField)); in.removeFromTop (8);
+        error.setBounds  (in.removeFromTop (hErr));   in.removeFromTop (8);
+        entrar.setBounds (in.removeFromTop (hBtn));
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        // Tocar fuera de los campos oculta el teclado (iPhone/iPad).
+        if (! email.getBounds().contains (e.getPosition())
+            && ! pass.getBounds().contains (e.getPosition()))
+            grabKeyboardFocus();   // el overlay toma el foco → los campos lo pierden → se cierra el teclado
     }
 
 private:
@@ -2814,6 +3372,7 @@ private:
         if (onSubmit) { setBusy (true); onSubmit (email.getText().trim(), pass.getText()); }
     }
 
+    NPRoundFieldLnF fieldLnf;   // antes de los campos: se destruye después de ellos
     juce::Label title, subtitle, error;
     FocusTextEditor email, pass;
     juce::TextButton entrar;
@@ -2831,16 +3390,33 @@ class MainComponent : public juce::AudioAppComponent,
 public:
     MainComponent()
     {
+        // Sesión única por dispositivo: si el servidor cierra esta sesión (se abrió
+        // en otro dispositivo), olvidamos el token y mostramos el login con aviso.
+        {
+            juce::Component::SafePointer<MainComponent> selfKick (this);
+            npOnSessionKicked = [selfKick] (juce::String msg)
+            {
+                if (selfKick == nullptr) return;
+                selfKick->serverToken.clear();
+                selfKick->serverSession.clear();
+                npSessionToken.clear();
+                selfKick->guardarConfigCuenta();
+                selfKick->connStatus.setText (msg, juce::dontSendNotification);
+                selfKick->mostrarLoginDialog();
+                if (selfKick->loginOverlay != nullptr) selfKick->loginOverlay->showError (msg);
+            };
+        }
         loadConfig();
-        if (serverToken.isEmpty())   // multi-tenant: sin sesión → pedir login al arrancar
-            juce::MessageManager::callAsync ([this] { mostrarLoginDialog(); });
+        // Sin sesión: el login se muestra DESPUÉS del splash (~2s), no de inmediato,
+        // para que el logo de inicio se alcance a ver. Se dispara desde timerCallback.
         setLookAndFeel (&pillLnf);
+        juce::LookAndFeel::setDefaultLookAndFeel (&pillLnf);   // Space Grotesk también en menús/popups/diálogos
         setWantsKeyboardFocus (true);   // #4 recibir teclas para el mapping de teclado
         logoImg = juce::ImageFileFormat::loadFrom (BinaryData::AppIcon_png, (size_t) BinaryData::AppIcon_pngSize);
         // Logo interno (wordmark "NeuralPlay") SOLO para la esquina del header.
         // El icono de la app (AppIcon) se mantiene en splash/login y como icono general.
         logoInternoImg = juce::ImageFileFormat::loadFrom (BinaryData::LogoInterno_png, (size_t) BinaryData::LogoInterno_pngSize);
-        splash.logo = logoImg;
+        splash.logo = logoInternoImg;   // pantalla de inicio: mostrar el wordmark "NeuralPlay", no el icono cuadrado
         formatManager.registerBasicFormats();
        #if JUCE_MAC || JUCE_IOS
         // CoreAudio decodifica los formatos comprimidos (MP3/AAC/M4A) ademas de WAV/AIFF.
@@ -2867,8 +3443,10 @@ public:
         repPicker.onNew  = [this] { createSetlist(); };
         repPicker.onDelete = [this] (juce::String id) { confirmDeleteSetlist (id); };
         repPicker.onSave = [this] (juce::String id) { saveRepertoireMixes (id); };
+        repPicker.onSaveAs = [this] { saveRepertoireAsNew(); };
         repPicker.onDownload = [this] (juce::String id) { downloadRepertoireOffline (id); };
         addChildComponent (repPicker);
+        addChildComponent (datePrompt);
 
         settingsBtn.onClick = [this]
         {
@@ -2909,6 +3487,13 @@ public:
         storagePanel.onFreeUnused = [this] { deleteUnusedCache(); };
         storagePanel.onAutoClean  = [this] (bool on) { cacheAutoClean = on; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); if (on) { deleteUnusedCache(); enforceCap(); } };
         storagePanel.onCap        = [this] (int gb) { cacheCapGB = gb; saveStorageCfg(); storagePanel.setStats (storagePanel.total, storagePanel.unused, cacheAutoClean, cacheCapGB); enforceCap(); refreshStorageStats(); };
+        storagePanel.onBack       = [this]
+        {
+            settingsPanel.setState (syncEnabled, syncLinked.load());
+            settingsPanel.setBounds (getLocalBounds());
+            settingsPanel.setVisible (true);
+            settingsPanel.toFront (true);
+        };
         addChildComponent (storagePanel);
 
         audioCfg.onDevice = [this] (const juce::String& d) { applyAudioDevice (d); };
@@ -3083,15 +3668,27 @@ public:
             tb->setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
             addAndMakeVisible (tb);
         }
-        padPlayerBtn.onClick = [this] { if (clickOrArm (kaPadPlayer)) return; setFaderView (3); };
+        padPlayerBtn.onClick = [this] { if (clickOrArm (kaPadPlayer)) return; if (npEsIPhone()) phoneShowMap = false; setFaderView (3); };
         faderViewBtn.kind = 0; repeatBtn.kind = 1; infiniteBtn.kind = 2;
         faderViewBtn.active = true;
         addAndMakeVisible (faderViewBtn);
         addAndMakeVisible (repeatBtn);
         addAndMakeVisible (infiniteBtn);
-        faderViewBtn.onClick = [this] { if (clickOrArm (kaFaderView)) return; setFaderView (0); };
-        busesBtn.onClick     = [this] { if (clickOrArm (kaBuses))     return; setFaderView (1); };
-        muteMidiBtn.onClick  = [this] { if (! featMidi) { avisoPlanMidi(); return; } if (clickOrArm (kaMidi))      return; setFaderView (2); };
+        // En iPhone el botón de Faders alterna entre Faders y Mapa (escenario único).
+        faderViewBtn.onClick = [this]
+        {
+            if (clickOrArm (kaFaderView)) return;
+            if (npEsIPhone())
+            {
+                phoneShowMap = ! phoneShowMap;
+                if (! phoneShowMap) { setFaderView (0); }
+                else { updateFaderVisibility(); resized(); repaint(); }
+                return;
+            }
+            setFaderView (0);
+        };
+        busesBtn.onClick     = [this] { if (clickOrArm (kaBuses))     return; if (npEsIPhone()) phoneShowMap = false; setFaderView (1); };
+        muteMidiBtn.onClick  = [this] { if (! featMidi) { avisoPlanMidi(); return; } if (clickOrArm (kaMidi))      return; if (npEsIPhone()) phoneShowMap = false; setFaderView (2); };
 
         repeatBtn.onClick   = [this] { if (clickOrArm (kaRepeat)) return; toggleRepeatOnce(); };
         infiniteBtn.onClick = [this] { if (clickOrArm (kaLoop))   return; toggleLoopInfinite(); };
@@ -3162,6 +3759,7 @@ public:
         }
 
         splashStart = juce::Time::getMillisecondCounter();
+        splash.setAlwaysOnTop (true);   // cubre TODO durante los ~2s (que no se asomen las tarjetas)
         addAndMakeVisible (splash);
         startTimerHz (60);
 
@@ -3185,6 +3783,7 @@ public:
         for (auto* s : trackSliders) s->setLookAndFeel (nullptr);
         masterSlider.setLookAndFeel (nullptr);
         padPanel.fader.setLookAndFeel (nullptr);
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);   // soltar el default global antes de destruir pillLnf
         setLookAndFeel (nullptr);
         thumb.removeChangeListener (this);
         shutdownAudio();
@@ -3654,12 +4253,13 @@ public:
             g.setColour (juce::Colour (0xff1f1f1f)); g.fillRoundedRectangle (boxf, 7.0f);
             g.setColour (juce::Colour (0x22ffffff)); g.drawRoundedRectangle (boxf, 7.0f, 1.0f);
             const int hh = compasBoxBounds.getHeight() / 2;
+            const bool phBpm = npEsIPhone();
             g.setColour (juce::Colour (0xffe8e8e8));
-            g.setFont (juce::Font (12.5f, juce::Font::bold));
+            g.setFont (juce::Font (phBpm ? 10.0f : 12.5f, juce::Font::bold));
             g.drawText (juce::String (juce::roundToInt (currentBpm())) + " BPM",
                         compasBoxBounds.withHeight (hh).translated (0, 1), juce::Justification::centred, false);
             g.setColour (juce::Colour (0xffb0b0b0));
-            g.setFont (juce::Font (11.5f));
+            g.setFont (juce::Font (phBpm ? 9.5f : 11.5f));
             g.drawText (songCompas, compasBoxBounds.withTrimmedTop (hh).translated (0, -1),
                         juce::Justification::centred, false);
         }
@@ -3668,8 +4268,9 @@ public:
         if (syncEnabled && ! syncBadgeBounds.isEmpty())
         {
             const bool lk = syncLinked.load();
-            const juce::String txt = lk ? juce::String::fromUTF8 ("NeuralSync conectado")
-                                        : juce::String::fromUTF8 ("NeuralSync \xc2\xb7 esperando\xe2\x80\xa6");
+            const juce::String txt = (lk ? juce::String::fromUTF8 ("NeuralSync conectado")
+                                         : juce::String::fromUTF8 ("NeuralSync \xc2\xb7 esperando\xe2\x80\xa6"))
+                                     + juce::String::fromUTF8 ("   ") + localLanIp() + ":" + juce::String (liveServer.port);   // IP (diagnóstico)
             juce::GlyphArrangement ga; ga.addLineOfText (juce::Font (12.5f, juce::Font::bold), txt, 0.0f, 0.0f);
             const float tw = ga.getBoundingBox (0, -1, true).getWidth();
             const float dotD = 9.0f, sp = 7.0f, total = dotD + sp + tw;
@@ -3692,6 +4293,10 @@ public:
             g.drawText (currentSetlistName, setlistBandBounds, juce::Justification::centred, true);
         }
 
+        // iPhone en vista Faders/Buses/Pad/MIDI el mapa está oculto (mapBounds vacío):
+        // no dibujarlo, si no se generan rectángulos de tamaño negativo → crash.
+        if (! mapBounds.isEmpty())
+        {
         auto mb = mapBounds;
         g.setColour (juce::Colour (0xff0d0d0d));
         g.fillRoundedRectangle (mb.toFloat(), 8.0f);
@@ -3700,7 +4305,7 @@ public:
         double vs = 0.0, ve = 0.0; getViewWindow (vs, ve);
         const double span = juce::jmax (0.001, ve - vs);
 
-        if (bpm > 0.0)
+        if (currentSong >= 0 && bpm > 0.0)
         {
             const double secPerEighth = 30.0 / bpm;
             const int perBar = juce::jmax (1, beatsPerBar) * 2;
@@ -3749,6 +4354,7 @@ public:
             g.drawText (msg, inner, juce::Justification::centred, true);
         }
 
+        if (currentSong >= 0)   // sin canción: no dibujar secciones, "Click ∞", ni bloques
         {
             const double total = totalSeconds();
             const double posNow = positionSeconds();
@@ -3857,7 +4463,7 @@ public:
         }
 
         const double pos = positionSeconds();
-        if (pos >= vs && pos <= ve)
+        if (currentSong >= 0 && pos >= vs && pos <= ve)
         {
             const float px = inner.getX() + (float) ((pos - vs) / span) * inner.getWidth();
             g.setColour (juce::Colours::white.withAlpha (0.10f));
@@ -3883,6 +4489,8 @@ public:
                 }
             }
         }
+
+        }   // ── fin del bloque del mapa (solo si mapBounds no está vacío) ──
 
         // Panel de faders (vidrio) fijo + doble linea del Master
         auto fp = faderPanelBounds.toFloat();
@@ -3930,7 +4538,7 @@ public:
         if (! isDragging) return;
         auto inner = mapBounds.reduced (8);
         const double win = juce::jmin (20.0, totalSeconds());
-        const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * 0.5;   // menos sensible
+        const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * npMapDragSens();
         lastInteractionMs = juce::Time::getMillisecondCounter();
         if (dragSeeks) seekSeconds (dragStartCenter - dx);
         else { browsing = true; browseCenter = juce::jlimit (0.0, totalSeconds(), dragStartCenter - dx); repaint (mapBounds); }
@@ -3946,7 +4554,7 @@ public:
             {                                                                // al soltar el arrastre, cae en un click
                 auto inner = mapBounds.reduced (8);
                 const double win = juce::jmin (20.0, totalSeconds());
-                const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * 0.5;
+                const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * npMapDragSens();
                 seekSeconds (snapToBeat (dragStartCenter - dx));
             }
         }
@@ -4200,17 +4808,18 @@ public:
         if (auto* d = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
             full = d->safeAreaInsets.subtractedFrom (full);
        #endif
-        auto area = full.reduced (16);
+        const bool phone = npEsIPhone();   // iPhone: interfaz compacta (pantalla chica)
+        auto area = full.reduced (phone ? 8 : 16);
 
         // Barra superior: logo (izq) | Play + Inicio (centro) | Conectar + tiempo (der)
-        auto topbar = area.removeFromTop (46);
+        auto topbar = area.removeFromTop (phone ? 40 : 46);
         {
-            const int BW = 80, BH = 34, G = 8;
+            const int BW = phone ? 60 : 80, BH = phone ? 30 : 34, G = phone ? 6 : 8;
             const int gy = topbar.getCentreY() - BH / 2;
 
             // Izquierda (tras el logo): caja de tiempo + caja de tempo/compás + PAD
             // logoW deja espacio para el wordmark "NeuralPlay" (mas ancho que el icono cuadrado)
-            const int logoW = 122, boxW = 56, boxG = 6;
+            const int logoW = phone ? 92 : 122, boxW = phone ? 46 : 56, boxG = 6;
             hdrLogoX = topbar.getX() + 12;   // logo a la izquierda del header
             hdrLogoY = gy;                     // misma fila que reloj/PAD/Play (respeta safe area)
             int lx = topbar.getX() + logoW;
@@ -4235,31 +4844,93 @@ public:
             fadeButton.setBounds   (cx + BW / 2 + G, gy, BW, BH);
         }
         connStatus.setVisible (false);
-        area.removeFromTop (6);
+        area.removeFromTop (phone ? 1 : 6);   // iPhone: subir un poco las tarjetas
 
         // Franja del indicador de NeuralSync (bajo el Play), solo si NeuralSync está activo
         if (syncEnabled) { syncBadgeBounds = area.removeFromTop (20); area.removeFromTop (3); }
         else             syncBadgeBounds = {};
 
         // Franja con el nombre del repertorio centrado (solo si hay uno cargado)
-        if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (22); area.removeFromTop (3); }
+        if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (22); area.removeFromTop (phone ? 1 : 3); }
         else                                   setlistBandBounds = {};
 
         // Tarjetas verticales grandes: portada arriba + nombre abajo (scroll horizontal)
-        auto strip = area.removeFromTop (180);
+        auto strip = area.removeFromTop (phone ? 104 : 180);
         stripBounds = strip;
         {
-            const int step = 250;
+            const int cardW = phone ? 148 : 240, cardH = phone ? 100 : 178;
+            const int step = phone ? 160 : 250;
             const int n = songCards.size() + (editMode ? 1 : 0);
             const int contentW = juce::jmax (0, n * step - 10);
             stripScroll = juce::jlimit (0, juce::jmax (0, contentW - strip.getWidth()), stripScroll);
             int x = strip.getX() - stripScroll;
-            for (auto* c : songCards) { c->setBounds (x, strip.getY(), 240, 178); x += step; }
-            if (editMode) addCard.setBounds (x, strip.getY(), 240, 178);
+            for (auto* c : songCards) { c->setBounds (x, strip.getY(), cardW, cardH); x += step; }
+            if (editMode) addCard.setBounds (x, strip.getY(), cardW, cardH);
         }
         area.removeFromTop (4);
 
-        mapBounds = area.removeFromTop (188);
+        // ── iPhone: escenario único. La región inferior muestra UNA sola cosa a la vez
+        //    (Mapa o Faders/Buses/Pad/MIDI). La columna de botones y el Master quedan
+        //    siempre a la derecha para poder alternar entre vistas. ──
+        if (phone)
+        {
+            editBarBounds = {};
+            auto lower = area;
+            const int sepPad = 12, btnColW = 46, midGap = 6, mColW = 54;
+            const int rightW = sepPad + btnColW + midGap + mColW + 6;
+            auto fixed = lower.removeFromRight (rightW);
+            auto stage = lower;
+            faderPanelBounds = stage;
+            faderViewport.setBounds (stage);
+            midiPanel.setBounds (stage);
+            padPanel.setBounds (stage);
+            if (phoneShowMap)
+            {
+                mapBounds = stage.reduced (0, 2);
+                const int bw = 26, bh = 40, cy = mapBounds.getCentreY() - bh / 2;
+                barPrevBtn.setBounds (mapBounds.getX() + 4, cy, bw, bh);
+                barNextBtn.setBounds (mapBounds.getRight() - bw - 4, cy, bw, bh);
+                const bool showNav = (currentSong >= 0);
+                barPrevBtn.setVisible (showNav);
+                barNextBtn.setVisible (showNav);
+            }
+            else
+            {
+                mapBounds = {};
+                barPrevBtn.setVisible (false);
+                barNextBtn.setVisible (false);
+                if (faderView == 0 || faderView == 1) layoutFaderStrip();
+            }
+            // Columna derecha (siempre visible): 6 botones + Master
+            auto fx = fixed.reduced (0, 6);
+            masterSepX = fixed.getX() + 6;
+            fx.removeFromLeft (sepPad);
+            auto btnCol = fx.removeFromLeft (btnColW);
+            fx.removeFromLeft (midGap);
+            auto mcol = fx.removeFromRight (mColW);
+            {
+                juce::Button* btns[6] = { &faderViewBtn, &busesBtn, &padPlayerBtn, &muteMidiBtn, &repeatBtn, &infiniteBtn };
+                const int bgap = 4;
+                const int bh2 = (btnCol.getHeight() - bgap * 5) / 6;
+                for (int i = 0; i < 6; ++i)
+                {
+                    btns[i]->setBounds (btnCol.removeFromTop (bh2));
+                    if (i < 5) btnCol.removeFromTop (bgap);
+                }
+            }
+            masterLabel.setBounds (mcol.removeFromBottom (16));
+            masterSlider.setBounds (mcol.reduced (4, 0));
+
+            splash.setBounds (getLocalBounds());
+            repPicker.setBounds (getLocalBounds());
+            settingsPanel.setBounds (getLocalBounds());
+            storagePanel.setBounds (getLocalBounds());
+            audioCfg.setBounds (getLocalBounds());
+            repEdit.setBounds (getLocalBounds());
+            return;
+        }
+
+        mapBounds = area.removeFromTop (phone ? 80 : 188);
         {   // botones de navegación por compás, pegados a los bordes del mapa
             const int bw = 30, bh = 46, cy = mapBounds.getCentreY() - bh / 2;
             barPrevBtn.setBounds (mapBounds.getX() + 6, cy, bw, bh);
@@ -4285,7 +4956,11 @@ public:
         faderPanelBounds = area;
 
         // Region FIJA a la derecha: separador doble + 6 botones + Master (no se desplazan)
-        const int rightW = 20 + 62 + 10 + 78 + 8;
+        const int sepPad   = phone ? 32 : 20;   // separación entre las líneas y el riel de botones
+        const int btnColW  = phone ? 50 : 62;
+        const int midGap   = phone ? 8  : 10;
+        const int mColW    = phone ? 62 : 78;
+        const int rightW = sepPad + btnColW + midGap + mColW + 8;
         auto fixed = area.removeFromRight (rightW);
 
         // Los tracks (solo esos) van en el viewport desplazable
@@ -4294,15 +4969,15 @@ public:
         padPanel.setBounds (area);
         layoutFaderStrip();
 
-        auto fx = fixed.reduced (0, 14);
-        masterSepX = fixed.getX() + 10;      // doble linea (coords MainComponent)
-        fx.removeFromLeft (20);
-        auto btnCol = fx.removeFromLeft (62);
-        fx.removeFromLeft (10);
-        auto mcol = fx.removeFromRight (78);
+        auto fx = fixed.reduced (0, phone ? 8 : 14);
+        masterSepX = fixed.getX() + (phone ? 7 : 10);   // doble linea (coords MainComponent)
+        fx.removeFromLeft (sepPad);
+        auto btnCol = fx.removeFromLeft (btnColW);
+        fx.removeFromLeft (midGap);
+        auto mcol = fx.removeFromRight (mColW);
         {
             juce::Button* btns[6] = { &faderViewBtn, &busesBtn, &padPlayerBtn, &muteMidiBtn, &repeatBtn, &infiniteBtn };
-            const int bgap = 6;
+            const int bgap = phone ? 4 : 6;
             const int bh = (btnCol.getHeight() - bgap * 5) / 6;
             for (int i = 0; i < 6; ++i)
             {
@@ -4310,8 +4985,8 @@ public:
                 if (i < 5) btnCol.removeFromTop (bgap);
             }
         }
-        masterLabel.setBounds (mcol.removeFromBottom (22));
-        masterSlider.setBounds (mcol.reduced (6, 0));
+        masterLabel.setBounds (mcol.removeFromBottom (phone ? 18 : 22));
+        masterSlider.setBounds (mcol.reduced (phone ? 4 : 6, 0));
 
         splash.setBounds (getLocalBounds());
         repPicker.setBounds (getLocalBounds());
@@ -4390,9 +5065,10 @@ private:
         const juce::Image& corner = logoInternoImg.isValid() ? logoInternoImg : logoImg;
         if (corner.isValid())
         {
-            const float hh = 34.0f;   // = altura de los botones del header (BH), alineado con la fila
+            const float hh = npEsIPhone() ? 24.0f : 34.0f;   // en iPhone el wordmark va más chico
             const float ww = hh * (float) corner.getWidth() / (float) juce::jmax (1, corner.getHeight());
-            g.drawImage (corner, juce::Rectangle<float> (x, y, ww, hh), juce::RectanglePlacement::centred);
+            const float ly = npEsIPhone() ? (y + (34.0f - hh) * 0.5f) : y;   // centrado vertical en la fila
+            g.drawImage (corner, juce::Rectangle<float> (x, ly, ww, hh), juce::RectanglePlacement::centred);
             return;
         }
         const float bw = 4.0f, gap = 3.5f, h = 30.0f;
@@ -4418,8 +5094,10 @@ private:
         auto v = juce::JSON::parse (f.loadFileAsString());
         serverUrl   = v.getProperty ("serverUrl", "").toString();
         serverToken = v.getProperty ("token", "").toString();
+        serverSession = v.getProperty ("session", "").toString();
+        npSessionToken = serverSession;   // activar el guardia de sesión única
         featMidi     = (bool) v.getProperty ("feat_midi", true);
-        featSalidas  = (int)  v.getProperty ("feat_salidas", 32);
+        featSalidas  = npCapSalidas ((int) v.getProperty ("feat_salidas", 32));
         featInfinito = (bool) v.getProperty ("feat_infinito", true);
         audioCfg.maxChans = featSalidas;
         fetchPadPacks();
@@ -4466,6 +5144,7 @@ private:
         if (o == nullptr) { o = new juce::DynamicObject(); v = juce::var (o); }
         o->setProperty ("serverUrl", serverUrl);
         o->setProperty ("token", serverToken);
+        o->setProperty ("session", serverSession);
         o->setProperty ("feat_midi", featMidi);
         o->setProperty ("feat_salidas", featSalidas);
         o->setProperty ("feat_infinito", featInfinito);
@@ -4509,6 +5188,10 @@ private:
                     }
                     sp->serverUrl   = url;
                     sp->serverToken = v.getProperty ("token", "").toString();
+                    // Sesion unica por dispositivo: guardar el token de sesion y reactivar el guardia.
+                    sp->serverSession = v.getProperty ("session", "").toString();
+                    npSessionToken = sp->serverSession;
+                    npKickAvisado.store (false);
                     // Nueva sesion: empezar con el repertorio limpio (no arrastrar el de la cuenta anterior)
                     sp->lastSetlistId.clear();
                     sp->currentSetlistName.clear();
@@ -4582,7 +5265,24 @@ private:
 
     void cerrarSesion()   // "Cambiar cuenta": olvida el token y pide login de nuevo
     {
+        // Avisar al servidor para cerrar la sesión única (best-effort, en background).
+        if (serverSession.isNotEmpty() && serverUrl.isNotEmpty())
+        {
+            const juce::String url = serverUrl + "/api/auth/logout", sess = serverSession;
+            juce::Thread::launch ([url, sess]
+            {
+                juce::URL u = juce::URL (url).withPOSTData (juce::String ("{}"));
+                auto opts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
+                                .withExtraHeaders ("Content-Type: application/json\r\nX-Session-Token: " + sess)
+                                .withConnectionTimeoutMs (6000);
+                std::unique_ptr<juce::InputStream> in (u.createInputStream (opts));
+                if (in != nullptr) in->readEntireStreamAsString();
+            });
+        }
         serverToken.clear();
+        serverSession.clear();
+        npSessionToken.clear();
+        npKickAvisado.store (false);
         guardarConfigCuenta();
         // Limpiar el repertorio y la cancion cargada en memoria (no mostrar los de la cuenta anterior)
         lastSetlistId.clear();
@@ -4591,8 +5291,9 @@ private:
         rebuildRepertoireStrip();
         clearSong();
         refreshEditAvailability();
-        // Borrar la cache descargada (audio/charts) y el roster de la organizacion anterior
-        npCacheDir().deleteRecursively();
+        // Se CONSERVAN los stems ya descargados (npCacheDir) para no volver a bajarlos al reingresar.
+        // La caché de audio se administra manualmente desde el panel «Almacenamiento».
+        // Solo se limpia el roster de la organización anterior.
         npAppDir().getChildFile ("perfiles.json").deleteFile();
         { const juce::ScopedLock l (chartLock); perfilesJson = "[]"; }
         repaint();
@@ -4792,6 +5493,7 @@ private:
         syncEnabled = on;
         if (on)
         {
+            npTriggerLocalNetworkPermission();   // iOS: pedir permiso de Red local para el servidor entrante
             liveServer.start();
             fetchLiveChartForCurrent();
             syncPing (false); syncPingCtr = 0;
@@ -5115,8 +5817,11 @@ private:
     void removeSong (int songId)
     {
         if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        const int realId = (songId < 0 ? -songId : songId);   // el placeholder "Agregando…" usa id NEGATIVO (-numero)
         for (int i = 0; i < repertoire.size(); ++i)   // UI optimista: la tarjeta desaparece al instante
-            if (repertoire.getReference (i).id == songId)
+        {
+            const int rid = repertoire.getReference (i).id;
+            if (rid == songId || rid == realId || rid == -realId)   // acepta placeholder o real
             {
                 repertoire.remove (i);
                 if (i < songMaster.size())   songMaster.remove (i);
@@ -5126,8 +5831,13 @@ private:
                 else if (currentSong > i) --currentSong;
                 break;
             }
+        }
+        dlById.erase (realId); dlById.erase (-realId);   // corta el indicador de "Descargando stems…"
+        if (repertoire.isEmpty()) clearSong();           // sin canciones → mapping totalmente vacío
         rebuildRepertoireStrip();
-        postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/quitar/" + juce::String (songId), {});
+        // SIEMPRE se quita por el id REAL (positivo), así el servidor lo borra aunque hayamos
+        // tocado el placeholder; si no, al recargar la canción "revivía".
+        postThenReload (serverUrl + "/api/live/setlist/" + lastSetlistId + "/quitar/" + juce::String (realId), {});
     }
     void setSongTono (int songId, juce::String tonoName)
     {
@@ -5335,6 +6045,15 @@ private:
 
     void createSetlist()
     {
+        // Diálogo con calendario (estilo app) en las 3 plataformas.
+        datePrompt.onOk = [this] (juce::String nombre, juce::String fecha)
+        { doCreateSetlist (nombre.isNotEmpty() ? nombre : juce::String ("Nuevo repertorio"), fecha); };
+        datePrompt.setBounds (getLocalBounds());
+        datePrompt.abrir (juce::String::fromUTF8 ("Nuevo repertorio"), "Crear", "");
+    }
+
+    void createSetlistAlertLegacy_unused()
+    {
         const auto now = juce::Time::getCurrentTime();
         const auto hoy = juce::String::formatted ("%04d-%02d-%02d",
                                                   now.getYear(), now.getMonth() + 1, now.getDayOfMonth());
@@ -5373,6 +6092,86 @@ private:
                 if (! sp->editMode) sp->toggleEdit();   // entrar en modo edición para agregar canciones
                 sp->startLoadId (id);
             });
+        });
+    }
+
+    // ── "Guardar como Nuevo": duplica el repertorio cargado (canciones + mezcla) ──
+    void saveRepertoireAsNew()
+    {
+        if (serverUrl.isEmpty() || lastSetlistId.isEmpty()) return;
+        juce::String baseName = "Repertorio";
+        for (auto& it : repPicker.items) if (it.id == lastSetlistId) { baseName = it.nombre; break; }
+        // Diálogo con calendario (estilo app) en las 3 plataformas.
+        datePrompt.onOk = [this] (juce::String nombre, juce::String fecha)
+        { duplicateCurrentSetlist (nombre.isNotEmpty() ? nombre : juce::String ("Repertorio (copia)"), fecha); };
+        datePrompt.setBounds (getLocalBounds());
+        datePrompt.abrir (juce::String::fromUTF8 ("Guardar como nuevo"), "Guardar",
+                          baseName + juce::String::fromUTF8 (" (copia)"));
+    }
+
+    void saveRepertoireAsNewAlertLegacy_unused()
+    {
+        juce::String baseName = "Repertorio";
+        const auto now = juce::Time::getCurrentTime();
+        const auto hoy = juce::String::formatted ("%04d-%02d-%02d",
+                                                  now.getYear(), now.getMonth() + 1, now.getDayOfMonth());
+        auto* aw = new juce::AlertWindow (juce::String::fromUTF8 ("Guardar como nuevo"),
+                                          juce::String::fromUTF8 ("Nombre y fecha del nuevo repertorio:"),
+                                          juce::MessageBoxIconType::NoIcon);
+        aw->addTextEditor ("n", baseName + juce::String::fromUTF8 (" (copia)"), juce::String::fromUTF8 ("Nombre:"));
+        aw->addTextEditor ("f", hoy, juce::String::fromUTF8 ("Fecha (AAAA-MM-DD):"));
+        aw->addButton ("Guardar", 1);
+        aw->addButton ("Cancelar", 0);
+        presentModalAlert (aw);
+        juce::Component::SafePointer<MainComponent> sp (this);
+        aw->enterModalState (true, juce::ModalCallbackFunction::create ([sp, aw] (int r)
+        {
+            const juce::String nombre = aw->getTextEditorContents ("n").trim();
+            const juce::String fecha  = aw->getTextEditorContents ("f").trim();
+            if (r == 1 && sp != nullptr)
+                sp->duplicateCurrentSetlist (nombre.isNotEmpty() ? nombre : juce::String ("Repertorio (copia)"), fecha);
+        }), true);
+    }
+
+    void duplicateCurrentSetlist (juce::String nombre, juce::String fecha)
+    {
+        if (serverUrl.isEmpty() || lastSetlistId.isEmpty()) return;
+        snapshotCurrentMix();
+        struct SongCopy { int id; juce::String tono; juce::var mix; };
+        juce::Array<SongCopy> songs;
+        for (int i = 0; i < repertoire.size(); ++i)
+        {
+            auto& e = repertoire.getReference (i);
+            if (e.id <= 0) continue;                                  // saltar placeholders
+            SongCopy s; s.id = e.id; s.tono = e.tonoNombre;
+            s.mix = (i < songMixCache.size()) ? songMixCache[i] : juce::var();
+            songs.add (s);
+        }
+        const auto base = serverUrl; const auto tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, base, tok, nombre, fecha, songs]
+        {
+            juce::StringPairArray cp; cp.set ("nombre", nombre);
+            if (fecha.isNotEmpty()) cp.set ("fecha", fecha);
+            auto v = juce::JSON::parse (httpPostForm (base + "/api/live/setlist/crear", cp, tok));
+            const auto nid = v.getProperty ("id", "").toString();
+            if (nid.isEmpty()) return;
+            juce::String data ("{"); bool first = true;
+            for (auto& s : songs)
+            {
+                juce::StringPairArray ap; ap.set ("numero", juce::String (s.id)); ap.set ("tono", s.tono);
+                httpPostForm (base + "/api/live/setlist/" + nid + "/agregar", ap, tok);   // copiar canción
+                if (s.mix.isObject())
+                {
+                    if (! first) data << ",";
+                    first = false;
+                    data << "\"" << s.id << "\":" << juce::JSON::toString (s.mix);
+                }
+            }
+            data << "}";
+            juce::StringPairArray mp; mp.set ("data", data);
+            httpPostForm (base + "/api/live/setlist/" + nid + "/mix", mp, tok);            // copiar mezcla
+            juce::MessageManager::callAsync ([sp] { if (sp && sp->repPicker.isVisible()) sp->openRepertoirePicker(); });
         });
     }
 
@@ -5957,6 +6756,7 @@ private:
         }
         sectionTimes.clear();
         sectionNames.clear();
+        clickSecArmed.store (false); songHasClickSec = false;   // sin canción no hay bloque "Click ∞"
         { const juce::ScopedLock sl (midiLock); currentMidiBoxes.clear(); flushMidiOffs(); }
         thumb.clear();
         currentSong = -1;
@@ -6356,11 +7156,12 @@ private:
 
     void updateFaderVisibility()
     {
-        const bool tracks = (faderView == 0);
-        const bool buses  = (faderView == 1);
-        const bool midi   = (faderView == 2);
-        const bool pad    = (faderView == 3);
-        faderViewport.setVisible (! midi && ! pad);
+        const bool mapOnly = npEsIPhone() && phoneShowMap;   // iPhone en vista Mapa: ocultar todo lo demás
+        const bool tracks = (faderView == 0) && ! mapOnly;
+        const bool buses  = (faderView == 1) && ! mapOnly;
+        const bool midi   = (faderView == 2) && ! mapOnly;
+        const bool pad    = (faderView == 3) && ! mapOnly;
+        faderViewport.setVisible (! mapOnly && faderView != 2 && faderView != 3);
         midiPanel.setVisible (midi);
         padPanel.setVisible (pad);
         for (auto* s : trackSliders) s->setVisible (tracks);
@@ -6374,16 +7175,18 @@ private:
     void setFaderView (int v)
     {
         faderView = juce::jlimit (0, 3, v);
-        faderViewBtn.active   = (faderView == 0);
-        busesBtn.setColour     (juce::TextButton::buttonColourId, faderView == 1 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
-        padPlayerBtn.setColour (juce::TextButton::buttonColourId, faderView == 3 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
-        muteMidiBtn.setColour  (juce::TextButton::buttonColourId, faderView == 2 ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
+        const bool mapOnly = npEsIPhone() && phoneShowMap;
+        faderViewBtn.active   = (faderView == 0) && ! mapOnly;
+        busesBtn.setColour     (juce::TextButton::buttonColourId, (faderView == 1 && ! mapOnly) ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
+        padPlayerBtn.setColour (juce::TextButton::buttonColourId, (faderView == 3 && ! mapOnly) ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
+        muteMidiBtn.setColour  (juce::TextButton::buttonColourId, (faderView == 2 && ! mapOnly) ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
         faderViewBtn.repaint(); busesBtn.repaint(); padPlayerBtn.repaint(); muteMidiBtn.repaint();
         if (faderView == 1) refreshBusStates();
         if (faderView == 2) midiPanel.refreshPorts();
         if (faderView == 3) refreshPadPanel();
         updateFaderVisibility();
         if (faderView == 0 || faderView == 1) layoutFaderStrip();
+        if (npEsIPhone()) { resized(); repaint(); }   // re-acomoda el escenario único
     }
 
     void rebuildMidiOuts()
@@ -6655,7 +7458,12 @@ private:
     }
     void timerCallback() override
     {
-        if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 1600) { splashOn = false; splash.setVisible (false); }
+        if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 2000)
+        {
+            splashOn = false;
+            splash.setVisible (false);
+            if (serverToken.isEmpty()) mostrarLoginDialog();   // el login aparece DESPUÉS del splash (~2s)
+        }
         updatePadAutomation();   // Pad Player: intro/outro por canción
         reapDeadPadVoices();     // libera voces de pad marcadas en mixPad (fuera del hilo de audio)
 
@@ -7079,7 +7887,7 @@ private:
     void aplicarPlan (const juce::var& fs)   // aplica TODAS las features del plan (MIDI, salidas, infinito)
     {
         if (! fs.isObject()) return;
-        featSalidas  = (int)  fs.getProperty ("salidas",  32);
+        featSalidas  = npCapSalidas ((int) fs.getProperty ("salidas",  32));
         featInfinito = (bool) fs.getProperty ("infinito", true);
         audioCfg.maxChans = featSalidas;
         audioCfg.buildRouteItems (openOutChans);   // re-limita el selector de salidas
@@ -7253,6 +8061,8 @@ private:
         }
         else fadeDir = 1;
         fadeButton.setButtonText (fadedDown ? "Subir" : "Fade");
+        fadeButton.flipped = fadedDown;   // voltear el icono mientras está bajando/abajo
+        fadeButton.repaint();
     }
     double snapToBeat (double sec) const   // cae en la barra de click (beat) más cercana
     {
@@ -7288,7 +8098,7 @@ private:
         repaint (mapBounds);
     }
 
-    juce::String serverUrl, serverToken;
+    juce::String serverUrl, serverToken, serverSession;
     juce::Array<SongEntry> repertoire;
     juce::Array<double> songMaster;   // master (dB) independiente por cancion
     juce::Array<juce::var> songMixCache;   // mezcla por cancion (del repertorio cargado)
@@ -7411,6 +8221,7 @@ private:
     std::atomic<float> busGain[16];         // ganancia por familia (bus)
     int trackFamily[kMaxTracks] = { 0 };    // familia (bus) de cada track
     int faderView = 0;                      // 0 = tracks, 1 = buses
+    bool phoneShowMap = true;               // iPhone: escenario único → true = Mapa, false = Faders/vista
     int vuTick = 0;                         // para refrescar el VU a la mitad de FPS
 
     std::atomic<bool> loopActive { false };     // infinito (permanente)
@@ -7491,6 +8302,7 @@ private:
     HScrollViewport faderViewport;
     MidiPanel midiPanel;
     RepertoirePicker repPicker;
+    NPDatePrompt datePrompt;                 // diálogo con calendario (Mac) para crear/duplicar
     SettingsPanel settingsPanel;
     StoragePanel storagePanel;
     bool cacheAutoClean = false;

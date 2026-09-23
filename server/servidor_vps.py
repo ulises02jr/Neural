@@ -526,6 +526,31 @@ def _gate_admin_por_plan():
             return redirect(url_for("admin_planes"))
 
 
+# Rutas que NO deben bloquearse por sesión única (login/alta/recuperación).
+_SESION_LIBRE = ("/api/auth/login", "/api/auth/logout", "/api/auth/unirse",
+                 "/api/auth/olvide", "/api/auth/reset", "/api/auth/session")
+
+
+@app.before_request
+def _gate_sesion_unica():
+    """Sesión única por dispositivo. Las apps nuevas envían la cabecera
+    'X-Session-Token'. Si ese token ya no es la sesión activa del usuario
+    (porque inició sesión en otro dispositivo), se responde 401 y la app
+    cierra la sesión. Peticiones sin la cabecera (web, apps viejas) no se tocan."""
+    stoken = request.headers.get("X-Session-Token", "")
+    if not stoken:
+        return  # opt-in: sin cabecera, no se aplica
+    if any(request.path.startswith(p) for p in _SESION_LIBRE):
+        return
+    if not usuarios.sesion_valida(stoken):
+        return jsonify({
+            "ok": False,
+            "error": "sesion_reemplazada",
+            "mensaje": "Se inició sesión en otro dispositivo. Por seguridad, "
+                       "cada cuenta solo puede estar activa en un dispositivo a la vez.",
+        }), 401
+
+
 def get_usuario_actual():
     """Devuelve dict del usuario logueado o None.
     Si es login viejo (password compartido), devuelve un dict mínimo.
@@ -586,41 +611,10 @@ def _org_req(org=None):
 # ───────────────────────── Rutas públicas (login) ─────────────────────────
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        if not email or not password:
-            flash("Completá email y contraseña", "error")
-            return render_template("login_musicos.html")
-        ip = _client_ip()
-        if usuarios.login_bloqueado(ip):
-            flash("Demasiados intentos fallidos. Esperá unos minutos y volvé a intentar.", "error")
-            return render_template("login_musicos.html")
-        # Intentar autenticar con sistema de usuarios
-        u = usuarios.autenticar(email, password)
-        if u:
-            # Si es admin, redirigir al login de admin (separación de pantallas)
-            if u["rol"] == "admin":
-                flash("Sos administrador. Usá el acceso de administrador.", "error")
-                return redirect(url_for("admin_login"))
-            usuarios.limpiar_intentos(ip)
-            session.permanent = True
-            session.clear()
-            session["user_id"] = u["id"]
-            session["rol"] = u["rol"]
-            session["nombre"] = u["nombre"]
-            session["org_id"] = u.get("org_id") or 1
-            return redirect(url_for("principal"))
-        # Verificar si el usuario existe pero está pendiente
-        existente = usuarios.buscar_por_email(email)
-        if existente and existente["estado"] == "pendiente":
-            flash("Tu cuenta está pendiente de aprobación", "error")
-        elif existente and existente["estado"] == "rechazado":
-            flash("Tu cuenta no fue aprobada. Contactá al administrador.", "error")
-        else:
-            usuarios.registrar_intento(ip)
-            flash("Email o contraseña incorrectos", "error")
-    return render_template("login_musicos.html")
+    # Acceso de músicos por web deshabilitado: los músicos usan la app NeuralCharts
+    # (se registran e inician sesión desde la app). El único acceso web es el panel
+    # de administración. Cualquier visita a /login se manda al login de admin.
+    return redirect(url_for("admin_login"))
 
 
 @app.route("/registro", methods=["GET", "POST"])
@@ -631,33 +625,31 @@ def registro():
 
 @app.route("/unirse", methods=["GET", "POST"])
 def unirse():
-    """Un músico se une a una organización con su código. Queda PENDIENTE de aprobación."""
-    if request.method == "POST":
-        codigo = request.form.get("codigo", "").strip().upper()
-        nombre = request.form.get("nombre", "").strip()
-        apellido = request.form.get("apellido", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        password2 = request.form.get("password2", "")
-        prev = dict(codigo=codigo, nombre=nombre, apellido=apellido, email=email)
-        if not codigo or not nombre or not apellido or not email or not password:
-            flash("Completá todos los campos", "error")
-            return render_template("unirse.html", **prev)
-        if password != password2:
-            flash("Las contraseñas no coinciden", "error")
-            return render_template("unirse.html", **prev)
-        org = usuarios.buscar_org_por_codigo(codigo)
-        if not org:
-            flash("Código de organización inválido", "error")
-            return render_template("unirse.html", **prev)
-        ok, res = usuarios.crear_usuario(nombre, apellido, email, password,
-                                         rol="musico", estado="pendiente", org_id=org["id"])
-        if not ok:
-            flash(res, "error")
-            return render_template("unirse.html", **prev)
-        flash("✓ Cuenta creada en «%s». Esperá la aprobación del administrador para ingresar." % org["nombre"], "success")
-        return redirect(url_for("login"))
-    return render_template("unirse.html", codigo=request.args.get("codigo", "").strip().upper())
+    # Registro/unión de músicos por web deshabilitado: los músicos se unen desde la app
+    # NeuralCharts con el código de su ministerio (endpoint /api/auth/unirse).
+    # El único acceso web es el panel de administración.
+    return redirect(url_for("admin_login"))
+
+
+# URLs de las tiendas para NeuralCharts. Mientras las apps no estén publicadas, quedan
+# apuntando al sitio (fallback). Cuando salgan a las tiendas, se reemplazan estos dos
+# valores por los enlaces reales (App Store / Google Play) y el botón redirige solo.
+APP_URL_IOS = "https://neuralworship.com/#herramientas"      # TODO: enlace App Store real
+APP_URL_ANDROID = "https://neuralworship.com/#herramientas"  # TODO: enlace Google Play real
+APP_URL_FALLBACK = "https://neuralworship.com/#herramientas"
+
+
+@app.route("/descargar-app")
+@app.route("/app")
+def descargar_app():
+    """Link inteligente: detecta el dispositivo y redirige a la tienda correcta.
+    iOS (iPhone/iPad) → App Store · Android → Google Play · otro → sitio."""
+    ua = (request.headers.get("User-Agent") or "").lower()
+    if any(k in ua for k in ("iphone", "ipad", "ipod")):
+        return redirect(APP_URL_IOS)
+    if "android" in ua:
+        return redirect(APP_URL_ANDROID)
+    return redirect(APP_URL_FALLBACK)
 
 
 @app.route("/crear-organizacion", methods=["GET", "POST"])
@@ -807,6 +799,18 @@ def home():
             return redirect(url_for("admin"))
         return redirect(url_for("principal"))
     return render_template("landing.html", paquetes=PAQUETES)
+
+
+@app.route("/neuralcharts")
+def neuralcharts():
+    """Pagina de producto: NeuralCharts (publica)."""
+    return render_template("neuralcharts.html")
+
+
+@app.route("/neuralplay")
+def neuralplay():
+    """Pagina de producto: NeuralPlay (publica)."""
+    return render_template("neuralplay.html")
 
 
 @app.route("/terminos")
@@ -2301,13 +2305,13 @@ def admin_invitar():
     if not ok:
         flash(res, "error")
         return redirect(url_for("admin"))
-    link = url_for("aceptar_invitacion", token=res, _external=True)
+    codigo_org = (org_obj or {}).get("codigo", "")
     org_nombre = (org_obj or {}).get("nombre", "tu organización")
-    okmail, _ = emails_module.enviar_email_invitacion(email, org_nombre, link)
+    okmail, _ = emails_module.enviar_email_invitacion(email, org_nombre, codigo_org)
     if okmail:
         flash("✓ Invitación enviada a %s" % email, "success")
     else:
-        flash("Invitación creada, pero no se pudo enviar el correo. Enlace: %s" % link, "error")
+        flash("Invitación creada, pero no se pudo enviar el correo. Código del ministerio: %s" % codigo_org, "error")
     return redirect(url_for("admin"))
 
 
@@ -2321,42 +2325,10 @@ def admin_invitacion_cancelar(inv_id):
 
 @app.route("/invitacion/<token>", methods=["GET", "POST"])
 def aceptar_invitacion(token):
-    """El músico invitado crea su cuenta (queda ACTIVA al instante) y entra."""
-    inv = usuarios.obtener_invitacion(token)
-    if not inv:
-        flash("La invitación no es válida o ya venció.", "error")
-        return redirect(url_for("login"))
-    org = usuarios.obtener_organizacion(inv["org_id"])
-    if request.method == "POST":
-        nombre = request.form.get("nombre", "").strip()
-        apellido = request.form.get("apellido", "").strip()
-        password = request.form.get("password", "")
-        password2 = request.form.get("password2", "")
-        prev = dict(nombre=nombre, apellido=apellido)
-        if not nombre or not apellido or not password:
-            flash("Completá todos los campos", "error")
-            return render_template("invitacion.html", inv=inv, org=org, **prev)
-        if password != password2:
-            flash("Las contraseñas no coinciden", "error")
-            return render_template("invitacion.html", inv=inv, org=org, **prev)
-        if org and usuarios.contar_musicos_activos(inv["org_id"]) >= int(org.get("max_musicos") or 0):
-            flash("La organización alcanzó su límite de asientos. Pedile al administrador que amplíe el plan.", "error")
-            return render_template("invitacion.html", inv=inv, org=org, **prev)
-        ok, res = usuarios.crear_usuario(nombre, apellido, inv["email"], password,
-                                         rol="musico", estado="activo", org_id=inv["org_id"])
-        if not ok:
-            flash(res, "error")
-            return render_template("invitacion.html", inv=inv, org=org, **prev)
-        usuarios.marcar_invitacion_usada(token)
-        session.permanent = True
-        session.clear()
-        session["user_id"] = res
-        session["rol"] = "musico"
-        session["nombre"] = nombre
-        session["org_id"] = inv["org_id"]
-        flash("✓ ¡Bienvenido a %s!" % (org["nombre"] if org else "NeuralWorship"), "success")
-        return redirect(url_for("principal"))
-    return render_template("invitacion.html", inv=inv, org=org)
+    # Aceptación de invitación por web deshabilitada: los músicos se unen desde la app
+    # NeuralCharts con el código de su ministerio. Se conserva la ruta para que enlaces
+    # viejos no rompan; simplemente se manda al login de administración.
+    return redirect(url_for("admin_login"))
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -2384,9 +2356,13 @@ def api_auth_login():
     if not org:
         return jsonify({"ok": False, "error": "sin_org",
                         "mensaje": "Tu cuenta no está asociada a una organización."}), 403
+    # Sesión única por dispositivo: abrir sesión nueva invalida la del dispositivo anterior.
+    device = (data.get("device") or request.headers.get("User-Agent") or "")
+    session_token = usuarios.abrir_sesion(u["id"], device)
     return jsonify({
         "ok": True,
         "token": org["token"],
+        "session": session_token,
         "org_id": org["id"],
         "org_nombre": org["nombre"],
         "paquete": org.get("paquete"),
@@ -2396,6 +2372,15 @@ def api_auth_login():
         "apellido": u.get("apellido", ""),
         "rol": u["rol"],
     })
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    """Cierra la sesión activa del dispositivo (borra el session_token)."""
+    data = request.get_json(silent=True) or request.form
+    stoken = request.headers.get("X-Session-Token", "") or (data.get("session") or "")
+    usuarios.cerrar_sesion(stoken)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/auth/unirse", methods=["POST"])
@@ -2565,7 +2550,7 @@ def _features(paquete):
     return {
         "midi": full,               # sección MIDI (mapping / MIDI OUT / controlador externo)
         "infinito": full,           # botón Reproductor Infinito (Plus+)
-        "neuralsync": (paquete == "ministerio"),   # NeuralSync (puente DAW) solo en Premium
+        "neuralsync": False,   # NeuralSync ya no se vende como app aparte; la sincronía vive dentro de NeuralPlay
         "export_pdf": (full and not repro) or sync,   # exportar charts a PDF (charts/sync)
         "charts": (not repro),      # maneja charts: cifrado + letras (no en reproductor)
         "usuarios": (not repro),    # gestión de músicos / Modo Músico (no en reproductor)

@@ -19,10 +19,15 @@ class NW {
   static const chordSoft = Color(0x299CA3AF); // rgba(156,163,175,0.16)
   static const chipBorder= Color(0xFF3D3422);
 
+  // Fuentes iguales a NeuralPlay: cuerpo en Inter, marca/títulos en Space Grotesk.
+  static const brand = 'SpaceGrotesk';
+  static const body  = 'Inter';
+
   static ThemeData theme() {
-    final base = ThemeData.dark(useMaterial3: true);
+    final base = ThemeData.dark(useMaterial3: true).copyWith();
     return base.copyWith(
       scaffoldBackgroundColor: bg,
+      textTheme: base.textTheme.apply(fontFamily: body),   // Inter por defecto en TODO
       colorScheme: base.colorScheme.copyWith(
         primary: gold, surface: surface,
       ),
@@ -48,5 +53,7 @@ class NW {
     );
   }
 
-  static const mono = 'monospace';
+  // Antes 'monospace'. Los acordes se alinean por layout, no por columnas de texto,
+  // así que usamos Inter (igual que NeuralPlay) sin romper nada.
+  static const mono = body;
 }

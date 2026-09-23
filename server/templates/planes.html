@@ -132,7 +132,6 @@
       {% if es_sync %}<span class="badge sync">PARA TU DAW</span>{% endif %}
       <div class="nom">{{ p.nombre }}</div>
       <div class="price">{% if p.precio == 0 %}Gratis{% else %}${{ '%.0f'|format(p.precio) }}<small> /mes</small>{% endif %}</div>
-      {% if pk != 'basico' %}<div class="meta">Prueba gratis de 7 días</div>{% endif %}
       <div class="hr"></div>
 
       {# ── Acceso por app segun el plan ── #}
@@ -171,23 +170,18 @@
         {{ row(hasPlayAny,  'Cambio de Tono/Tempo fuera de línea a los 12 tonos') }}
         {{ row(hasPlayAny,  'Crea y guarda varios repertorios') }}
         {{ row(hasPlayAny,  'Sincronización en vivo en NeuralCharts') }}
-        {{ row(hasPlayFull, 'Ajusta tiempo inicial y final') }}
+        {{ row(hasPlayAny,  'Ajusta tiempo inicial y final') }}
         {{ row(hasPlayAny,  'Reproduce pads ambientales con canciones') }}
         {{ row(hasPlayFull, 'Repite secciones con Loop/Loop Infinito') }}
         {{ row(hasPlayFull, 'Asignación MIDI/Teclado/Controlador') }}
         {{ row(hasPlayAny,  'NeuralPlay para Mac / iPad') }}
         {{ row(hasPlayAny, 'Interfaz avanzada de Pad Player') }}
         {{ row(hasPlayAny, 'Hasta 32 MultiOuts® con buses' if not (hasPlayAny and not hasPlayFull) else '2 salidas') }}
-        {{ row(hasPlayFull, 'Añadir sección de clicks a las canciones al final') }}
+        {{ row(hasPlayAny,  'Añadir sección de clicks a las canciones al final') }}
         {{ row(hasPlayFull, 'Reproductor de Notas MIDI en Sincronización') }}
         {{ row(hasPlayFull, 'Múltiples Salidas MIDI para Lyrics/Luces y Efectos') }}
         {{ row(hasPlayFull, 'MIDI Clock') }}
         {{ row(hasPlayAny,  'Gestión de almacenamiento en dispositivo') }}
-      </ul>
-
-      <div class="psec syncc">NeuralSync</div>
-      <ul class="flist" style="flex:0 0 auto;margin-bottom:0">
-        {{ row(hasSync, 'NeuralSync para Windows/Mac') }}
       </ul>
 
       <div class="cta">

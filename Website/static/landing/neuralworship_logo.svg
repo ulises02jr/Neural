@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 180" fill="none">
+  <style>
+    .nw-ink { fill: #14141b; stroke: #14141b; }
+    .nw-word { font-family: 'Space Grotesk','Inter',-apple-system,BlinkMacSystemFont,sans-serif; fill: #14141b; }
+  </style>
+  <!-- Glifo de nodos -->
+  <g class="nw-ink" stroke-width="9" stroke-linecap="round">
+    <line x1="90" y1="92" x2="90" y2="44"/>
+    <line x1="90" y1="92" x2="44" y2="140"/>
+    <line x1="90" y1="92" x2="136" y2="140"/>
+  </g>
+  <g class="nw-ink" stroke="none">
+    <circle cx="90" cy="40" r="14"/>
+    <circle cx="90" cy="92" r="16"/>
+    <circle cx="44" cy="140" r="14"/>
+    <circle cx="136" cy="140" r="14"/>
+  </g>
+  <!-- Divisor -->
+  <line x1="212" y1="46" x2="212" y2="140" stroke="#14141b" stroke-opacity="0.25" stroke-width="3"/>
+  <!-- Wordmark -->
+  <text class="nw-word" x="244" y="90" font-size="54" font-weight="400">Neural</text>
+  <text class="nw-word" x="244" y="150" font-size="54" font-weight="700">Worship</text>
+</svg>

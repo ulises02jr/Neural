@@ -129,7 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 20),
           const Center(
             child: Text('NeuralCharts · Músicos',
-                style: TextStyle(fontSize: 11, color: NW.txt3)),
+                style: TextStyle(fontFamily: NW.brand, fontSize: 11, color: NW.txt3)),
           ),
         ],
       ),

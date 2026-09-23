@@ -1,12 +1,13 @@
 <!doctype html>
 <html><head><meta charset="utf-8">
 <style>
-@page { size: letter; margin: 1.3cm 1.3cm 1.5cm 1.3cm;
-  @top-right { content: "P\00e1gina " counter(page) " / " counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color:#9aa0a6; letter-spacing:.3px; } }
+@page { size: letter; margin: 1.3cm 1.3cm 1.7cm 1.3cm;
+  @top-right { content: "P\00e1gina " counter(page) " / " counter(pages); font-family: "Inter", sans-serif; font-size: 8pt; color:#9aa0a6; letter-spacing:.3px; }
+  @bottom-center { content: "NeuralWorship \00b7 neuralworship.com"; font-family: "Inter", sans-serif; font-size: 7pt; color:#b3b8bf; letter-spacing:.4px; } }
 * { box-sizing: border-box; }
-body { font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; font-size:10.5pt; margin:0; }
+body { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; color:#1a1a1a; font-size:10.5pt; margin:0; -weasy-font-feature-settings: "kern" 1, "liga" 1; }
 .hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e3e3e6; padding-bottom:8px; margin-bottom:10px; }
-.hd .ttl { font-size:17pt; font-weight:800; line-height:1.12; }
+.hd .ttl { font-family:"Inter Display","Inter",sans-serif; font-size:18pt; font-weight:700; line-height:1.1; letter-spacing:-.3px; }
 .hd .art { font-size:10pt; color:#6b7280; margin-top:2px; }
 .hd .meta { text-align:right; font-size:9pt; color:#6b7280; white-space:nowrap; padding-left:14px; }
 .hd .meta b { color:#1a1a1a; }
@@ -30,8 +31,10 @@ body { font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; font-size:10.5p
 .ln.solo .tok .ly { display:none; }
 .ln.solo .tok { margin-right:12px; }
 .ln.solo .tok .ch { height:auto; }
-.foot { margin-top:14px; border-top:1px solid #e3e3e6; padding-top:8px; font-size:8pt; color:#9aa0a6; }
-.foot b { color:#6b7280; }
+.foot { margin-top:16px; border-top:1px solid #e3e3e6; padding-top:8px; font-size:8pt; color:#9aa0a6; line-height:1.4; }
+.foot .gen { font-size:8.5pt; color:#6b7280; }
+.foot .gen b { color:#3a3f47; font-weight:700; }
+.foot .disc { display:block; margin-top:3px; font-size:7pt; color:#a7acb3; }
 </style></head>
 <body>
   <div class="hd">
@@ -65,5 +68,8 @@ body { font-family: Helvetica, Arial, sans-serif; color:#1a1a1a; font-size:10.5p
     </div>
     {% endfor %}
   </div>
-  <div class="foot">Generado con <b>Neural</b></div>
+  <div class="foot">
+    <span class="gen">Generado por <b>NeuralWorship</b></span>
+    <span class="disc">Este documento fue creado con los cifrados que el propio usuario subió y compartió en la plataforma. NeuralWorship es una herramienta de apoyo para equipos de alabanza y no provee ni distribuye contenido musical de terceros; los derechos sobre el material pertenecen a quien lo compartió.</span>
+  </div>
 </body></html>

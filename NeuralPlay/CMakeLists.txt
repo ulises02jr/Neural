@@ -20,8 +20,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         BUNDLE_ID                        com.neuralworship.play
         BACKGROUND_AUDIO_ENABLED         TRUE
         REQUIRES_FULL_SCREEN             TRUE
-        TARGETED_DEVICE_FAMILY           "2"   # 2 = iPad
+        TARGETED_DEVICE_FAMILY           "1,2"   # 1 = iPhone, 2 = iPad
         IPAD_SCREEN_ORIENTATIONS         UIInterfaceOrientationLandscapeLeft
+                                         UIInterfaceOrientationLandscapeRight
+        IPHONE_SCREEN_ORIENTATIONS       UIInterfaceOrientationLandscapeLeft
                                          UIInterfaceOrientationLandscapeRight
         MICROPHONE_PERMISSION_ENABLED    FALSE
         LOCAL_NETWORK_PERMISSION_ENABLED TRUE
@@ -31,12 +33,16 @@ endif()
 
 juce_add_gui_app(NeuralPlaySpike
     PRODUCT_NAME "NeuralPlay"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/AppIconOpaque.png"
     ${NP_PLATFORM_OPTS})
 
 juce_add_binary_data(NeuralPlayData SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png"
-    "${CMAKE_CURRENT_SOURCE_DIR}/LogoInterno.png")
+    "${CMAKE_CURRENT_SOURCE_DIR}/LogoInterno.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fonts/SpaceGrotesk-Regular.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fonts/SpaceGrotesk-Bold.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fonts/Inter-Regular.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fonts/Inter-Bold.ttf")
 
 juce_generate_juce_header(NeuralPlaySpike)
 
