@@ -2386,6 +2386,15 @@ def api_auth_logout():
     return jsonify({"ok": True})
 
 
+@app.route("/api/auth/ping")
+def api_auth_ping():
+    """Latido de sesión. Está protegido por el guardia de sesión única: si el
+    X-Session-Token ya no es válido (se abrió en otro dispositivo), el guardia
+    responde 401 'sesion_reemplazada' antes de llegar aquí. Si llega, la sesión
+    sigue activa."""
+    return jsonify({"ok": True})
+
+
 @app.route("/api/auth/unirse", methods=["POST"])
 def api_auth_unirse():
     """Registro de musico desde la app: se une a una organizacion con su codigo. Queda pendiente."""

@@ -5096,6 +5096,13 @@ private:
         serverToken = v.getProperty ("token", "").toString();
         serverSession = v.getProperty ("session", "").toString();
         npSessionToken = serverSession;   // activar el guardia de sesión única
+        // Sesión única: si hay token pero NO token de sesión (login de una versión
+        // anterior), forzamos re-login para activarla en este dispositivo.
+        if (serverToken.isNotEmpty() && serverSession.isEmpty())
+        {
+            serverToken.clear();
+            npSessionToken.clear();
+        }
         featMidi     = (bool) v.getProperty ("feat_midi", true);
         featSalidas  = npCapSalidas ((int) v.getProperty ("feat_salidas", 32));
         featInfinito = (bool) v.getProperty ("feat_infinito", true);
@@ -7463,6 +7470,17 @@ private:
             splashOn = false;
             splash.setVisible (false);
             if (serverToken.isEmpty()) mostrarLoginDialog();   // el login aparece DESPUÉS del splash (~2s)
+        }
+        // Sesión única: latido cada ~15 s para detectar expulsión aunque la app esté quieta.
+        if (serverToken.isNotEmpty() && serverSession.isNotEmpty())
+        {
+            static int npSessPingCtr = 0;
+            if (++npSessPingCtr >= 900)
+            {
+                npSessPingCtr = 0;
+                const juce::String url = serverUrl + "/api/auth/ping", tok = serverToken;
+                juce::Thread::launch ([url, tok] { httpGet (url, tok); }); // dispara npCheckKick en 401
+            }
         }
         updatePadAutomation();   // Pad Player: intro/outro por canción
         reapDeadPadVoices();     // libera voces de pad marcadas en mixPad (fuera del hilo de audio)

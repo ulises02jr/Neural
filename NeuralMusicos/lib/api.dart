@@ -49,6 +49,23 @@ class Api {
     return false;
   }
 
+  /// True si hay una sesión guardada de una versión anterior (token pero sin
+  /// session_token). Hay que forzar re-login para activar la sesión única.
+  bool get sesionVieja =>
+      token != null && token!.isNotEmpty && (session == null || session!.isEmpty);
+
+  /// Latido: confirma contra el servidor que esta sesión siga siendo la activa.
+  /// Si fue reemplazada por otro dispositivo, dispara la expulsión (logout+aviso).
+  Future<void> pingSesion() async {
+    if (session == null || session!.isEmpty) return;
+    try {
+      final r = await http
+          .get(Uri.parse('$baseUrl/api/auth/ping'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 10));
+      _revisarExpulsion(r);
+    } catch (_) {}
+  }
+
   // Sesion persistente via el archivo de preferencias nativo (neural/app).
   Future<void> cargarSesion() async {
     token = AppChannel.I.get('token');
@@ -181,6 +198,18 @@ class Api {
 
   /// Trae setlists + indice de canciones en una sola llamada.
   /// Devuelve {ok, songs: List<Song>, setlists: List<Setlist>}
+  Map<String, dynamic> _parseBiblioteca(Map<String, dynamic> j) {
+    final songs = <Song>[];
+    final idx = Map<String, dynamic>.from(j['canciones'] ?? {});
+    idx.forEach((k, v) => songs.add(Song.fromIndex(k, Map<String, dynamic>.from(v as Map))));
+    songs.sort((a, b) => a.id.compareTo(b.id)); // por numero de pista
+    final setlists = <Setlist>[];
+    for (final s in (j['setlists'] as List? ?? [])) {
+      setlists.add(Setlist.fromJson(Map<String, dynamic>.from(s as Map)));
+    }
+    return {'ok': true, 'songs': songs, 'setlists': setlists};
+  }
+
   Future<Map<String, dynamic>> biblioteca() async {
     try {
       final r = await http
@@ -190,16 +219,20 @@ class Api {
       if (r.statusCode == 403) return {'ok': false, 'error': 'unauthorized'};
       final j = jsonDecode(r.body) as Map<String, dynamic>;
       if (j['ok'] != true) return {'ok': false};
-      final songs = <Song>[];
-      final idx = Map<String, dynamic>.from(j['canciones'] ?? {});
-      idx.forEach((k, v) => songs.add(Song.fromIndex(k, Map<String, dynamic>.from(v as Map))));
-      songs.sort((a, b) => a.id.compareTo(b.id)); // por numero de pista
-      final setlists = <Setlist>[];
-      for (final s in (j['setlists'] as List? ?? [])) {
-        setlists.add(Setlist.fromJson(Map<String, dynamic>.from(s as Map)));
-      }
-      return {'ok': true, 'songs': songs, 'setlists': setlists};
+      // Guardar en caché para poder mostrarla sin internet.
+      await AppChannel.I.set('bib_cache', r.body);
+      return _parseBiblioteca(j);
     } catch (e) {
+      // Sin conexión: usar la última biblioteca guardada.
+      final cached = AppChannel.I.get('bib_cache');
+      if (cached is String && cached.isNotEmpty) {
+        try {
+          final j = jsonDecode(cached) as Map<String, dynamic>;
+          final res = _parseBiblioteca(j);
+          res['offline'] = true;
+          return res;
+        } catch (_) {}
+      }
       return {'ok': false, 'error': 'network'};
     }
   }
@@ -213,8 +246,16 @@ class Api {
       if (_revisarExpulsion(r)) return null;
       final j = jsonDecode(r.body) as Map<String, dynamic>;
       if (j['ok'] != true) return null;
+      await AppChannel.I.set('chart_${numero}_$sem', r.body); // caché offline
       return Chart.fromJson(j);
     } catch (e) {
+      // Sin conexión: usar el chart guardado si existe.
+      final cached = AppChannel.I.get('chart_${numero}_$sem');
+      if (cached is String && cached.isNotEmpty) {
+        try {
+          return Chart.fromJson(jsonDecode(cached) as Map<String, dynamic>);
+        } catch (_) {}
+      }
       return null;
     }
   }

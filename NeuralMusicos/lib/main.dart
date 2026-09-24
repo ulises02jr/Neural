@@ -14,6 +14,12 @@ void main() async {
   await AppChannel.I.load();
   await Api.I.cargarSesion();
 
+  // Sesión única: si hay una sesión guardada de una versión anterior (sin
+  // token de sesión), forzamos re-login para activarla en este dispositivo.
+  if (Api.I.sesionVieja) {
+    await Api.I.logout();
+  }
+
   // Sesión única: si el servidor expulsa esta sesión (se abrió en otro
   // dispositivo), avisamos y volvemos al login.
   Api.I.onKicked = (String mensaje) {
