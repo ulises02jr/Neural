@@ -51,6 +51,7 @@ class _ChartScreenState extends State<ChartScreen> {
   Chart? _chart;
   bool _cargando = true;
   bool _error = false;
+  bool _offlineNoDisp = false; // sin internet y la canción no está descargada
 
   int _idx = 0;
   int _nivel = 2;
@@ -243,9 +244,13 @@ class _ChartScreenState extends State<ChartScreen> {
     final c = _live
         ? await Api.I.liveSong(widget.liveBase!)
         : await Api.I.chart(widget.numero, _sem);
+    // Si no cargó y no es en vivo, distinguir "sin internet" de "error del servidor".
+    bool offlineNoDisp = false;
+    if (c == null && !_live) offlineNoDisp = !(await Api.I.online());
     if (!mounted) return;
     setState(() {
       _chart = c;
+      _offlineNoDisp = offlineNoDisp;
       _error = c == null && !_live; // en vivo, "sin cancion" no es error (esperando)
       _cargando = false;
       _syncIdx = -1;
@@ -319,11 +324,38 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   Widget _errorView() => Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('No se pudo cargar el chart', style: TextStyle(color: _cTxt2)),
-          const SizedBox(height: 12),
-          OutlinedButton(onPressed: _cargar, child: const Text('Reintentar')),
-        ]),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(_offlineNoDisp ? Icons.cloud_off_rounded : Icons.error_outline_rounded,
+                size: 44, color: _cTxt3),
+            const SizedBox(height: 14),
+            Text(
+              _offlineNoDisp
+                  ? 'Esta canción no está disponible sin conexión'
+                  : 'No se pudo cargar el chart',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _cTxt, fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            if (_offlineNoDisp) ...[
+              const SizedBox(height: 6),
+              Text('Descárgala con internet para poder usarla offline.',
+                  textAlign: TextAlign.center, style: TextStyle(color: _cTxt2, fontSize: 13)),
+            ],
+            const SizedBox(height: 18),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                label: const Text('Atrás'),
+              ),
+              if (!_offlineNoDisp) ...[
+                const SizedBox(width: 10),
+                OutlinedButton(onPressed: _cargar, child: const Text('Reintentar')),
+              ],
+            ]),
+          ]),
+        ),
       );
 
   Widget _esperandoView() => Center(

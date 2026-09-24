@@ -48,6 +48,12 @@ class AppChannel {
     await _save();
   }
 
+  /// Borra todas las claves que empiecen con [prefix] (p.ej. 'dl_' o 'chart_').
+  Future<void> removePrefix(String prefix) async {
+    _cache.removeWhere((k, _) => k.startsWith(prefix));
+    await _save();
+  }
+
   Future<void> openUrl(String url) async {
     try {
       await _ch.invokeMethod('openUrl', {'url': url});

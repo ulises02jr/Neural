@@ -293,6 +293,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         numLabel: '#${s.id}',
                         tonoText: s.tono,
                         sem: 0,
+                        mostrarDescarga: true,
                       );
                     },
                   ),
@@ -397,7 +398,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     required String tonoText,
     required int sem,
     bool setlist = false,
+    bool mostrarDescarga = false,
   }) {
+    final descargada = mostrarDescarga && Api.I.estaDescargada(song.id);
     return Material(
       color: setlist ? const Color(0xFF161616) : NW.surface,
       borderRadius: BorderRadius.circular(10),
@@ -479,6 +482,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ],
                 ),
               ),
+              if (descargada) ...[
+                const Icon(Icons.download_done_rounded, size: 18, color: NW.chord),
+                const SizedBox(width: 8),
+              ],
               const Text('›', style: TextStyle(color: NW.txt3, fontSize: 22)),
             ],
           ),

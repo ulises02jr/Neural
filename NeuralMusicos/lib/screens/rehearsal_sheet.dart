@@ -168,6 +168,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       }).toList();
       setState(() => _status = 'Descargando pistas…');
       final dur = await AudioEngine.I.load(list, numero: widget.numero, sem: widget.sem);
+      Api.I.marcarDescargada(widget.numero); // queda disponible offline
       if (!mounted) return;
       final bytes = await AudioEngine.I.cacheSize();
       if (!mounted) return;
@@ -383,6 +384,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
 
   Future<void> _liberar() async {
     await AudioEngine.I.clearCache();
+      await Api.I.limpiarDescargas();
     if (!mounted) return;
     setState(() {
       _cacheBytes = 0;

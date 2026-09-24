@@ -45,6 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _liberar() async {
     try {
       await AudioEngine.I.clearCache();
+      await Api.I.limpiarDescargas();
     } catch (_) {}
     await _cargarCache();
     if (mounted) {

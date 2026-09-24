@@ -54,6 +54,25 @@ class Api {
   bool get sesionVieja =>
       token != null && token!.isNotEmpty && (session == null || session!.isEmpty);
 
+  /// ¿Hay internet? Ping liviano al servidor (cualquier respuesta = en línea).
+  Future<bool> online() async {
+    try {
+      await http
+          .get(Uri.parse('$baseUrl/api/auth/ping'))
+          .timeout(const Duration(seconds: 6));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Marca (o consulta) si una canción quedó descargada para uso offline.
+  Future<void> marcarDescargada(int numero) => AppChannel.I.set('dl_$numero', true);
+  bool estaDescargada(int numero) => AppChannel.I.get('dl_$numero') == true;
+
+  /// Al borrar el caché de audio, quitar también los indicadores de descarga.
+  Future<void> limpiarDescargas() => AppChannel.I.removePrefix('dl_');
+
   /// Latido: confirma contra el servidor que esta sesión siga siendo la activa.
   /// Si fue reemplazada por otro dispositivo, dispara la expulsión (logout+aviso).
   Future<void> pingSesion() async {

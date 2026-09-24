@@ -3286,6 +3286,8 @@ public:
     {
         error.setText (m, juce::dontSendNotification);
         setBusy (false);
+        resized();   // re-ajustar: el mensaje puede ocupar varias líneas
+        repaint();
     }
 
     void setBusy (bool b)
@@ -3336,7 +3338,9 @@ public:
         subtitle.setFont (npFontMarca (15.0f, false));
 
         const int cardW = juce::jmin (430, b.getWidth() - 40);
-        const int hLogo = 60, hTitle = 34, hSub = 20, hField = 46, hErr = 16, hBtn = 48;
+        // El error puede ocupar varias líneas (p.ej. el aviso de sesión única) → alto dinámico.
+        const int hErr = error.getText().isNotEmpty() ? 54 : 0;
+        const int hLogo = 60, hTitle = 34, hSub = 20, hField = 46, hBtn = 48;
         int cardH = 14 + hField + 11 + hField + 8 + hErr + 8 + hBtn + 14;   // form + paddings
         if (brand) cardH += hLogo + 2 + hTitle + 0 + hSub + 16;
         int top = kbShown ? (safe.getY() + 8)
@@ -5166,7 +5170,8 @@ private:
         if (url.isEmpty()) url = "https://neuralworship.com";
         connStatus.setText (juce::String::fromUTF8 ("Iniciando sesion\xe2\x80\xa6"), juce::dontSendNotification);
         const juce::String body = "{\"email\":" + juce::JSON::toString (juce::var (email))
-                                + ",\"password\":" + juce::JSON::toString (juce::var (password)) + "}";
+                                + ",\"password\":" + juce::JSON::toString (juce::var (password))
+                                + ",\"app\":\"neuralplay\"}";   // el servidor rechaza a no-admin
         const juce::String loginUrl = url + "/api/auth/login";
         juce::Component::SafePointer<MainComponent> sp (this);
         juce::Thread::launch ([sp, loginUrl, url, body]
@@ -5191,6 +5196,20 @@ private:
                        #endif
                         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
                             juce::String::fromUTF8 ("Plan sin NeuralPlay"), msg);
+                        return;
+                    }
+                    // Defensa extra: NeuralPlay es solo para administradores.
+                    if (v.getProperty ("rol", "").toString() != "admin")
+                    {
+                        const auto msg = juce::String::fromUTF8 (
+                            "NeuralPlay es solo para administradores. Los m\xc3\xbasicos usan NeuralCharts.");
+                        sp->serverToken.clear();
+                        sp->connStatus.setText (msg, juce::dontSendNotification);
+                        if (sp->loginOverlay != nullptr && sp->loginOverlay->isVisible())
+                            sp->loginOverlay->showError (msg);
+                        else
+                            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                juce::String::fromUTF8 ("Solo administradores"), msg);
                         return;
                     }
                     sp->serverUrl   = url;
