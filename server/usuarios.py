@@ -25,6 +25,8 @@ import sqlite3
 import hashlib
 import secrets
 import random
+import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -32,11 +34,83 @@ from werkzeug.security import generate_password_hash, check_password_hash
 ARCHIVO_DB = Path(__file__).parent / "usuarios.db"
 CODIGO_RESET_DURACION_MIN = 15
 
+# ─────────────── Backend de base de datos (sqlite | postgres) ───────────────
+# El motor se elige por secrets.json ("db_backend"). El resto del código NO
+# cambia: toda la app sigue usando la misma API estilo sqlite3 —
+#   conn.execute("... ?", params), filas por índice (row[0]) y por nombre
+#   (row["col"]), y 'with _conexion() as conn:'— sin importar el motor de abajo.
+def _leer_secrets():
+    try:
+        return json.loads((Path(__file__).parent / "secrets.json").read_text())
+    except Exception:
+        return {}
 
-def _conexion():
-    conn = sqlite3.connect(ARCHIVO_DB)
-    conn.row_factory = sqlite3.Row
-    return conn
+DB_BACKEND = (os.environ.get("NW_DB_BACKEND") or _leer_secrets().get("db_backend") or "sqlite").strip().lower()
+_PG_DSN = _leer_secrets().get("pg_dsn") or ""
+
+if DB_BACKEND == "postgres":
+    import psycopg
+
+    class _Row:
+        """Fila compatible con sqlite3.Row: acepta índice (row[0]) y nombre (row['col'])."""
+        __slots__ = ("_c", "_v")
+        def __init__(self, cols, values):
+            self._c = cols
+            self._v = values
+        def __getitem__(self, k):
+            return self._v[k] if isinstance(k, int) else self._v[self._c.index(k)]
+        def keys(self):
+            return list(self._c)
+        def get(self, k, default=None):
+            try:
+                return self[k]
+            except Exception:
+                return default
+        def __iter__(self):
+            return iter(self._v)
+        def __contains__(self, k):
+            return k in self._c
+
+    def _pg_rowfactory(cursor):
+        cols = [d.name for d in cursor.description] if cursor.description else []
+        def make(values):
+            return _Row(cols, values)
+        return make
+
+    class _PGCtx:
+        """Envuelve una conexión psycopg imitando la API de sqlite3 que usa el
+        resto del código: .execute('... ?', params) devuelve un cursor; el bloque
+        'with' hace commit (o rollback ante error) y CIERRA la conexión."""
+        def __init__(self, conn):
+            self._conn = conn
+        def execute(self, sql, params=()):
+            cur = self._conn.cursor(row_factory=_pg_rowfactory)
+            cur.execute(sql.replace("?", "%s"), params or ())
+            return cur
+        def commit(self):
+            self._conn.commit()
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            try:
+                self._conn.commit() if exc_type is None else self._conn.rollback()
+            finally:
+                self._conn.close()
+            return False
+
+    def _conexion():
+        return _PGCtx(psycopg.connect(_PG_DSN))
+else:
+    def _conexion():
+        conn = sqlite3.connect(ARCHIVO_DB)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+# Errores de "clave duplicada / integridad" en ambos motores (email o token único).
+try:
+    _INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg.errors.IntegrityError)  # noqa: F821
+except Exception:
+    _INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 
 
 # Código de unión de organización (corto, sin caracteres ambiguos)
@@ -63,8 +137,87 @@ def _numero_publico_libre(conn):
     return str(secrets.randbelow(900000) + 100000)
 
 
+def _init_pg():
+    """Crea el esquema en PostgreSQL (todas las columnas, sin migraciones ALTER).
+    Los tipos se mantienen idénticos a SQLite (TEXT/INTEGER) para no cambiar el
+    resto del código; los id usan SERIAL (equivalente a AUTOINCREMENT)."""
+    ddl = [
+        """CREATE TABLE IF NOT EXISTS usuarios (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            apellido TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            rol TEXT NOT NULL DEFAULT 'musico',
+            estado TEXT NOT NULL DEFAULT 'pendiente',
+            creado_en TEXT NOT NULL,
+            aprobado_en TEXT,
+            acento TEXT,
+            prefs TEXT,
+            org_id INTEGER
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email)",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_estado ON usuarios(estado)",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_org ON usuarios(org_id)",
+        """CREATE TABLE IF NOT EXISTS reset_codigos (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            codigo TEXT NOT NULL,
+            expira_en TEXT NOT NULL,
+            usado INTEGER NOT NULL DEFAULT 0
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_reset_codigo ON reset_codigos(codigo)",
+        """CREATE TABLE IF NOT EXISTS login_intentos (
+            id SERIAL PRIMARY KEY,
+            ip TEXT NOT NULL,
+            ts TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_login_intentos ON login_intentos(ip, ts)",
+        """CREATE TABLE IF NOT EXISTS organizations (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            owner_user_id INTEGER,
+            token TEXT UNIQUE,
+            paquete TEXT NOT NULL DEFAULT 'basico',
+            max_musicos INTEGER NOT NULL DEFAULT 3,
+            almacen_gb INTEGER NOT NULL DEFAULT 20,
+            estado_suscripcion TEXT NOT NULL DEFAULT 'activa',
+            creado_en TEXT NOT NULL,
+            codigo TEXT,
+            numero_publico TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_org_token ON organizations(token)",
+        """CREATE TABLE IF NOT EXISTS invitaciones (
+            id SERIAL PRIMARY KEY,
+            org_id INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'pendiente',
+            creado_en TEXT NOT NULL,
+            expira_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_invit_token ON invitaciones(token)",
+        "CREATE INDEX IF NOT EXISTS idx_invit_org ON invitaciones(org_id)",
+        """CREATE TABLE IF NOT EXISTS sesiones (
+            user_id INTEGER NOT NULL,
+            app TEXT NOT NULL DEFAULT 'neuralcharts',
+            session_token TEXT UNIQUE NOT NULL,
+            device TEXT,
+            actualizado TEXT NOT NULL,
+            PRIMARY KEY (user_id, app)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sesiones_token ON sesiones(session_token)",
+    ]
+    with _conexion() as conn:
+        for stmt in ddl:
+            conn.execute(stmt)
+
+
 def init_db():
     """Crea las tablas si no existen."""
+    if DB_BACKEND == "postgres":
+        _init_pg()
+        return
     with _conexion() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -273,7 +426,7 @@ def crear_usuario(nombre, apellido, email, password, rol="musico", estado="pendi
         with _conexion() as conn:
             cur = conn.execute(
                 "INSERT INTO usuarios (nombre, apellido, email, password_hash, rol, estado, creado_en, aprobado_en, org_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                 (
                     nombre.strip(), apellido.strip(), email,
                     hash_password(password), rol, estado,
@@ -282,8 +435,8 @@ def crear_usuario(nombre, apellido, email, password, rol="musico", estado="pendi
                     org_id,
                 ),
             )
-            return True, cur.lastrowid
-    except sqlite3.IntegrityError:
+            return True, cur.fetchone()[0]
+    except _INTEGRITY_ERRORS:
         return False, "Ya existe una cuenta con ese email"
     except Exception as e:
         return False, f"Error: {e}"
@@ -652,11 +805,11 @@ def crear_organizacion(nombre, owner_user_id=None, token=None, paquete="basico",
             numero_publico = _numero_publico_libre(conn)
             cur = conn.execute(
                 "INSERT INTO organizations (nombre, owner_user_id, token, codigo, numero_publico, paquete, max_musicos, almacen_gb, estado_suscripcion, creado_en) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                 (nombre, owner_user_id, token, codigo, numero_publico, paquete, int(max_musicos), int(almacen_gb), estado, _ahora_iso()),
             )
-            return True, cur.lastrowid
-    except sqlite3.IntegrityError as e:
+            return True, cur.fetchone()[0]
+    except _INTEGRITY_ERRORS as e:
         return False, f"Token duplicado o error de integridad: {e}"
     except Exception as e:
         return False, f"Error: {e}"

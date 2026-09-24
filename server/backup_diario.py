@@ -17,6 +17,8 @@ Uso:  ./venv/bin/python backup_diario.py
 import sys
 import tarfile
 import sqlite3
+import subprocess
+import json
 import datetime
 from pathlib import Path
 
@@ -26,6 +28,13 @@ import almacen  # noqa: E402  (reutiliza las credenciales de Spaces de secrets.j
 
 DIAS_RETENCION = 21
 PREFIX = "backups/"
+
+
+def _secrets():
+    try:
+        return json.loads((BASE / "secrets.json").read_text())
+    except Exception:
+        return {}
 
 
 def _dump_db(db_path, dest):
@@ -40,6 +49,13 @@ def _dump_db(db_path, dest):
         dst.close()
 
 
+def _dump_pg(dsn, dest_sql):
+    """Volcado consistente de PostgreSQL a un archivo .sql (pg_dump)."""
+    with open(dest_sql, "wb") as f:
+        subprocess.run(["/usr/bin/pg_dump", "--no-owner", "--no-privileges", "-d", dsn],
+                       stdout=f, check=True, timeout=300)
+
+
 def main():
     if not almacen.habilitado():
         print("ERROR: Spaces no esta habilitado; no se puede respaldar.")
@@ -49,16 +65,24 @@ def main():
     tmp = Path("/tmp/neural_backup_%s" % ts)
     tmp.mkdir(parents=True, exist_ok=True)
 
-    # 1) Copia consistente de la base de datos
-    db = BASE / "usuarios.db"
-    if db.exists():
-        _dump_db(db, tmp / "usuarios.db")
+    # 1) Copia consistente de la base de datos (PostgreSQL o SQLite según config)
+    sec = _secrets()
+    backend = (sec.get("db_backend") or "sqlite").strip().lower()
+    db_arcname = None
+    if backend == "postgres" and sec.get("pg_dsn"):
+        _dump_pg(sec["pg_dsn"], tmp / "neuralworship_pg.sql")
+        db_arcname = "neuralworship_pg.sql"
+    else:
+        db = BASE / "usuarios.db"
+        if db.exists():
+            _dump_db(db, tmp / "usuarios.db")
+            db_arcname = "usuarios.db"
 
     # 2) Empaquetar db + config.json (principal y de cada organizacion)
     tar_path = tmp / ("neural-backup-%s.tar.gz" % ts)
     with tarfile.open(tar_path, "w:gz") as tar:
-        if (tmp / "usuarios.db").exists():
-            tar.add(tmp / "usuarios.db", arcname="usuarios.db")
+        if db_arcname and (tmp / db_arcname).exists():
+            tar.add(tmp / db_arcname, arcname=db_arcname)
         cfg = BASE / "config.json"
         if cfg.exists():
             tar.add(cfg, arcname="config.json")
