@@ -134,7 +134,7 @@ class Api {
           .post(
             Uri.parse('$baseUrl/api/auth/login'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'email': email, 'password': password}),
+            body: jsonEncode({'email': email, 'password': password, 'app': 'neuralcharts'}),
           )
           .timeout(const Duration(seconds: 20));
       final j = jsonDecode(r.body) as Map<String, dynamic>;

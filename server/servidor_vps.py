@@ -2359,14 +2359,17 @@ def api_auth_login():
     if not org:
         return jsonify({"ok": False, "error": "sin_org",
                         "mensaje": "Tu cuenta no está asociada a una organización."}), 403
+    # Qué app inicia sesión (define su propia sesión única independiente).
+    app_cliente = (data.get("app") or "neuralcharts").strip().lower()
     # NeuralPlay es SOLO para administradores; los músicos usan NeuralCharts.
-    if (data.get("app") or "").strip().lower() == "neuralplay" and u.get("rol") != "admin":
+    if app_cliente == "neuralplay" and u.get("rol") != "admin":
         return jsonify({"ok": False, "error": "solo_admin",
                         "mensaje": "NeuralPlay es solo para administradores. "
                                    "Los músicos usan NeuralCharts."}), 403
-    # Sesión única por dispositivo: abrir sesión nueva invalida la del dispositivo anterior.
+    # Sesión única POR APP: abrir sesión nueva invalida solo la de la misma app en
+    # otro dispositivo (NeuralCharts y NeuralPlay conviven en la misma cuenta).
     device = (data.get("device") or request.headers.get("User-Agent") or "")
-    session_token = usuarios.abrir_sesion(u["id"], device)
+    session_token = usuarios.abrir_sesion(u["id"], device, app_cliente)
     return jsonify({
         "ok": True,
         "token": org["token"],

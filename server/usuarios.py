@@ -124,14 +124,34 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_invit_org ON invitaciones(org_id);
 
             CREATE TABLE IF NOT EXISTS sesiones (
-                user_id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                app TEXT NOT NULL DEFAULT 'neuralcharts',
                 session_token TEXT UNIQUE NOT NULL,
                 device TEXT,
                 actualizado TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES usuarios(id)
+                PRIMARY KEY (user_id, app)
             );
             CREATE INDEX IF NOT EXISTS idx_sesiones_token ON sesiones(session_token);
         """)
+        # Migración: la sesión única ahora es por (usuario, app), no solo por usuario.
+        # Si la tabla vieja no tiene la columna 'app', se recrea (las sesiones son
+        # transitorias: esto solo obliga a re-loguear una vez).
+        try:
+            _cols = [r[1] for r in conn.execute("PRAGMA table_info(sesiones)").fetchall()]
+            if "app" not in _cols:
+                conn.execute("DROP TABLE IF EXISTS sesiones")
+                conn.execute("""
+                    CREATE TABLE sesiones (
+                        user_id INTEGER NOT NULL,
+                        app TEXT NOT NULL DEFAULT 'neuralcharts',
+                        session_token TEXT UNIQUE NOT NULL,
+                        device TEXT,
+                        actualizado TEXT NOT NULL,
+                        PRIMARY KEY (user_id, app)
+                    )""")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_sesiones_token ON sesiones(session_token)")
+        except Exception:
+            pass
         try:
             conn.execute("ALTER TABLE usuarios ADD COLUMN acento TEXT")
         except Exception:
@@ -474,18 +494,21 @@ def autenticar(email, password):
 # Cada usuario tiene UNA sola sesión activa. Al abrir sesión en un dispositivo
 # nuevo, se reemplaza el token anterior → el dispositivo viejo queda inválido.
 
-def abrir_sesion(user_id, device=None):
-    """Crea (o reemplaza) la sesión activa del usuario. Devuelve el session_token
-    nuevo. Cualquier sesión previa de ese usuario queda invalidada al instante."""
+def abrir_sesion(user_id, device=None, app="neuralcharts"):
+    """Crea (o reemplaza) la sesión activa del usuario PARA ESA APP. Devuelve el
+    session_token nuevo. Cualquier sesión previa del mismo usuario en la MISMA app
+    queda invalidada al instante. Apps distintas (NeuralCharts vs NeuralPlay) no se
+    afectan entre sí, así el admin puede usar ambas a la vez."""
     stoken = secrets.token_urlsafe(32)
+    app = (app or "neuralcharts").strip().lower() or "neuralcharts"
     with _conexion() as conn:
         conn.execute(
-            "INSERT INTO sesiones (user_id, session_token, device, actualizado) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET "
+            "INSERT INTO sesiones (user_id, app, session_token, device, actualizado) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(user_id, app) DO UPDATE SET "
             "session_token=excluded.session_token, device=excluded.device, "
             "actualizado=excluded.actualizado",
-            (int(user_id), stoken, (device or "")[:120], _ahora_iso()),
+            (int(user_id), app, stoken, (device or "")[:120], _ahora_iso()),
         )
     return stoken
 
