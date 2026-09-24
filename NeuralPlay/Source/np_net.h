@@ -8,6 +8,13 @@
 #include <JuceHeader.h>
 #include <functional>
 #include <atomic>
+#if JUCE_IOS || JUCE_MAC
+ #include <ifaddrs.h>
+ #include <net/if.h>
+ #include <netinet/in.h>
+ #include <arpa/inet.h>
+ #include <cstring>
+#endif
 
 // ── Sesión única por dispositivo ──
 // La app manda la cabecera "X-Session-Token". Si el servidor la invalida (se
@@ -140,4 +147,56 @@ static juce::String httpPostForm (const juce::String& baseUrl, juce::StringPairA
     auto body = in->readEntireStreamAsString();
     npCheckKick (status, body);
     return body;
+}
+
+// ── IP de la LAN y permiso de red local (para el modo En Vivo) ──
+static juce::String localLanIp()
+{
+   #if JUCE_IOS || JUCE_MAC
+    // Elegir la interfaz de Wi-Fi EXACTA (en0), no la de datos móviles (pdp_ip0).
+    // En el iPhone la IP 10.x puede ser el CGNAT del operador → el iPad no la alcanza.
+    struct ifaddrs* ifaddr = nullptr;
+    juce::String wifi, other;
+    if (getifaddrs (&ifaddr) == 0)
+    {
+        for (auto* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
+        {
+            if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET) continue;
+            if (! (ifa->ifa_flags & IFF_UP)) continue;
+            char buf[INET_ADDRSTRLEN] = { 0 };
+            auto* sin = (struct sockaddr_in*) ifa->ifa_addr;
+            inet_ntop (AF_INET, &sin->sin_addr, buf, sizeof (buf));
+            const juce::String ip (buf), name (ifa->ifa_name);
+            if (ip == "127.0.0.1" || ip.startsWith ("169.254.")) continue;
+            if (name.startsWith ("en")) { wifi = ip; break; }                  // en0/en1 = Wi-Fi (lo mejor)
+            if (other.isEmpty() && ! name.startsWith ("pdp") && ! name.startsWith ("lo")) other = ip;
+        }
+        freeifaddrs (ifaddr);
+    }
+    if (wifi.isNotEmpty())  return wifi;
+    if (other.isNotEmpty()) return other;
+   #endif
+    // Respaldo (otras plataformas): primera IPv4 no-loopback / no link-local.
+    for (auto& a : juce::IPAddress::getAllAddresses (false))
+    {
+        if (a.isNull()) continue;
+        const auto s = a.toString();
+        if (s != "127.0.0.1" && ! s.startsWith ("169.254.")) return s;
+    }
+    return "127.0.0.1";
+}
+
+// En iOS, un servidor TCP entrante NO dispara por sí solo el aviso de "Red local",
+// así que iOS bloquea las conexiones del iPad en silencio. Enviar un datagrama a la
+// red local (multicast mDNS) fuerza a iOS a pedir el permiso → una vez otorgado,
+// el servidor de NeuralPlay queda accesible desde NeuralCharts.
+static void npTriggerLocalNetworkPermission()
+{
+   #if JUCE_IOS
+    juce::DatagramSocket s (true);          // permitir broadcast/multicast
+    s.bindToPort (0);
+    const char* msg = "neuralsync";
+    s.write ("224.0.0.251", 5353, msg, (int) std::strlen (msg));   // mDNS: la LAN
+    s.write ("255.255.255.255", 5353, msg, (int) std::strlen (msg));
+   #endif
 }
