@@ -1806,10 +1806,10 @@ private:
                                 + ",\"app\":\"neuralplay\"}";   // el servidor rechaza a no-admin
         const juce::String loginUrl = url + "/api/auth/login";
         juce::Component::SafePointer<MainComponent> sp (this);
-        juce::Thread::launch ([sp, loginUrl, url, body]
+        juce::Thread::launch ([sp, loginUrl, url, body, email, password]
         {
             auto resp = httpPostJson (loginUrl, body);
-            juce::MessageManager::callAsync ([sp, url, resp]
+            juce::MessageManager::callAsync ([sp, url, resp, email, password]
             {
                 if (sp == nullptr) return;
                 auto v = juce::JSON::parse (resp);
@@ -1860,6 +1860,17 @@ private:
                     sp->repaint();
                     sp->aplicarPlan (feats);
                     sp->guardarConfigCuenta();
+                    // "Recordar mi contraseña": guardar/borrar en el Keychain del sistema.
+                    if (sp->loginOverlay != nullptr && sp->loginOverlay->quiereRecordar())
+                    {
+                        npkc::set ("correo", email);
+                        npkc::set ("clave",  password);
+                    }
+                    else
+                    {
+                        npkc::remove ("correo");
+                        npkc::remove ("clave");
+                    }
                     sp->fetchPadPacks();
                     sp->fetchPerfiles();
                     if (sp->repPicker.isVisible()) sp->openRepertoirePicker();
@@ -1916,6 +1927,12 @@ private:
         }
         loginOverlay->reset();
         loginOverlay->setLogo (logoImg);
+        // Prellenar con las credenciales recordadas (Keychain del sistema), si las hay.
+        {
+            const juce::String savedEmail = npkc::get ("correo");
+            const juce::String savedPass  = npkc::get ("clave");
+            loginOverlay->prefill (savedEmail, savedPass, savedPass.isNotEmpty());
+        }
         loginOverlay->setBounds (getLocalBounds());
         loginOverlay->setVisible (true);
         loginOverlay->toFront (true);

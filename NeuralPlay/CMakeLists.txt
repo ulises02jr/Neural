@@ -56,7 +56,7 @@ juce_add_binary_data(NeuralPlayData SOURCES
 
 juce_generate_juce_header(NeuralPlaySpike)
 
-target_sources(NeuralPlaySpike PRIVATE Source/Main.cpp)
+target_sources(NeuralPlaySpike PRIVATE Source/Main.cpp Source/np_keychain.cpp)
 
 target_compile_definitions(NeuralPlaySpike PRIVATE
     JUCE_WEB_BROWSER=0
@@ -72,3 +72,8 @@ target_link_libraries(NeuralPlaySpike
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
+
+# Keychain (guardado seguro de credenciales) en iOS/macOS.
+if (APPLE)
+    target_link_libraries(NeuralPlaySpike PRIVATE "-framework Security")
+endif()

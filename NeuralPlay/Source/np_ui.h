@@ -8,6 +8,7 @@
 #include "BinaryData.h"
 #include "np_util.h"
 #include "np_net.h"
+#include "np_keychain.h"
 #include <map>
 #include <array>
 #include <functional>
@@ -3019,6 +3020,13 @@ public:
         entrar.onClick = [this] { submit(); };
         addAndMakeVisible (entrar);
 
+        // "Recordar mi contrase\xc3\xb1" a": guarda correo+contrase\xc3\xb1" a en el Keychain del sistema.
+        recordar.setButtonText (juce::String::fromUTF8 ("Recordar mi contrase\xc3\xb1" "a"));
+        recordar.setColour (juce::ToggleButton::textColourId,   juce::Colour (0xff9aa0a6));
+        recordar.setColour (juce::ToggleButton::tickColourId,   juce::Colour (0xfff2f2f2));
+        recordar.setColour (juce::ToggleButton::tickDisabledColourId, juce::Colour (0xff3a3d44));
+        addAndMakeVisible (recordar);
+
         error.setJustificationType (juce::Justification::centred);
         error.setColour (juce::Label::textColourId, juce::Colour (0xffef6b6b));
         error.setFont (juce::Font (14.0f));
@@ -3026,6 +3034,16 @@ public:
     }
 
     void setLogo (juce::Image i) { logo = i; repaint(); }
+
+    // Prellena los campos con credenciales recordadas (y marca el checkbox).
+    void prefill (const juce::String& correo, const juce::String& clave, bool recordarOn)
+    {
+        email.setText (correo, juce::dontSendNotification);
+        pass.setText  (clave,  juce::dontSendNotification);
+        recordar.setToggleState (recordarOn, juce::dontSendNotification);
+    }
+
+    bool quiereRecordar() const { return recordar.getToggleState(); }
 
     void showError (const juce::String& m)
     {
@@ -3085,8 +3103,8 @@ public:
         const int cardW = juce::jmin (430, b.getWidth() - 40);
         // El error puede ocupar varias líneas (p.ej. el aviso de sesión única) → alto dinámico.
         const int hErr = error.getText().isNotEmpty() ? 54 : 0;
-        const int hLogo = 60, hTitle = 34, hSub = 20, hField = 46, hBtn = 48;
-        int cardH = 14 + hField + 11 + hField + 8 + hErr + 8 + hBtn + 14;   // form + paddings
+        const int hLogo = 60, hTitle = 34, hSub = 20, hField = 46, hBtn = 48, hTog = 28;
+        int cardH = 14 + hField + 11 + hField + 8 + hTog + 8 + hErr + 8 + hBtn + 14;   // form + paddings
         if (brand) cardH += hLogo + 2 + hTitle + 0 + hSub + 16;
         int top = kbShown ? (safe.getY() + 8)
                           : juce::jmax (safe.getY() + 8, b.getCentreY() - cardH / 2);
@@ -3102,6 +3120,7 @@ public:
         title.setVisible (brand); subtitle.setVisible (brand);
         email.setBounds  (in.removeFromTop (hField)); in.removeFromTop (11);
         pass.setBounds   (in.removeFromTop (hField)); in.removeFromTop (8);
+        recordar.setBounds (in.removeFromTop (hTog)); in.removeFromTop (8);
         error.setBounds  (in.removeFromTop (hErr));   in.removeFromTop (8);
         entrar.setBounds (in.removeFromTop (hBtn));
     }
@@ -3124,6 +3143,7 @@ private:
     NPRoundFieldLnF fieldLnf;   // antes de los campos: se destruye después de ellos
     juce::Label title, subtitle, error;
     FocusTextEditor email, pass;
+    juce::ToggleButton recordar;
     juce::TextButton entrar;
     juce::Image logo;
     juce::Rectangle<int> card, logoBounds;
