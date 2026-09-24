@@ -31,9 +31,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     )
 endif()
 
+# Icono por plataforma:
+#  - iOS: opaco a sangre completa (iOS le aplica su propia máscara redondeada).
+#  - macOS: el squircle YA redondeado con transparencia (macOS no redondea solo),
+#    para que en el Dock/Launchpad se vea igual que en iPhone/iPad.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(NP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/AppIconOpaque.png")
+else()
+    set(NP_ICON "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.png")
+endif()
+
 juce_add_gui_app(NeuralPlaySpike
     PRODUCT_NAME "NeuralPlay"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/AppIconOpaque.png"
+    ICON_BIG "${NP_ICON}"
     ${NP_PLATFORM_OPTS})
 
 juce_add_binary_data(NeuralPlayData SOURCES
