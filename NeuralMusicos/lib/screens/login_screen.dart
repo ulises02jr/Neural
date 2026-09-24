@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme.dart';
 import '../api.dart';
 import 'home_screen.dart';
@@ -32,6 +33,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final r = await Api.I.login(email, pass);
     if (!mounted) return;
     if (r['ok'] == true) {
+      // Login correcto: avisar al sistema para que ofrezca GUARDAR la contraseña
+      // (Llavero de iOS / Google Password Manager).
+      TextInput.finishAutofillContext();
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
@@ -112,19 +116,28 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: const TextStyle(color: NW.error, fontSize: 13)),
                     ),
                   ],
-                  _label('EMAIL'),
-                  TextField(
-                    controller: _email,
-                    keyboardType: TextInputType.emailAddress,
-                    autocorrect: false,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 14),
-                  _label('CONTRASEÑA'),
-                  TextField(
-                    controller: _pass,
-                    obscureText: true,
-                    onSubmitted: (_) => _entrar(),
+                  AutofillGroup(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _label('EMAIL'),
+                        TextField(
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          autocorrect: false,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.username, AutofillHints.email],
+                        ),
+                        const SizedBox(height: 14),
+                        _label('CONTRASEÑA'),
+                        TextField(
+                          controller: _pass,
+                          obscureText: true,
+                          autofillHints: const [AutofillHints.password],
+                          onSubmitted: (_) => _entrar(),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 20),
                   FilledButton(
