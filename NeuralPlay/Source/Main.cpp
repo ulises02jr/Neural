@@ -209,6 +209,10 @@ public:
             if (add) addSong (sid, nombre);
             else     setSongTono (sid, nombre);
         };
+        // Nuevo flujo: al elegir tono se cierra la ventana y la barra de "preparando"
+        // aparece en la portada de la canción (como al cargar).
+        repEdit.onElegir = [this] (int sem, juce::String nombre, bool yaListo)
+        { prepararTono (sem, nombre, yaListo); };
         repEdit.onNeedCovers = [this] (juce::Array<RepEditPanel::BibItem> items) { loadBibCovers (items); };
         repEdit.onInOut = [this] (int sid, double inS, double outS)   // #2 guardar inicio/fin
         {
@@ -1490,10 +1494,13 @@ public:
         if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (22); area.removeFromTop (phone ? 1 : 3); }
         else                                   setlistBandBounds = {};
 
-        // Tarjetas verticales grandes: portada arriba + nombre abajo (scroll horizontal)
-        auto strip = area.removeFromTop (phone ? 104 : 180);
-        stripBounds = strip;
+        // Tarjetas verticales grandes: portada arriba + nombre abajo (scroll horizontal).
+        // El posicionamiento se hace con esta lambda para poder colocar la franja
+        // arriba (iPhone) o debajo del mapping (iPad/Mac, intercambio visual).
+        const int stripH = phone ? 104 : 180;
+        auto positionCards = [&] (juce::Rectangle<int> strip)
         {
+            stripBounds = strip;
             const int cardW = phone ? 148 : 240, cardH = phone ? 100 : 178;
             const int step = phone ? 160 : 250;
             const int n = songCards.size() + (editMode ? 1 : 0);
@@ -1502,8 +1509,12 @@ public:
             int x = strip.getX() - stripScroll;
             for (auto* c : songCards) { c->setBounds (x, strip.getY(), cardW, cardH); x += step; }
             if (editMode) addCard.setBounds (x, strip.getY(), cardW, cardH);
+        };
+        if (phone)   // iPhone: portadas arriba (sin cambios)
+        {
+            positionCards (area.removeFromTop (stripH));
+            area.removeFromTop (4);
         }
-        area.removeFromTop (4);
 
         // ── iPhone: escenario único. La región inferior muestra UNA sola cosa a la vez
         //    (Mapa o Faders/Buses/Pad/MIDI). La columna de botones y el Master quedan
@@ -1589,6 +1600,9 @@ public:
             area.removeFromTop (5);
         }
         else area.removeFromTop (8);
+        // (intercambio visual) portadas DEBAJO del mapping en iPad/Mac
+        positionCards (area.removeFromTop (stripH));
+        area.removeFromTop (6);
         faderPanelBounds = area;
 
         // Region FIJA a la derecha: separador doble + 6 botones + Master (no se desplazan)
@@ -2928,6 +2942,50 @@ private:
         });
     }
 
+    // Aplica el tono elegido, cierra el panel (ya cerrado por el panel) y muestra
+    // la barra de "preparando" en la PORTADA de la canción (no en una ventana).
+    void prepararTono (int sem, juce::String nombre, bool yaListo)
+    {
+        const int sid = repEdit.songId; const bool add = repEdit.addFlow;
+        if (add) addSong (sid, nombre);
+        else     setSongTono (sid, nombre);
+        if (yaListo || sem == 0) { renderById.erase (sid); rebuildRepertoireStrip(); return; }
+        renderById[sid] = 0.02f;                 // barra en la portada, arranca casi vacía
+        rebuildRepertoireStrip();
+        const auto url = serverUrl, tok = serverToken;
+        juce::Thread::launch ([url, tok, sid, sem]     // dispara el render (idempotente por .lock)
+        { httpPostForm (url + "/api/live/render/" + juce::String (sid) + "/" + juce::String (sem), {}, tok); });
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, url, tok, sid, sem]
+        {
+            for (int it = 0; it < 900; ++it)          // ~9 min de tope
+            {
+                juce::Thread::sleep (700);
+                auto est = juce::JSON::parse (httpGet (
+                    url + "/api/live/render/" + juce::String (sid) + "/" + juce::String (sem) + "/estado", tok));
+                const bool listo = (bool) est.getProperty ("listo", false);
+                const auto prog = est.getProperty ("progreso", "").toString();
+                float frac = 0.05f;
+                if (prog.containsChar ('/'))
+                {
+                    const int h = prog.upToFirstOccurrenceOf ("/", false, false).getIntValue();
+                    const int t = prog.fromFirstOccurrenceOf ("/", false, false).getIntValue();
+                    if (t > 0) frac = juce::jlimit (0.05f, 0.99f, (float) h / (float) t);
+                }
+                juce::MessageManager::callAsync ([sp, sid, frac, listo]
+                {
+                    if (sp == nullptr) return;
+                    if (listo) sp->renderById.erase (sid);
+                    else       sp->renderById[sid] = frac;
+                    sp->rebuildRepertoireStrip();
+                });
+                if (listo) break;
+            }
+            juce::MessageManager::callAsync ([sp, sid]
+            { if (sp != nullptr) { sp->renderById.erase (sid); sp->rebuildRepertoireStrip(); } });
+        });
+    }
+
     void openTonoFor (int songId, juce::String title, bool addFlow)
     {
         if (serverUrl.isEmpty()) return;
@@ -3494,10 +3552,16 @@ private:
             c->editMode = editMode;
             c->index = i;
             c->songId = s.id;
-            {   // barra ligada al id; si la canción ya está en caché, no hay barra (limpia entradas viejas)
-                auto it = dlById.find (s.id);
-                if (it != dlById.end() && cacheReady (s)) { dlById.erase (it); it = dlById.end(); }
-                c->dlProgress = (it != dlById.end()) ? it->second : -1.0f;
+            {   // barra ligada al id: primero el render de tono ("preparando"), luego la descarga
+                auto rit = renderById.find (s.id);
+                if (rit != renderById.end())
+                    c->dlProgress = rit->second;
+                else
+                {
+                    auto it = dlById.find (s.id);
+                    if (it != dlById.end() && cacheReady (s)) { dlById.erase (it); it = dlById.end(); }
+                    c->dlProgress = (it != dlById.end()) ? it->second : -1.0f;
+                }
             }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
             c->onClick    = [this, idx, sid] { if (armSongIfMapping (sid)) return; loadSong (idx); };
@@ -4795,6 +4859,7 @@ private:
     juce::Array<juce::var> songMixCache;   // mezcla por cancion (del repertorio cargado)
     juce::Array<bool> songReady;      // audio de la canción ya descargado
     std::map<int, float> dlById;      // id de canción -> progreso 0..1 (ausente = sin barra). Sigue a la canción al reordenar
+    std::map<int, float> renderById;  // id -> progreso del render de tono (barra "preparando" en la portada)
     int lastDlPct = -1;               // ultimo % mostrado en el placeholder de descarga (para repintar sin saturar)
     juce::Array<int> loadOrderIds;    // ids en el ORDEN del loader (fijo); mapea el índice del loader al id aunque se reordene
     int pendingAddAfterId = 0;   // botón + de la tarjeta: insertar la canción agregada justo después de esta (0 = al final)

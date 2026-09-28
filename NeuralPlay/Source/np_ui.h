@@ -1916,6 +1916,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::TextButton closeBtn, backBtn;
     std::function<void (int)> onPickSong;            // biblioteca -> elegir cancion
     std::function<void (int, juce::String)> onChoose; // (semitonos, nombre) -> aplicar
+    std::function<void (int, juce::String, bool)> onElegir; // (sem, nombre, ya_listo): cerrar y mostrar barra en la portada
 
     // #2 punto de inicio/fin por canción
     juce::TextButton inTgl, outTgl;                  // activar inicio / fin
@@ -2299,13 +2300,13 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                              .withStandardItemHeight (npEsIPhone() ? 30 : 26),
             [sp] (int r)
             {
-                if (sp == nullptr || r <= 0 || sp->renderingSem != 99) return;
+                if (sp == nullptr || r <= 0) return;
                 const int i = r - 1;
                 if (i < 0 || i >= sp->keys.size()) return;
-                sp->selTonoIdx = i; sp->repaint();
-                auto& k = sp->keys.getReference (i);
-                if (k.rendered) { if (sp->onChoose) sp->onChoose (k.sem, k.nombre); }
-                else            sp->startRender (i);
+                sp->selTonoIdx = i;
+                auto k = sp->keys.getReference (i);
+                sp->setVisible (false);                       // cerrar la ventana al instante
+                if (sp->onElegir) sp->onElegir (k.sem, k.nombre, k.rendered);
             });
     }
 
