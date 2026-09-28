@@ -149,7 +149,7 @@ def _listar_audio(local_dir, exts=None):
     """Nombres de archivos de audio en una 'carpeta' (Spaces si activo; si no, local)."""
     import os as _os
     if exts is None:
-        exts = (".mp3", ".m4a", ".ogg", ".wav")
+        exts = (".mp3", ".m4a", ".ogg", ".wav", ".flac")
     if almacen.habilitado():
         pref = _key_audio(local_dir)
         if not pref:
@@ -1099,10 +1099,13 @@ def api_live_pistas(numero):
     stems = []
     fam = _leer_familias(numero)
     if listo:
+        # La familia se guardó con el nombre original; un tono puede tener otra
+        # extensión (WAV->FLAC), así que también buscamos por nombre base.
+        fam_base = {os.path.splitext(k)[0]: v for k, v in fam.items()}
         for nombre in _listar_audio(_carpeta_tono(numero, n)):
             base = os.path.splitext(nombre)[0]
             stems.append({"name": base, "file": nombre,
-                          "familia": fam.get(nombre) or _familia_auto(base)})
+                          "familia": fam.get(nombre) or fam_base.get(base) or _familia_auto(base)})
     cancion = cargar_biblioteca().get(numero, {})
     return jsonify({"numero": numero, "tono": n, "listo": listo,
                     "hay_pistas": len(_stems_originales(numero)) > 0,
@@ -2912,7 +2915,7 @@ def admin_pagos_config():
 # ---- Reproductor de practica (stems / modo ensayo) ----
 CARPETA_PISTAS = BASE_DIR / "pistas"
 CARPETA_PISTAS.mkdir(exist_ok=True)
-_EXT_AUDIO_ENSAYO = (".mp3", ".m4a", ".ogg", ".wav")
+_EXT_AUDIO_ENSAYO = (".mp3", ".wav", ".flac")
 FAMILIAS_FIJAS = {"Batería", "Percusión", "Guía", "Click"}
 
 
@@ -2935,8 +2938,10 @@ def _tono_listo(numero, n):
     orig = _stems_originales(numero)
     if not orig:
         return False
-    hechos = set(_listar_audio(d))
-    return all(o in hechos for o in orig)
+    # Comparar por nombre base (sin extensión): un stem WAV puede haberse
+    # renderizado como FLAC, así que 'AG.wav' cuenta como listo si existe 'AG.flac'.
+    hechos = set(os.path.splitext(h)[0] for h in _listar_audio(d))
+    return all(os.path.splitext(o)[0] in hechos for o in orig)
 
 
 def _carpeta_stems(numero, n):
@@ -3063,7 +3068,17 @@ def _render_tono(numero, n, org=None):
         hechos = 0
         fam_map = _leer_familias(numero)
         for nombre in orig:
-            salida = d / nombre
+            fam = fam_map.get(nombre) or _familia_auto(Path(nombre).stem)
+            es_fijo = fam in FAMILIAS_FIJAS
+            src_ext = os.path.splitext(nombre)[1].lower()
+            # Formato de salida según el original: WAV/FLAC -> FLAC (sin pérdida),
+            # MP3 -> MP3. Los stems fijos (click/guía/batería/percusión) NO se
+            # transponen: se mantienen tal cual (mismo archivo y formato).
+            if es_fijo:
+                salida = d / nombre
+            else:
+                out_ext = ".mp3" if src_ext == ".mp3" else ".flac"
+                salida = d / (os.path.splitext(nombre)[0] + out_ext)
             if _existe_audio(salida):   # ya renderizado (Spaces o local)
                 hechos += 1
                 try:
@@ -3075,13 +3090,14 @@ def _render_tono(numero, n, org=None):
             if not entrada:
                 logging.error("render tono %s/%s: falta original %s", numero, n, nombre)
                 continue
-            fam = fam_map.get(nombre) or _familia_auto(Path(nombre).stem)
-            if fam in FAMILIAS_FIJAS:
+            if es_fijo:
                 shutil.copy2(str(entrada), str(salida))
             else:
+                codec = (["-b:a", "192k"] if src_ext == ".mp3"
+                         else ["-c:a", "flac", "-compression_level", "8"])
                 subprocess.run(
                     ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
-                     "-af", "rubberband=pitch=" + repr(ratio), "-b:a", "192k", str(salida)],
+                     "-af", "rubberband=pitch=" + repr(ratio)] + codec + [str(salida)],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
             _subir_audio(salida)
             # el original bajado a temp solo se limpia si vino de Spaces
@@ -3640,7 +3656,7 @@ def admin_pistas_subir():
         threading.Thread(target=_asegurar_web, args=(int(numero), 0, org_actual()), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s) a la cancion #" + numero, "success")
     else:
-        flash("No se subio ninguna pista (revisa el formato: mp3/m4a/ogg/wav)", "error")
+        flash("No se subio ninguna pista (revisa el formato: mp3/wav/flac)", "error")
     return redirect(url_for("admin_pistas"))
 
 
