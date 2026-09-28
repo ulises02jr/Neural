@@ -2957,7 +2957,12 @@ private:
                 bool pIntro = false, pOutro = false;
                 auto ip = sp->songPad.find (songId);
                 if (ip != sp->songPad.end()) { pIntro = ip->second.first; pOutro = ip->second.second; }
-                sp->repEdit.openTono (songId, title, addFlow, ks, i2, o2, pIntro, pOutro);
+                // Tono actual de la canción en el repertorio (si ya está agregada).
+                int curSem = 0;
+                if (! addFlow)
+                    for (int i = 0; i < sp->repertoire.size(); ++i)
+                        if (sp->repertoire.getReference (i).id == songId) { curSem = sp->repertoire.getReference (i).tono; break; }
+                sp->repEdit.openTono (songId, title, addFlow, ks, i2, o2, pIntro, pOutro, curSem);
                 sp->repEdit.setVisible (true); sp->repEdit.toFront (true);
             });
         });

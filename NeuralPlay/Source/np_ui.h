@@ -2050,7 +2050,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         repaint();
     }
     void openTono (int id, juce::String title, bool add, juce::Array<Key> ks, double inSec = -1.0, double outSec = -1.0,
-                   bool pIntro = false, bool pOutro = false)
+                   bool pIntro = false, bool pOutro = false, int curSem = 0)
     { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
       songArtist.clear(); for (auto& b : bibAll) if (b.id == id) { songArtist = b.artista; break; }   // artista para el subtítulo
       inOn = (inSec >= 0.0); outOn = (outSec >= 0.0);
@@ -2058,8 +2058,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
       inEdit.setText (secsToMMSS (inSec >= 0.0 ? inSec : 0.0), false);
       outEdit.setText (secsToMMSS (outSec >= 0.0 ? outSec : 0.0), false);
       refreshInOut();
-      // Tono mostrado por defecto: el original (sem 0).
-      selTonoIdx = 0; for (int i = 0; i < keys.size(); ++i) if (keys[i].sem == 0) { selTonoIdx = i; break; }
+      // Tono mostrado: el tono actual de la canción (curSem); si no hay, el original (sem 0).
+      selTonoIdx = 0;
+      for (int i = 0; i < keys.size(); ++i) if (keys[i].sem == curSem) { selTonoIdx = i; break; }
       renderingSem = 99; stopTimer(); resized(); repaint(); }
 
     void showBiblioteca()   // volver del grid de tonos a la lista de canciones
