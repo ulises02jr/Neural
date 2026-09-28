@@ -1910,7 +1910,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::Array<Key> keys;
     int renderingSem = 99, pendIdx = -1, progHechos = 0, progTotal = 0;
     NPTonoLnF tonoLnf;             // estilo del menú de tono
-    int selTonoIdx = 0;            // índice del tono mostrado en la caja
+    int selTonoIdx = 0;            // índice del tono elegido en la caja (aún sin confirmar)
+    juce::TextButton cargarBtn;    // confirmación: aplicar el tono elegido
     int prepFrame = 0;             // animación del spinner "Preparando…"
 
     juce::TextButton closeBtn, backBtn;
@@ -2000,6 +2001,19 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         searchBox.onTextChange = [this] { applyFilter(); };
         addChildComponent (searchBox);
 
+        // Botón "Cargar": confirma el tono elegido en el dropdown (no se aplica al seleccionar).
+        cargarBtn.setButtonText (juce::String::fromUTF8 ("Cargar"));
+        cargarBtn.setColour (juce::TextButton::buttonColourId,  juce::Colour (0xff2E6BE6));
+        cargarBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        cargarBtn.onClick = [this]
+        {
+            if (selTonoIdx < 0 || selTonoIdx >= keys.size()) return;
+            auto k = keys.getReference (selTonoIdx);
+            setVisible (false);
+            if (onElegir) onElegir (k.sem, k.nombre, k.rendered);
+        };
+        addChildComponent (cargarBtn);
+
         // #2 controles de inicio/fin
         auto setupTgl = [this] (juce::TextButton& b)
         {
@@ -2088,16 +2102,25 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     }
     int tonoLabelH() const { return npEsIPhone() ? 22 : 24; }   // "Tono" encima del dropdown
     int tonoBlockH() const { return tonoLabelH() + rpCh(); }     // etiqueta + combo
+    int cargarGap() const { return npEsIPhone() ? 8 : 10; }
+    int cargarH()   const { return npEsIPhone() ? 40 : 46; }     // alto del botón "Cargar"
+    int topBlockH() const { return tonoBlockH() + cargarGap() + cargarH(); }   // caja + botón
     juce::Rectangle<int> tonoComboRect() const
     {
         auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoLabelH());
         auto row = p.removeFromTop (rpCh());
         return row.withSizeKeepingCentre (juce::jmin (row.getWidth(), npEsIPhone() ? 220 : 240), rpCh());
     }
-    juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del selector de tono
+    juce::Rectangle<int> cargarBtnRect() const   // botón "Cargar" debajo de la caja
+    {
+        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoBlockH() + cargarGap());
+        auto row = p.removeFromTop (cargarH());
+        return row.withSizeKeepingCentre (juce::jmin (row.getWidth(), npEsIPhone() ? 200 : 240), cargarH());
+    }
+    juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del botón Cargar
     {
         auto p = panelBounds().reduced (22);
-        p.removeFromTop (rpTop() + tonoBlockH() + rpGapGrid());
+        p.removeFromTop (rpTop() + topBlockH() + rpGapGrid());
         return p.removeFromTop (npEsIPhone() ? 104 : 124);
     }
     juce::Rectangle<int> ioRow (int row) const   // row 0 = inicio, 1 = fin
@@ -2113,7 +2136,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::Rectangle<int> padArea() const   // Pad Player, debajo de inicio/fin
     {
         auto p = panelBounds().reduced (22);
-        p.removeFromTop (rpTop() + tonoBlockH() + rpGapGrid() + (npEsIPhone() ? 104 : 124) + (npEsIPhone() ? 8 : 14));
+        p.removeFromTop (rpTop() + topBlockH() + rpGapGrid() + (npEsIPhone() ? 104 : 124) + (npEsIPhone() ? 8 : 14));
         return p.removeFromTop (npEsIPhone() ? 84 : 96);
     }
     juce::Rectangle<int> padRow (int row) const
@@ -2262,6 +2285,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         backBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);
         searchBox.setBounds (searchRect());
 
+        cargarBtn.setBounds (cargarBtnRect());
+        cargarBtn.setVisible (mode == Tono);
+
         inTgl.setBounds  (ioTglRect (0));  inEdit.setBounds  (ioEditRect (0));
         outTgl.setBounds (ioTglRect (1));  outEdit.setBounds (ioEditRect (1));
         padIntroTgl.setBounds (padTglRect (0));
@@ -2303,10 +2329,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                 if (sp == nullptr || r <= 0) return;
                 const int i = r - 1;
                 if (i < 0 || i >= sp->keys.size()) return;
-                sp->selTonoIdx = i;
-                auto k = sp->keys.getReference (i);
-                sp->setVisible (false);                       // cerrar la ventana al instante
-                if (sp->onElegir) sp->onElegir (k.sem, k.nombre, k.rendered);
+                sp->selTonoIdx = i;   // solo selecciona; se aplica con el botón "Cargar"
+                sp->repaint();
             });
     }
 
