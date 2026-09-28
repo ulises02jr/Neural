@@ -1844,6 +1844,52 @@ struct NPRoundEditLnF : public juce::LookAndFeel_V4
     }
 };
 
+static juce::Font npFontMarca (float alturaPx, bool bold);   // definida más abajo
+
+// LookAndFeel del selector de tono: caja redondeada compacta + menú fino y oscuro.
+struct NPTonoLnF : public juce::LookAndFeel_V4
+{
+    NPTonoLnF()
+    {
+        setColour (juce::PopupMenu::backgroundColourId,            juce::Colour (0xff1b1b1b));
+        setColour (juce::PopupMenu::textColourId,                  juce::Colour (0xffe8e8e8));
+        setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff2e2e2e));
+        setColour (juce::PopupMenu::highlightedTextColourId,       juce::Colours::white);
+    }
+    void drawComboBox (juce::Graphics& g, int w, int h, bool, int, int, int, int, juce::ComboBox& box) override
+    {
+        auto r = juce::Rectangle<float> (0.5f, 0.5f, (float) w - 1.0f, (float) h - 1.0f);
+        g.setColour (juce::Colour (0xff1c1c1c)); g.fillRoundedRectangle (r, 10.0f);
+        g.setColour (box.isPopupActive() ? juce::Colour (0x66ffffff) : juce::Colour (0x33ffffff));
+        g.drawRoundedRectangle (r, 10.0f, 1.0f);
+        const float cx = (float) w - 17.0f, cy = (float) h * 0.5f;   // chevron ▾
+        juce::Path p; p.startNewSubPath (cx - 5.0f, cy - 3.0f);
+        p.lineTo (cx, cy + 3.0f); p.lineTo (cx + 5.0f, cy - 3.0f);
+        g.setColour (juce::Colour (0xffb0b0b0)); g.strokePath (p, juce::PathStrokeType (1.6f));
+    }
+    juce::Font getComboBoxFont (juce::ComboBox&) override { return npFontMarca (16.0f, true); }
+    void positionComboBoxText (juce::ComboBox& box, juce::Label& lbl) override
+    {
+        lbl.setBounds (12, 1, box.getWidth() - 30, box.getHeight() - 2);
+        lbl.setFont (npFontMarca (16.0f, true));
+        lbl.setJustificationType (juce::Justification::centred);
+    }
+    juce::Font getPopupMenuFont() override { return npFontMarca (15.0f, false); }
+    void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
+                                    int stdHeight, int& idealW, int& idealH) override
+    {
+        juce::LookAndFeel_V4::getIdealPopupMenuItemSize (text, isSeparator, stdHeight, idealW, idealH);
+        if (! isSeparator) idealH = npEsIPhone() ? 34 : 30;   // filas compactas
+    }
+    void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
+    {
+        g.setColour (juce::Colour (0xff1b1b1b));
+        g.fillRoundedRectangle (0.0f, 0.0f, (float) w, (float) h, 10.0f);
+        g.setColour (juce::Colour (0x22ffffff));
+        g.drawRoundedRectangle (0.5f, 0.5f, (float) w - 1.0f, (float) h - 1.0f, 10.0f, 1.0f);
+    }
+};
+
 // ───────── Panel de edición de repertorio (biblioteca + grid de tonos) ─────────
 struct RepEditPanel : public juce::Component, private juce::Timer
 {
@@ -1863,6 +1909,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     struct Key { juce::String nombre; int sem = 0; bool rendered = false; };
     juce::Array<Key> keys;
     int renderingSem = 99, pendIdx = -1, progHechos = 0, progTotal = 0;
+    NPTonoLnF tonoLnf;             // estilo del dropdown de tono
     juce::ComboBox tonoCombo;      // selector de tono (reemplaza la grilla de botones)
     int prepFrame = 0;             // animación del spinner "Preparando…"
 
@@ -1926,6 +1973,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         padIntroTgl.setVisible (t); padOutroTgl.setVisible (t);
     }
 
+    ~RepEditPanel() override { tonoCombo.setLookAndFeel (nullptr); }
+
     RepEditPanel()
     {
         setAlwaysOnTop (true);
@@ -1959,6 +2008,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         tonoCombo.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0x33ffffff));
         tonoCombo.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffb0b0b0));
         tonoCombo.setJustificationType (juce::Justification::centred);
+        tonoCombo.setLookAndFeel (&tonoLnf);
         tonoCombo.setTextWhenNothingSelected (juce::String::fromUTF8 ("Escoge el tono\xe2\x80\xa6"));
         tonoCombo.onChange = [this]
         {
@@ -2063,7 +2113,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::Rectangle<int> tonoComboRect() const
     {
         auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoLabelH());
-        return p.removeFromTop (rpCh());
+        auto row = p.removeFromTop (rpCh());
+        return row.withSizeKeepingCentre (juce::jmin (row.getWidth(), npEsIPhone() ? 220 : 240), rpCh());
     }
     juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del selector de tono
     {
@@ -2178,8 +2229,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
             {
                 // Etiqueta "Tono" encima del dropdown (el combo lo dibuja JUCE).
                 auto lbl = tonoComboRect().translated (0, -tonoLabelH()).withHeight (tonoLabelH() - 2);
-                g.setColour (juce::Colour (0xffcfcfcf)); g.setFont (juce::Font (13.0f, juce::Font::bold));
-                g.drawText (juce::String::fromUTF8 ("Tono"), lbl, juce::Justification::centredLeft);
+                g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (npFontMarca (12.5f, false));
+                g.drawText (juce::String::fromUTF8 ("TONO"), lbl, juce::Justification::centred);
             }
             else
             {
