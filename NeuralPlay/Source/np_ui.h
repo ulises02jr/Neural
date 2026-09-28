@@ -1863,6 +1863,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     struct Key { juce::String nombre; int sem = 0; bool rendered = false; };
     juce::Array<Key> keys;
     int renderingSem = 99, pendIdx = -1, progHechos = 0, progTotal = 0;
+    juce::ComboBox tonoCombo;      // selector de tono (reemplaza la grilla de botones)
+    int prepFrame = 0;             // animación del spinner "Preparando…"
 
     juce::TextButton closeBtn, backBtn;
     std::function<void (int)> onPickSong;            // biblioteca -> elegir cancion
@@ -1950,6 +1952,24 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         searchBox.onTextChange = [this] { applyFilter(); };
         addChildComponent (searchBox);
 
+        // Selector de tono (dropdown): el usuario solo escoge; nosotros servimos.
+        // Sin mostrar cuál está listo y cuál no.
+        tonoCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff1c1c1c));
+        tonoCombo.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+        tonoCombo.setColour (juce::ComboBox::outlineColourId,    juce::Colour (0x33ffffff));
+        tonoCombo.setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffb0b0b0));
+        tonoCombo.setJustificationType (juce::Justification::centred);
+        tonoCombo.setTextWhenNothingSelected (juce::String::fromUTF8 ("Escoge el tono\xe2\x80\xa6"));
+        tonoCombo.onChange = [this]
+        {
+            const int i = tonoCombo.getSelectedItemIndex();
+            if (i < 0 || i >= keys.size() || renderingSem != 99) return;
+            auto& k = keys.getReference (i);
+            if (k.rendered) { if (onChoose) onChoose (k.sem, k.nombre); }
+            else            startRender (i);
+        };
+        addChildComponent (tonoCombo);
+
         // #2 controles de inicio/fin
         auto setupTgl = [this] (juce::TextButton& b)
         {
@@ -2009,6 +2029,11 @@ struct RepEditPanel : public juce::Component, private juce::Timer
       inEdit.setText (secsToMMSS (inSec >= 0.0 ? inSec : 0.0), false);
       outEdit.setText (secsToMMSS (outSec >= 0.0 ? outSec : 0.0), false);
       refreshInOut();
+      // Poblar el dropdown de tonos (sin disparar onChange). Por defecto, el tono original.
+      tonoCombo.clear (juce::dontSendNotification);
+      for (int i = 0; i < keys.size(); ++i) tonoCombo.addItem (keys[i].nombre, i + 1);
+      { int sel = 0; for (int i = 0; i < keys.size(); ++i) if (keys[i].sem == 0) { sel = i; break; }
+        tonoCombo.setSelectedItemIndex (sel, juce::dontSendNotification); }
       renderingSem = 99; stopTimer(); resized(); repaint(); }
 
     void showBiblioteca()   // volver del grid de tonos a la lista de canciones
@@ -2033,10 +2058,17 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         const int cols = 4, gap = rpGap(), cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = rpCh();
         return { p.getX() + (i % cols) * (cw + gap), p.getY() + (i / cols) * (ch + gap), cw, ch };
     }
-    juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del grid de 3 filas
+    int tonoLabelH() const { return npEsIPhone() ? 22 : 24; }   // "Tono" encima del dropdown
+    int tonoBlockH() const { return tonoLabelH() + rpCh(); }     // etiqueta + combo
+    juce::Rectangle<int> tonoComboRect() const
+    {
+        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoLabelH());
+        return p.removeFromTop (rpCh());
+    }
+    juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del selector de tono
     {
         auto p = panelBounds().reduced (22);
-        p.removeFromTop (rpTop() + 3 * rpPitch() + rpGapGrid());
+        p.removeFromTop (rpTop() + tonoBlockH() + rpGapGrid());
         return p.removeFromTop (npEsIPhone() ? 104 : 124);
     }
     juce::Rectangle<int> ioRow (int row) const   // row 0 = inicio, 1 = fin
@@ -2052,7 +2084,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     juce::Rectangle<int> padArea() const   // Pad Player, debajo de inicio/fin
     {
         auto p = panelBounds().reduced (22);
-        p.removeFromTop (rpTop() + 3 * rpPitch() + rpGapGrid() + (npEsIPhone() ? 104 : 124) + (npEsIPhone() ? 8 : 14));
+        p.removeFromTop (rpTop() + tonoBlockH() + rpGapGrid() + (npEsIPhone() ? 104 : 124) + (npEsIPhone() ? 8 : 14));
         return p.removeFromTop (npEsIPhone() ? 84 : 96);
     }
     juce::Rectangle<int> padRow (int row) const
@@ -2142,32 +2174,22 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         }
         else
         {
-            for (int i = 0; i < keys.size() && i < 12; ++i)
+            if (renderingSem == 99)
             {
-                auto r = keyRect (i).toFloat(); auto& k = keys.getReference (i);
-                g.setColour (k.rendered ? juce::Colour (0xff20301f) : juce::Colour (0xff181818)); g.fillRoundedRectangle (r, 9.0f);
-                g.setColour (k.rendered ? juce::Colour (0x553ED66E) : juce::Colour (0x22ffffff)); g.drawRoundedRectangle (r, 9.0f, 1.0f);
-                g.setColour (k.rendered ? juce::Colours::white : juce::Colour (0xff6a6a6a));
-                g.setFont (juce::Font (16.0f, juce::Font::bold));
-                g.drawText (k.nombre, r.withTrimmedBottom (k.rendered ? 0.0f : 13.0f), juce::Justification::centred);
-                if (! k.rendered)
-                { g.setColour (juce::Colour (0xff7a7a7a)); g.setFont (juce::Font (9.5f, juce::Font::bold));
-                  g.drawText (juce::String::fromUTF8 ("Generar"), r.removeFromBottom (16.0f), juce::Justification::centred); }
-                if (k.sem == renderingSem)
-                {
-                    g.setColour (juce::Colour (0xAA000000)); g.fillRoundedRectangle (r, 9.0f);
-                    g.setColour (juce::Colour (0xff7Cc6ff)); g.setFont (juce::Font (11.0f, juce::Font::bold));
-                    g.drawText (progTotal > 0 ? (juce::String (progHechos) + "/" + juce::String (progTotal)) : juce::String::fromUTF8 ("\xe2\x80\xa6"),
-                                r, juce::Justification::centred);
-                }
+                // Etiqueta "Tono" encima del dropdown (el combo lo dibuja JUCE).
+                auto lbl = tonoComboRect().translated (0, -tonoLabelH()).withHeight (tonoLabelH() - 2);
+                g.setColour (juce::Colour (0xffcfcfcf)); g.setFont (juce::Font (13.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("Tono"), lbl, juce::Justification::centredLeft);
             }
-            if (renderingSem != 99)   // barra de progreso
+            else
             {
-                auto pb = panelBounds();
-                juce::Rectangle<float> bar ((float) pb.getX() + 22.0f, (float) pb.getBottom() - 38.0f, (float) pb.getWidth() - 44.0f, 8.0f);
-                g.setColour (juce::Colour (0xff262626)); g.fillRoundedRectangle (bar, 4.0f);
-                float frac = progTotal > 0 ? juce::jlimit (0.05f, 1.0f, (float) progHechos / (float) progTotal) : 0.1f;
-                g.setColour (juce::Colour (0xff3ED66E)); g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * frac), 4.0f);
+                // Spinner limpio "Preparando tu tono…" — sin detalles técnicos.
+                auto pb = panelBounds().reduced (22); pb.removeFromTop (rpTop());
+                auto area = pb.removeFromTop (tonoBlockH() + rpGapGrid() + (npEsIPhone() ? 104 : 124));
+                const int nd = prepFrame % 4;
+                juce::String dots = nd == 0 ? juce::String() : juce::String::repeatedString (".", nd);
+                g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("Preparando tu tono") + dots, area, juce::Justification::centred);
             }
 
             // #2 sección de inicio/fin (opcional)
@@ -2200,6 +2222,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         backBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);
         searchBox.setBounds (searchRect());
 
+        tonoCombo.setBounds (tonoComboRect());
+        tonoCombo.setVisible (mode == Tono && renderingSem == 99);
+
         inTgl.setBounds  (ioTglRect (0));  inEdit.setBounds  (ioEditRect (0));
         outTgl.setBounds (ioTglRect (1));  outEdit.setBounds (ioEditRect (1));
         padIntroTgl.setBounds (padTglRect (0));
@@ -2219,17 +2244,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
             if (bibListArea().contains (e.getPosition()))
             { bibDragging = true; bibDragStartY = e.y; bibScrollStart = bibScroll; }
         }
-        else
-        {
-            for (int i = 0; i < keys.size() && i < 12; ++i)
-                if (keyRect (i).contains (e.getPosition()))
-                {
-                    auto& k = keys.getReference (i);
-                    if (k.rendered) { if (onChoose) onChoose (k.sem, k.nombre); }
-                    else            startRender (i);
-                    return;
-                }
-        }
+        // En modo Tono, el dropdown (tonoCombo) maneja la selección por sí mismo.
     }
 
     void mouseDrag (const juce::MouseEvent& e) override   // scroll táctil de la biblioteca
@@ -2262,6 +2277,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     void startRender (int i)
     {
         renderingSem = keys[i].sem; pendIdx = i; progHechos = 0; progTotal = 0;
+        prepFrame = 0; tonoCombo.setVisible (false);   // ocultar dropdown mientras se prepara
         const auto url = serverUrl, tok = token; const int sid = songId, sem = keys[i].sem;
         juce::Thread::launch ([url, tok, sid, sem]
         { httpPostForm (url + "/api/live/render/" + juce::String (sid) + "/" + juce::String (sem), {}, tok); });
@@ -2272,6 +2288,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     void timerCallback() override
     {
         if (renderingSem == 99) { stopTimer(); return; }
+        ++prepFrame;   // anima el "Preparando…"
         const auto url = serverUrl, tok = token; const int sid = songId, sem = renderingSem;
         juce::Component::SafePointer<RepEditPanel> sp (this);
         juce::Thread::launch ([sp, url, tok, sid, sem]
