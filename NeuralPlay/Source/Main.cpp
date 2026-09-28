@@ -3621,6 +3621,7 @@ private:
         juce::Array<juce::File> files;
         files.addArray (folder.findChildFiles (juce::File::findFiles, false, "*.mp3"));
         files.addArray (folder.findChildFiles (juce::File::findFiles, false, "*.wav"));
+        files.addArray (folder.findChildFiles (juce::File::findFiles, false, "*.flac"));   // tonos transpuestos salen en FLAC
         files.sort();
         for (auto& f : files)
         {
