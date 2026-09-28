@@ -962,13 +962,12 @@ public:
             }
         }
 
-        const bool preparandoActual = (currentSong >= 0 && currentSong < repertoire.size()
-                                       && repertoire.getReference (currentSong).id == preparandoSongId);
+        const bool preparandoActual = (preparandoSongId >= 0 && currentSong < 0);   // tono preparándose, sin canción cargada
         if (preparandoActual)
         {
             g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (14.5f);
             float pr = -1.0f;
-            auto it = renderById.find (repertoire.getReference (currentSong).id);
+            auto it = renderById.find (preparandoSongId);
             if (it != renderById.end()) pr = it->second;
             juce::String m = juce::String::fromUTF8 ("Preparando tu tono\xe2\x80\xa6");
             if (pr >= 0.0f) m += juce::String::fromUTF8 ("   ") + juce::String ((int) (pr * 100.0f)) + " %";
@@ -2963,9 +2962,10 @@ private:
         // (así no se arrastra ni suena el tono viejo). Si es la canción cargada,
         // detenerla y marcar "Preparando" en el mapa; el tono se aplica al terminar.
         renderById[sid] = 0.02f;
+        preparandoSongId = sid;
         const bool esActual = (currentSong >= 0 && currentSong < repertoire.size()
                                && repertoire.getReference (currentSong).id == sid);
-        if (esActual) { playing.store (false); playButton.setButtonText ("Play"); preparandoSongId = sid; }
+        if (esActual) clearSong();   // detiene, descarga el audio viejo y limpia el mapa (mostrará "Preparando")
         rebuildRepertoireStrip(); repaint();
         const auto url = serverUrl, tok = serverToken;
         juce::Thread::launch ([url, tok, sid, sem]     // dispara el render (idempotente por .lock)
@@ -2994,8 +2994,9 @@ private:
                         if (sp == nullptr) return;
                         sp->renderById.erase (sid);
                         if (sp->preparandoSongId == sid) sp->preparandoSongId = -1;
+                        sp->pendingLoadId = sid;                  // auto-cargar esta canción cuando baje el tono nuevo
                         if (add) sp->addSong (sid, nombre);
-                        else     sp->setSongTono (sid, nombre);   // ya listo: recarga y queda el tono nuevo
+                        else     sp->setSongTono (sid, nombre);   // recarga el setlist con el tono ya listo
                         sp->rebuildRepertoireStrip(); sp->repaint();
                     });
                     return;
@@ -3477,7 +3478,9 @@ private:
         if (f >= 1.0 && idx >= 0 && idx < songReady.size())
         {
             songReady.set (idx, true);
-            if (idx == 0 && currentSong < 0) loadSong (0);   // apenas esté la 1a, cargarla
+            if (pendingLoadId >= 0 && id == pendingLoadId && currentSong < 0)
+            { pendingLoadId = -1; loadSong (idx); }          // auto-cargar la canción cuyo tono se acaba de preparar
+            else if (idx == 0 && currentSong < 0) loadSong (0);   // apenas esté la 1a, cargarla
         }
     }
 
@@ -3497,7 +3500,14 @@ private:
         for (int i = 0; i < repertoire.size(); ++i) songReady.add (true);
         if (! didStartupClean) { didStartupClean = true; if (cacheAutoClean) deleteUnusedCache(); enforceCap(); }   // limpieza auto (1 vez, al abrir)
         if (repertoire.isEmpty()) { clearSong(); return; }
-        if (currentSong < 0) loadSong (0);
+        if (currentSong < 0)
+        {
+            int li = 0;                          // por defecto la 1a; si hay una preparada, esa
+            if (pendingLoadId >= 0)
+                for (int i = 0; i < repertoire.size(); ++i)
+                    if (repertoire.getReference (i).id == pendingLoadId) { li = i; pendingLoadId = -1; break; }
+            loadSong (li);
+        }
         else repaint (mapBounds);
     }
 
@@ -4895,6 +4905,7 @@ private:
     std::map<int, float> dlById;      // id de canción -> progreso 0..1 (ausente = sin barra). Sigue a la canción al reordenar
     std::map<int, float> renderById;  // id -> progreso del render de tono (barra "preparando" en la portada)
     int preparandoSongId = -1;        // canción cuyo NUEVO tono se está preparando (bloquea play y muestra aviso en el mapa)
+    int pendingLoadId = -1;           // canción a cargar automáticamente cuando su nuevo tono termine de bajar
     int lastDlPct = -1;               // ultimo % mostrado en el placeholder de descarga (para repintar sin saturar)
     juce::Array<int> loadOrderIds;    // ids en el ORDEN del loader (fijo); mapea el índice del loader al id aunque se reordene
     int pendingAddAfterId = 0;   // botón + de la tarjeta: insertar la canción agregada justo después de esta (0 = al final)
