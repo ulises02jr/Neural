@@ -121,7 +121,6 @@
     <button class="tab" data-tab="multitracks" onclick="tab('multitracks')">Tracks</button>
     <button class="tab" data-tab="tiempos" onclick="tab('tiempos')">Time de Secciones</button>
     {% if features.charts %}<button class="tab" data-tab="cifrado" onclick="tab('cifrado')">Cifrado</button>{% endif %}
-    <button class="tab" data-tab="transposicion" onclick="tab('transposicion')">Transposición</button>
     {% if features.midi %}<button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>{% endif %}
     {% if features.export_pdf %}<button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>{% endif %}
     <button class="tab" data-tab="eliminar" onclick="tab('eliminar')">Eliminar Canción</button>
@@ -167,7 +166,7 @@
   <div class="panel" id="p-multitracks">
     <div class="card">
       <h2>Tracks</h2>
-      <div class="hint">Para la <b>mejor calidad de audio</b> en el reproductor NeuralPlay, subí las pistas en <b>WAV</b>: conserva el sonido original sin compresión ni pérdida. Si necesitás archivos más livianos podés usar <b>MP3 a 320 kbps</b>. Los WAV tardan un poco más en subir y en generar los tonos, pero valen la pena por la fidelidad.</div>
+      <div class="hint">Subí tus pistas en <b>WAV</b>, <b>FLAC</b> o <b>MP3</b>. Para la mejor calidad usá <b>WAV</b> o <b>FLAC</b> (sin pérdida); si querés archivos más livianos, <b>MP3</b>. El sistema se encarga del resto.</div>
       {% if stems %}
       <form method="POST" action="{{ url_for('admin_familias', numero=numero) }}">
 <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
@@ -198,7 +197,7 @@
       <h2>Agregar más pistas</h2>
       <form id="form-subir" method="POST" action="{{ url_for('admin_editar_subir', numero=numero) }}" enctype="multipart/form-data" onsubmit="return subirPistasAsync(this)" data-uno="{{ url_for('admin_editar_subir_uno', numero=numero) }}" data-fin="{{ url_for('admin_editar_subir_fin', numero=numero) }}">
 <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-        <input type="file" name="pistas" accept="audio/*,.mp3,.m4a,.ogg,.wav" multiple required>
+        <input type="file" name="pistas" accept=".wav,.flac,.mp3" multiple required>
         <button class="primary" type="submit">Subir pistas</button>
         <div id="subir-progreso" style="margin-top:12px"></div>
         <div class="hint">Se agregan a las existentes. El nombre del archivo = nombre de la pista.</div>
@@ -295,36 +294,6 @@
     </div>
   </div>
 
-  <!-- Transposición -->
-  <div class="panel" id="p-transposicion">
-    <div class="card">
-      <h2>Transposición</h2>
-      <div class="hint">Generá los tonos con anticipación para que los músicos no esperen. Cada tono tarda unos minutos en generarse (en segundo plano); refrescá esta página para ver cuando cambie de color.</div>
-      <div class="franjas">
-        {% for t in tonos %}
-        <div class="franja {% if t.listo %}on{% elif t.en_proceso %}proc{% endif %}">
-          <span class="fr-tono">{{ t.nombre }}</span>
-          <span class="fr-sp"></span>
-          {% if t.listo %}
-          <form method="POST" action="{{ url_for('admin_borrar_tono', numero=numero, n=t.n) }}" onsubmit="return confirm('¿Eliminar la transposición en {{ t.nombre }}?')">
-<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-            <button type="submit" class="fr-btn del">Eliminar</button>
-          </form>
-          {% elif t.en_proceso %}
-          <button type="button" class="fr-btn proc" disabled>Generando…</button>
-          {% else %}
-          <form method="POST" action="{{ url_for('admin_pregenerar', numero=numero) }}" onsubmit="return uiGenerando(this)">
-<input type="hidden" name="_csrf" value="{{ csrf_token() }}">
-            <input type="hidden" name="tono" value="{{ t.n }}">
-            <button type="submit" class="fr-btn gen">Generar</button>
-          </form>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-
   <!-- MIDI -->
   <div class="panel" id="p-midi">
     <div class="card">
@@ -410,17 +379,8 @@
 </div>
 
 <script>
-const TABS = {{ (['info','multitracks','tiempos'] + (['cifrado'] if features.charts else []) + ['transposicion'] + (['midi'] if features.midi else []) + (['letras'] if features.export_pdf else []) + ['eliminar'])|tojson }};
+const TABS = {{ (['info','multitracks','tiempos'] + (['cifrado'] if features.charts else []) + (['midi'] if features.midi else []) + (['letras'] if features.export_pdf else []) + ['eliminar'])|tojson }};
 let tabActual = 'multitracks';
-function uiGenerando(form){ var b=form.querySelector('button[type=submit]'); if(b){ b.disabled=true; b.textContent='Generando…'; } return true; }
-document.addEventListener('DOMContentLoaded', function(){
-  if(document.querySelector('.franja.proc')){
-    setInterval(function(){
-      var p=document.getElementById('p-transposicion');
-      if(p && p.offsetParent !== null && p.querySelector('.franja.proc')){ location.reload(); }
-    }, 15000);
-  }
-});
 function subirPistasAsync(form){
   var input=form.querySelector('input[type=file]');
   if(!input||!input.files||!input.files.length) return true;
