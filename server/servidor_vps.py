@@ -3097,8 +3097,9 @@ def _render_tono(numero, n, org=None):
                          else ["-c:a", "flac", "-compression_level", "8"])
                 subprocess.run(
                     ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
-                     "-af", "rubberband=pitch=" + repr(ratio)] + codec + [str(salida)],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+                     "-af", "rubberband=pitch=" + repr(ratio) + ":formant=preserved:pitchq=quality"]
+                    + codec + [str(salida)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=420)
             _subir_audio(salida)
             # el original bajado a temp solo se limpia si vino de Spaces
             if str(entrada).startswith("/tmp") or almacen.habilitado():
