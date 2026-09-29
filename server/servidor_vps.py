@@ -1255,7 +1255,7 @@ def api_live_render(numero, t):
         return jsonify({"listo": False, "error": "sin pistas"})
     d = _carpeta_tono(numero, n)
     if not (d.exists() and (d / ".lock").exists()):
-        threading.Thread(target=_render_tono, args=(numero, n, org_actual()), daemon=True).start()
+        threading.Thread(target=_render_encolado, args=(numero, n, org_actual()), daemon=True).start()
     return jsonify({"listo": False, "estado": "procesando"})
 
 
@@ -3123,6 +3123,62 @@ def _render_tono(numero, n, org=None):
         logging.error("proxys tono %s/%s: %s", numero, n, e)
 
 
+# ── Cola / limitador de renders ──────────────────────────────────────
+# Evita que muchos renders a la vez tumben el droplet. Cada render pide un
+# "slot"; si no hay libre, ESPERA su turno (hace fila). Cross-proceso (flock)
+# para que el límite se respete entre los workers de gunicorn.
+# NW_MAX_RENDERS = cuántos corren en paralelo. 1 en el droplet de 1 núcleo;
+# subilo (env) cuando tengas más núcleos o un worker aparte.
+import fcntl as _fcntl
+NW_MAX_RENDERS = max(1, int(os.environ.get("NW_MAX_RENDERS", "1")))
+_SLOTS_DIR = BASE_DIR / ".render_slots"
+try:
+    _SLOTS_DIR.mkdir(exist_ok=True)
+except Exception:
+    pass
+
+
+class _RenderGate:
+    """Espera hasta conseguir un slot de render libre (forma la cola)."""
+    def __enter__(self):
+        import time as _t
+        self._f = None
+        while self._f is None:
+            for i in range(NW_MAX_RENDERS):
+                f = None
+                try:
+                    f = open(str(_SLOTS_DIR / ("slot_%d" % i)), "w")
+                    _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                    self._f = f
+                    break
+                except OSError:
+                    if f is not None:
+                        try:
+                            f.close()
+                        except Exception:
+                            pass
+            if self._f is None:
+                _t.sleep(2)   # todos ocupados: esperar y reintentar
+        return self
+
+    def __exit__(self, *a):
+        try:
+            _fcntl.flock(self._f, _fcntl.LOCK_UN)
+            self._f.close()
+        except Exception:
+            pass
+
+
+def _render_encolado(numero, n, org=None):
+    with _RenderGate():
+        _render_tono(numero, n, org)
+
+
+def _web_encolado(numero, n, org=None):
+    with _RenderGate():
+        _asegurar_web(numero, n, org)
+
+
 # ───────────────────────── Pads ambientales ─────────────────────────
 # Biblioteca GLOBAL de pads por tono (12 raíces), reutilizable por todas
 # las canciones. Se sube UN pad base y el servidor genera los otros 11 por
@@ -3526,7 +3582,7 @@ def api_pistas(numero):
     elif _tono_listo(numero, n):
         web = _carpeta_tono(numero, n) / "web"
         if not (web.exists() and (web / ".lock").exists()):
-            threading.Thread(target=_asegurar_web, args=(numero, n, org_actual()), daemon=True).start()
+            threading.Thread(target=_web_encolado, args=(numero, n, org_actual()), daemon=True).start()
     return jsonify({"numero": numero, "tono": n, "listo": listo,
                     "hay_pistas": len(_stems_originales(numero)) > 0,
                     "stems": stems, "secciones": _leer_secciones(numero)})
@@ -3546,11 +3602,11 @@ def api_render(numero, n):
     if _tono_listo(numero, n):
         web = _carpeta_tono(numero, n) / "web"
         if not (web.exists() and (web / ".lock").exists()):
-            threading.Thread(target=_asegurar_web, args=(numero, n, org_actual()), daemon=True).start()
+            threading.Thread(target=_web_encolado, args=(numero, n, org_actual()), daemon=True).start()
     else:
         d = _carpeta_tono(numero, n)
         if not (d.exists() and (d / ".lock").exists()):
-            threading.Thread(target=_render_tono, args=(numero, n, org_actual()), daemon=True).start()
+            threading.Thread(target=_render_encolado, args=(numero, n, org_actual()), daemon=True).start()
     return jsonify({"listo": False, "estado": "procesando"})
 
 
@@ -3694,7 +3750,7 @@ def admin_pistas_subir():
         guardadas += 1
     if guardadas:
         _invalidar_tonos(int(numero))
-        threading.Thread(target=_asegurar_web, args=(int(numero), 0, org_actual()), daemon=True).start()
+        threading.Thread(target=_web_encolado, args=(int(numero), 0, org_actual()), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s) a la cancion #" + numero, "success")
     else:
         flash("No se subio ninguna pista (revisa el formato: mp3/wav/flac)", "error")
@@ -4186,7 +4242,7 @@ def admin_nueva_pistas(numero):
             guardadas += 1
         if guardadas:
             _invalidar_tonos(numero)
-            threading.Thread(target=_asegurar_web, args=(numero, 0, org_actual()), daemon=True).start()
+            threading.Thread(target=_web_encolado, args=(numero, 0, org_actual()), daemon=True).start()
         flash("OK: " + str(guardadas) + " pista(s) subida(s)", "success")
         return redirect(url_for("admin_secciones", numero=numero, wizard=1))
     return render_template("admin_nueva_pistas.html", numero=numero, titulo=titulo)
@@ -4652,7 +4708,7 @@ def admin_editar_subir(numero):
         guardadas += 1
     if guardadas:
         _invalidar_tonos(numero)
-        threading.Thread(target=_asegurar_web, args=(numero, 0, org_actual()), daemon=True).start()
+        threading.Thread(target=_web_encolado, args=(numero, 0, org_actual()), daemon=True).start()
     flash("OK: " + str(guardadas) + " pista(s) agregada(s)", "success")
     return redirect(url_for("admin_editar", numero=numero))
 
@@ -4678,7 +4734,7 @@ def admin_editar_subir_uno(numero):
 @login_required("admin")
 def admin_editar_subir_fin(numero):
     _invalidar_tonos(numero)
-    threading.Thread(target=_asegurar_web, args=(numero, 0, org_actual()), daemon=True).start()
+    threading.Thread(target=_web_encolado, args=(numero, 0, org_actual()), daemon=True).start()
     return jsonify({"ok": True})
 
 
@@ -5114,7 +5170,7 @@ def admin_pregenerar(numero):
     else:
         d = _carpeta_tono(numero, n)
         if not (d.exists() and (d / ".lock").exists()):
-            threading.Thread(target=_render_tono, args=(numero, n, org_actual()), daemon=True).start()
+            threading.Thread(target=_render_encolado, args=(numero, n, org_actual()), daemon=True).start()
         flash("Generando el tono " + ("+" if n > 0 else "") + str(n) +
               " en segundo plano. Puede tardar unos minutos; refresca para ver cuando este listo.", "success")
     return redirect(url_for("admin_editar", numero=numero))
