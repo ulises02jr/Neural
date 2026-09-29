@@ -3603,6 +3603,47 @@ def admin_pistas():
     return render_template("admin_pistas.html", songs=songs)
 
 
+def _guardar_stem(archivo, carpeta, nombre):
+    """Guarda un stem subido. Si viene en WAV lo convierte a FLAC (sin pérdida,
+    ~1/3 del peso): el WAV solo vive en un temporal y se descarta, nunca se
+    almacena. MP3/FLAC se guardan tal cual. Devuelve el nombre final almacenado."""
+    ext = os.path.splitext(nombre)[1].lower()
+    if ext != ".wav":
+        archivo.save(str(carpeta / nombre))
+        _subir_audio(carpeta / nombre)
+        return nombre
+    stem = os.path.splitext(nombre)[0]
+    tmp_wav = carpeta / (stem + ".__subida.wav")
+    salida  = carpeta / (stem + ".flac")
+    archivo.save(str(tmp_wav))
+    ok = False
+    try:
+        subprocess.run(
+            ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(tmp_wav),
+             "-c:a", "flac", "-compression_level", "8", str(salida)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+        ok = salida.exists() and salida.stat().st_size > 1000
+    except Exception as e:
+        logging.error("WAV->FLAC %s: %s", nombre, e)
+    if ok:
+        try:
+            os.remove(str(tmp_wav))   # el WAV nunca persiste
+        except Exception:
+            pass
+        _subir_audio(salida)
+        return salida.name
+    # Si la conversión falló, conservamos el WAV para NO perder la pista.
+    try:
+        if salida.exists():
+            os.remove(str(salida))
+        os.replace(str(tmp_wav), str(carpeta / nombre))
+        _subir_audio(carpeta / nombre)
+        return nombre
+    except Exception as e:
+        logging.error("fallback WAV %s: %s", nombre, e)
+        return nombre
+
+
 @app.route("/admin/pistas/subir", methods=["POST"])
 @login_required("admin")
 def admin_pistas_subir():
@@ -3648,8 +3689,7 @@ def admin_pistas_subir():
         nombre = secure_filename(a.filename)
         if not nombre:
             continue
-        a.save(str(carpeta / nombre))
-        _subir_audio(carpeta / nombre)
+        _guardar_stem(a, carpeta, nombre)
         guardadas += 1
     if guardadas:
         _invalidar_tonos(int(numero))
@@ -4141,8 +4181,7 @@ def admin_nueva_pistas(numero):
             nombre = secure_filename(a.filename)
             if not nombre:
                 continue
-            a.save(str(carpeta / nombre))
-            _subir_audio(carpeta / nombre)
+            _guardar_stem(a, carpeta, nombre)
             guardadas += 1
         if guardadas:
             _invalidar_tonos(numero)
@@ -4608,8 +4647,7 @@ def admin_editar_subir(numero):
         nombre = secure_filename(a.filename)
         if not nombre:
             continue
-        a.save(str(carpeta / nombre))
-        _subir_audio(carpeta / nombre)
+        _guardar_stem(a, carpeta, nombre)
         guardadas += 1
     if guardadas:
         _invalidar_tonos(numero)
@@ -4631,9 +4669,8 @@ def admin_editar_subir_uno(numero):
         return jsonify({"ok": False, "error": "nombre"}), 400
     carpeta = dir_pistas(_cur_org()) / str(numero)
     carpeta.mkdir(exist_ok=True)
-    a.save(str(carpeta / nombre))
-    _subir_audio(carpeta / nombre)
-    return jsonify({"ok": True, "name": nombre})
+    final = _guardar_stem(a, carpeta, nombre) or nombre
+    return jsonify({"ok": True, "name": final})
 
 
 @app.route("/admin/pistas/<int:numero>/subir_fin", methods=["POST"])
