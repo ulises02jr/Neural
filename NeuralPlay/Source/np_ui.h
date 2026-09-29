@@ -128,6 +128,26 @@ struct PillLNF : public juce::LookAndFeel_V4
         setColour (juce::ComboBox::outlineColourId,    juce::Colour (0xff3a3d44));
         setColour (juce::ComboBox::textColourId,       juce::Colour (0xfff2f2f2));
         setColour (juce::ComboBox::arrowColourId,      juce::Colour (0xffbfc4cc));
+        // Menú desplegable (popup) fino y oscuro para TODOS los ComboBox de la app.
+        setColour (juce::PopupMenu::backgroundColourId,            juce::Colour (0xff1c1e22));
+        setColour (juce::PopupMenu::textColourId,                  juce::Colour (0xffe8e8e8));
+        setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff2b2f36));
+        setColour (juce::PopupMenu::highlightedTextColourId,       juce::Colours::white);
+    }
+    // ── Popup de los ComboBox: filas compactas, fondo redondeado oscuro ──
+    juce::Font getPopupMenuFont() override { return juce::Font (14.0f); }
+    void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator,
+                                    int stdHeight, int& idealW, int& idealH) override
+    {
+        juce::LookAndFeel_V4::getIdealPopupMenuItemSize (text, isSeparator, stdHeight, idealW, idealH);
+        if (! isSeparator) idealH = npEsIPhone() ? 34 : 30;
+    }
+    void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
+    {
+        g.setColour (juce::Colour (0xff1c1e22));
+        g.fillRoundedRectangle (0.0f, 0.0f, (float) w, (float) h, 10.0f);
+        g.setColour (juce::Colour (0x22ffffff));
+        g.drawRoundedRectangle (0.5f, 0.5f, (float) w - 1.0f, (float) h - 1.0f, 10.0f, 1.0f);
     }
     // Fuente del CUERPO de la app: Inter (empaquetada), legible en tamaños chicos.
     // El login usa Space Grotesk (marca) con su propia fuente explícita; los pads
