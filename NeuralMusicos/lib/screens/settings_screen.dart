@@ -64,6 +64,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _eliminarCuenta() async {
+    final ctrl = TextEditingController();
+    bool enviando = false;
+    String? error;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: NW.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Eliminar cuenta', style: TextStyle(color: NW.txt, fontSize: 17)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Esta acción es permanente. Se eliminará tu cuenta y no podrás volver a '
+                'iniciar sesión con ella. Confirmá con tu contraseña.',
+                style: TextStyle(color: NW.txt2, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                obscureText: true,
+                autofocus: true,
+                style: const TextStyle(color: NW.txt),
+                decoration: InputDecoration(
+                  hintText: 'Contraseña',
+                  hintStyle: const TextStyle(color: NW.txt3),
+                  errorText: error,
+                  enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: NW.line)),
+                  focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: NW.chord)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: enviando ? null : () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancelar', style: TextStyle(color: NW.txt2)),
+            ),
+            TextButton(
+              onPressed: enviando
+                  ? null
+                  : () async {
+                      if (ctrl.text.isEmpty) {
+                        setLocal(() => error = 'Ingresá tu contraseña');
+                        return;
+                      }
+                      setLocal(() { enviando = true; error = null; });
+                      final res = await Api.I.eliminarCuenta(ctrl.text);
+                      if (res['ok'] == true) {
+                        if (ctx.mounted) Navigator.of(ctx).pop(true);
+                      } else {
+                        setLocal(() {
+                          enviando = false;
+                          error = (res['mensaje'] ?? 'No se pudo eliminar').toString();
+                        });
+                      }
+                    },
+              child: enviando
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: NW.error))
+                  : const Text('Eliminar', style: TextStyle(color: NW.error, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmado == true && mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (r) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -123,8 +202,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             width: double.infinity,
             child: TextButton.icon(
               onPressed: _salir,
-              icon: const Icon(Icons.logout, size: 18, color: NW.error),
-              label: const Text('Cerrar sesión', style: TextStyle(color: NW.error)),
+              icon: const Icon(Icons.logout, size: 18, color: NW.txt2),
+              label: const Text('Cerrar sesión', style: TextStyle(color: NW.txt2)),
+            ),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton.icon(
+              onPressed: _eliminarCuenta,
+              icon: const Icon(Icons.delete_forever, size: 18, color: NW.error),
+              label: const Text('Eliminar cuenta', style: TextStyle(color: NW.error)),
             ),
           ),
           const SizedBox(height: 20),

@@ -125,6 +125,37 @@ class Api {
     await AppChannel.I.remove(['token', 'session', 'org', 'nombre', 'apellido', 'features']);
   }
 
+  /// Elimina definitivamente la cuenta del músico (requisito de App Store).
+  /// Re-confirma con la contraseña. Devuelve {ok:bool, mensaje:String?}.
+  Future<Map<String, dynamic>> eliminarCuenta(String password) async {
+    final s = session;
+    if (s == null || s.isEmpty) {
+      return {'ok': false, 'mensaje': 'Iniciá sesión de nuevo.'};
+    }
+    try {
+      final r = await http
+          .post(Uri.parse('$baseUrl/api/auth/eliminar_cuenta'),
+              headers: {'X-Session-Token': s, 'Content-Type': 'application/json'},
+              body: jsonEncode({'password': password}))
+          .timeout(const Duration(seconds: 12));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      if (j['ok'] == true) {
+        // Limpiar todo el estado local tras borrar la cuenta en el servidor.
+        token = null;
+        session = null;
+        orgNombre = '';
+        nombre = '';
+        apellido = '';
+        features = {};
+        await AppChannel.I.remove(['token', 'session', 'org', 'nombre', 'apellido', 'features']);
+        return {'ok': true};
+      }
+      return {'ok': false, 'mensaje': (j['mensaje'] ?? 'No se pudo eliminar la cuenta.').toString()};
+    } catch (e) {
+      return {'ok': false, 'mensaje': 'Sin conexión. Intentá de nuevo.'};
+    }
+  }
+
   bool get logueado => token != null && token!.isNotEmpty;
 
   /// Devuelve {ok:bool, mensaje:String?}
@@ -279,6 +310,43 @@ class Api {
     }
   }
 
+  /// Arreglo activo de una canción (el que el operador dejó marcado en NeuralPlay).
+  /// Devuelve la secuencia de índices de sección reales (con repeticiones), o [] si no hay.
+  /// Se cachea para que el repertorio respete el arreglo también sin conexión.
+  Future<List<int>> songArrangement(int numero) async {
+    List<int> parse(String body) {
+      final j = jsonDecode(body) as Map<String, dynamic>;
+      if (j['ok'] != true || j['arreglos'] is! List) return const [];
+      for (final e in (j['arreglos'] as List)) {
+        if (e is Map &&
+            (e['id'] is num) &&
+            (e['id'] as num).toInt() == numero &&
+            e['last'] == true &&
+            e['seq'] is List) {
+          return [for (final x in (e['seq'] as List)) if (x is num) x.toInt()];
+        }
+      }
+      return const [];
+    }
+
+    try {
+      final r = await http
+          .get(Uri.parse('$baseUrl/api/live/arreglos'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 12));
+      if (_revisarExpulsion(r)) return const [];
+      await AppChannel.I.set('arreglos_all', r.body); // caché offline (toda la org)
+      return parse(r.body);
+    } catch (e) {
+      final cached = AppChannel.I.get('arreglos_all');
+      if (cached is String && cached.isNotEmpty) {
+        try {
+          return parse(cached);
+        } catch (_) {}
+      }
+      return const [];
+    }
+  }
+
   /// Sistema en vivo por LAN (NeuralPlay :5050): chart actual. base = http://ip:5050
   Future<Chart?> liveSong(String base) async {
     try {
@@ -297,9 +365,17 @@ class Api {
     try {
       final r = await http.get(Uri.parse('$base/state')).timeout(const Duration(seconds: 6));
       final j = jsonDecode(r.body) as Map<String, dynamic>;
+      final arr = <int>[];
+      if (j['arr'] is List) {
+        for (final v in (j['arr'] as List)) {
+          if (v is num) arr.add(v.toInt());
+        }
+      }
       return {
         'idx': (j['idx'] is num) ? (j['idx'] as num).toInt() : 0,
         'ver': (j['ver'] is num) ? (j['ver'] as num).toInt() : 0,
+        'step': (j['step'] is num) ? (j['step'] as num).toInt() : -1,
+        'arr': arr,
         'playing': j['playing'] == true,
       };
     } catch (e) {
@@ -328,6 +404,36 @@ class Api {
     try {
       final r = await http
           .get(Uri.parse('$baseUrl/api/live/pistas/$numero?t=$sem'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      if (_revisarExpulsion(r)) return null;
+      if (r.statusCode != 200) return null;
+      return jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Pide al servidor que GENERE (renderice) un tono que todavia no esta listo.
+  /// Devuelve true si ya quedo listo o si el render arranco/esta en proceso.
+  Future<bool> pedirRenderTono(int numero, int sem) async {
+    try {
+      final r = await http
+          .post(Uri.parse('$baseUrl/api/live/render/$numero/$sem'), headers: _authHeaders)
+          .timeout(const Duration(seconds: 20));
+      if (_revisarExpulsion(r)) return false;
+      if (r.statusCode != 200) return false;
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      return j['listo'] == true || j['estado'] == 'procesando';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Progreso del render de un tono: {listo:bool, progreso:"x/y"}.
+  Future<Map<String, dynamic>?> estadoRenderTono(int numero, int sem) async {
+    try {
+      final r = await http
+          .get(Uri.parse('$baseUrl/api/live/render/$numero/$sem/estado'), headers: _authHeaders)
           .timeout(const Duration(seconds: 20));
       if (_revisarExpulsion(r)) return null;
       if (r.statusCode != 200) return null;

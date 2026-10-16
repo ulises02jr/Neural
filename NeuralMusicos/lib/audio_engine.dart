@@ -15,6 +15,9 @@ class AudioEngine {
   List<List<double>> loadedSecs = [];
   // Posicion mientras el usuario arrastra la barra (para que el chart siga en vivo).
   double? scrubPos;
+  // Paso EXACTO del arreglo en modo ensayo (lo fija rehearsal_sheet). null = sin arreglo.
+  // Lo lee ChartScreen para resaltar la sección correcta aunque se repita.
+  int? arrStep;
 
   bool loadedFor(int numero, int sem) => loadedNumero == numero && loadedSem == sem;
 
@@ -40,6 +43,7 @@ class AudioEngine {
     loadedDur = 0;
     loadedSecs = [];
     scrubPos = null;
+    arrStep = null;
   }
 
   Future<double> position() async {

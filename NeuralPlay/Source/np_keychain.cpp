@@ -7,6 +7,15 @@
  #include <CoreFoundation/CoreFoundation.h>
  #include <Security/SecBase.h>
  #include <Security/SecItem.h>
+#elif defined(_WIN32)
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+ #endif
+ #include <windows.h>
+ #include <wincred.h>
 #endif
 
 #include "np_keychain.h"
@@ -74,7 +83,54 @@ namespace npkc
         SecItemDelete (q);
         CFRelease (q);
     }
+#elif defined(_WIN32)
+    // ── Windows Credential Manager (bóveda de credenciales del usuario) ──
+    // Guardado seguro por usuario, persiste entre reinicios y no requiere admin.
+    static juce::String targetName (const juce::String& key)
+    {
+        return "com.neuralworship.play/" + key;   // nombre único por credencial
+    }
+
+    bool set (const juce::String& key, const juce::String& value)
+    {
+        const juce::String target = targetName (key);
+        const char* utf8 = value.toRawUTF8();
+        const DWORD blobSize = (DWORD) std::strlen (utf8);
+
+        CREDENTIALW cred;
+        ZeroMemory (&cred, sizeof (cred));
+        cred.Type            = CRED_TYPE_GENERIC;
+        cred.TargetName      = const_cast<LPWSTR> (target.toWideCharPointer());
+        cred.CredentialBlobSize = blobSize;
+        cred.CredentialBlob  = (LPBYTE) utf8;
+        cred.Persist         = CRED_PERSIST_LOCAL_MACHINE;   // por usuario, persistente
+        return CredWriteW (&cred, 0) == TRUE;
+    }
+
+    juce::String get (const juce::String& key)
+    {
+        const juce::String target = targetName (key);
+        PCREDENTIALW pcred = nullptr;
+        juce::String result;
+        if (CredReadW (target.toWideCharPointer(), CRED_TYPE_GENERIC, 0, &pcred)
+            && pcred != nullptr)
+        {
+            if (pcred->CredentialBlob != nullptr && pcred->CredentialBlobSize > 0)
+                result = juce::String::fromUTF8 ((const char*) pcred->CredentialBlob,
+                                                 (int) pcred->CredentialBlobSize);
+        }
+        if (pcred != nullptr)
+            CredFree (pcred);
+        return result;
+    }
+
+    void remove (const juce::String& key)
+    {
+        const juce::String target = targetName (key);
+        CredDeleteW (target.toWideCharPointer(), CRED_TYPE_GENERIC, 0);
+    }
 #else
+    // Otras plataformas (Android/Linux): sin almacén seguro por ahora.
     bool         set    (const juce::String&, const juce::String&) { return false; }
     juce::String get    (const juce::String&) { return {}; }
     void         remove (const juce::String&) {}

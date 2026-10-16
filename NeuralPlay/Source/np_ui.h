@@ -373,6 +373,7 @@ struct SongCard : public juce::Component
 {
     juce::Image cover;
     juce::String titulo, tono;
+    juce::String arrNombre;   // arreglo activo (vacío = Original): se muestra como chip en la portada
     bool active = false;
     bool editMode = false;
     int index = 0;
@@ -489,6 +490,19 @@ struct SongCard : public juce::Component
             g.setColour (juce::Colour (0x33ffffff)); g.fillRoundedRectangle (bar, 4.0f);
             g.setColour (juce::Colour (0xff2E6BE6));
             g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, dlProgress)), 4.0f);
+        }
+
+        // Chip del arreglo activo (abajo-izquierda de la portada). Vacío = Original → no se muestra.
+        if (arrNombre.isNotEmpty())
+        {
+            auto c = coverRect();
+            juce::Font f (npEsIPhone() ? 9.5f : 11.0f, juce::Font::bold);
+            const float tw = juce::jmin (c.getWidth() - 16.0f, arrNombre.length() * (f.getHeight() * 0.6f) + 20.0f);
+            juce::Rectangle<float> chip (c.getX() + 7.0f, c.getBottom() - 24.0f, juce::jmax (22.0f, tw), 18.0f);
+            g.setColour (juce::Colour (0xE6143018)); g.fillRoundedRectangle (chip, 9.0f);   // verde oscuro
+            g.setColour (juce::Colour (0x553ED66E)); g.drawRoundedRectangle (chip, 9.0f, 1.0f);
+            g.setColour (juce::Colour (0xff8fe0a0)); g.setFont (f);
+            g.drawText (arrNombre, chip.reduced (8.0f, 0.0f), juce::Justification::centredLeft, true);
         }
     }
 };
@@ -1931,6 +1945,15 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     int renderingSem = 99, pendIdx = -1, progHechos = 0, progTotal = 0;
     NPTonoLnF tonoLnf;             // estilo del menú de tono
     int selTonoIdx = 0;            // índice del tono elegido en la caja (aún sin confirmar)
+    juce::StringArray arrNames;    // arreglos guardados de la canción (sin "Original")
+    int selArrIdx = 0;             // 0 = Original; 1.. = arrNames[idx-1]
+    juce::String selectedArrName() const   // nombre del arreglo elegido ("Original" = sin arreglo)
+    { return (selArrIdx <= 0 || selArrIdx - 1 >= arrNames.size()) ? juce::String::fromUTF8 ("Original") : arrNames[selArrIdx - 1]; }
+    // Guía: 0 = Tracks (pista que subió el usuario) · 1 = Neural (guía dinámica por voz)
+    int  guiaMode = 0;
+    bool repTrack = false;   // permitir repetir/∞ en modo Track (opción con advertencia)
+    bool guiaForzadaNeural() const { return selArrIdx != 0; }   // cualquier arreglo obliga guía Neural
+    int  guiaEfectiva() const { return guiaForzadaNeural() ? 1 : guiaMode; }
     juce::TextButton cargarBtn;    // confirmación: aplicar el tono elegido
     int prepFrame = 0;             // animación del spinner "Preparando…"
 
@@ -1938,6 +1961,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     std::function<void (int)> onPickSong;            // biblioteca -> elegir cancion
     std::function<void (int, juce::String)> onChoose; // (semitonos, nombre) -> aplicar
     std::function<void (int, juce::String, bool)> onElegir; // (sem, nombre, ya_listo): cerrar y mostrar barra en la portada
+    std::function<void (int, juce::String)> onDeleteArr;    // (songId, nombreArreglo): borrar un arreglo guardado
+    std::function<void (int, juce::String)> onRenameArr;    // (songId, nombreArreglo): renombrar un arreglo guardado
 
     // #2 punto de inicio/fin por canción
     juce::TextButton inTgl, outTgl;                  // activar inicio / fin
@@ -2085,8 +2110,12 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         repaint();
     }
     void openTono (int id, juce::String title, bool add, juce::Array<Key> ks, double inSec = -1.0, double outSec = -1.0,
-                   bool pIntro = false, bool pOutro = false, int curSem = 0)
+                   bool pIntro = false, bool pOutro = false, int curSem = 0,
+                   juce::StringArray arrs = {}, int curArrIdx = 0, int guiaSel = 0, bool repSel = false)
     { mode = Tono; songId = id; songTitle = title; addFlow = add; keys = std::move (ks); searchBox.setVisible (false);
+      arrNames = arrs; selArrIdx = juce::jlimit (0, arrs.size(), curArrIdx);   // 0 = Original
+      guiaMode = (guiaSel == 1) ? 1 : 0;   // Tracks por defecto; Neural si venía elegido
+      repTrack = repSel;                   // permitir repetir/∞ en Track
       songArtist.clear(); for (auto& b : bibAll) if (b.id == id) { songArtist = b.artista; break; }   // artista para el subtítulo
       inOn = (inSec >= 0.0); outOn = (outSec >= 0.0);
       padIn = pIntro; padOut = pOutro;
@@ -2124,16 +2153,50 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     int tonoBlockH() const { return tonoLabelH() + rpCh(); }     // etiqueta + combo
     int cargarGap() const { return npEsIPhone() ? 8 : 10; }
     int cargarH()   const { return npEsIPhone() ? 40 : 46; }     // alto del botón "Cargar"
-    int topBlockH() const { return tonoBlockH() + cargarGap() + cargarH(); }   // caja + botón
-    juce::Rectangle<int> tonoComboRect() const
+    // ── Selector de Guía (Tracks / Neural), fila propia bajo tono/arreglo ──
+    int guiaGapTop() const { return npEsIPhone() ? 10 : 14; }    // espacio sobre la fila de guía
+    int guiaLabelH() const { return tonoLabelH(); }             // "GUÍA" encima de las pills
+    int guiaNoteH()  const { return npEsIPhone() ? 15 : 17; }    // aviso bajo las pills
+    int guiaRepGap() const { return npEsIPhone() ? 12 : 16; }    // aire entre el aviso y la casilla
+    int guiaRepH()   const { return npEsIPhone() ? 52 : 58; }    // casilla + título + advertencia (solo en Track)
+    int guiaBlockH() const { return guiaGapTop() + guiaLabelH() + rpCh() + guiaNoteH() + guiaRepGap() + guiaRepH(); }
+    juce::Rectangle<int> repTrackRect() const    // casilla "Permitir repetir/∞" (modo Track)
+    {
+        auto p = panelBounds().reduced (22);
+        p.removeFromTop (rpTop() + tonoBlockH() + guiaGapTop() + guiaLabelH() + rpCh() + guiaNoteH() + guiaRepGap());
+        return p.removeFromTop (guiaRepH());
+    }
+    juce::Rectangle<int> guiaRowArea() const
+    {
+        auto p = panelBounds().reduced (22);
+        p.removeFromTop (rpTop() + tonoBlockH() + guiaGapTop() + guiaLabelH());
+        return p.removeFromTop (rpCh());
+    }
+    juce::Rectangle<int> guiaTracksRect() const   // pill izquierda
+    { auto r = guiaRowArea(); const int gap = 12; const int cw = (r.getWidth() - gap) / 2; return { r.getX(), r.getY(), cw, rpCh() }; }
+    juce::Rectangle<int> guiaNeuralRect() const   // pill derecha
+    { auto r = guiaRowArea(); const int gap = 12; const int cw = (r.getWidth() - gap) / 2; return { r.getRight() - cw, r.getY(), cw, rpCh() }; }
+    juce::Rectangle<int> guiaNoteRect() const
+    { auto r = guiaRowArea(); return { r.getX(), r.getBottom() + 1, r.getWidth(), guiaNoteH() }; }
+    int topBlockH() const { return tonoBlockH() + guiaBlockH() + cargarGap() + cargarH(); }   // caja + guía + botón
+    juce::Rectangle<int> tonoRowArea() const
     {
         auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoLabelH());
-        auto row = p.removeFromTop (rpCh());
-        return row.withSizeKeepingCentre (juce::jmin (row.getWidth(), npEsIPhone() ? 220 : 240), rpCh());
+        return p.removeFromTop (rpCh());
     }
-    juce::Rectangle<int> cargarBtnRect() const   // botón "Cargar" debajo de la caja
+    juce::Rectangle<int> tonoComboRect() const   // caja TONO (mitad izquierda)
     {
-        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoBlockH() + cargarGap());
+        auto r = tonoRowArea(); const int gap = 12; const int cw = (r.getWidth() - gap) / 2;
+        return { r.getX(), r.getY(), cw, rpCh() };
+    }
+    juce::Rectangle<int> arrComboRect() const    // caja ARREGLO (mitad derecha)
+    {
+        auto r = tonoRowArea(); const int gap = 12; const int cw = (r.getWidth() - gap) / 2;
+        return { r.getRight() - cw, r.getY(), cw, rpCh() };
+    }
+    juce::Rectangle<int> cargarBtnRect() const   // botón "Cargar" debajo de la caja + guía
+    {
+        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoBlockH() + guiaBlockH() + cargarGap());
         auto row = p.removeFromTop (cargarH());
         return row.withSizeKeepingCentre (juce::jmin (row.getWidth(), npEsIPhone() ? 200 : 240), cargarH());
     }
@@ -2249,20 +2312,105 @@ struct RepEditPanel : public juce::Component, private juce::Timer
             if (renderingSem == 99)
             {
                 // Etiqueta "TONO" + caja del selector (menú propio al tocarla).
-                auto lbl = tonoComboRect().translated (0, -tonoLabelH()).withHeight (tonoLabelH() - 2);
-                g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (npFontMarca (12.5f, false));
-                g.drawText (juce::String::fromUTF8 ("TONO"), lbl, juce::Justification::centred);
+                // Caja genérica de combo (etiqueta arriba + caja + chevron + texto)
+                auto drawCombo = [&] (juce::Rectangle<int> rc, const juce::String& label, const juce::String& value)
+                {
+                    auto lbl = rc.translated (0, -tonoLabelH()).withHeight (tonoLabelH() - 2);
+                    g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (npFontMarca (12.5f, false));
+                    g.drawText (label, lbl, juce::Justification::centred);
+                    auto box = rc.toFloat();
+                    g.setColour (juce::Colour (0xff1c1c1c)); g.fillRoundedRectangle (box, 10.0f);
+                    g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (box, 10.0f, 1.0f);
+                    g.setColour (juce::Colours::white); g.setFont (npFontMarca (15.0f, true));
+                    g.drawText (value, rc.reduced (14, 0).withTrimmedRight (12), juce::Justification::centred);
+                    const float cx = box.getRight() - 14.0f, cy = box.getCentreY();   // chevron ▾
+                    juce::Path pth; pth.startNewSubPath (cx - 5.0f, cy - 3.0f);
+                    pth.lineTo (cx, cy + 3.0f); pth.lineTo (cx + 5.0f, cy - 3.0f);
+                    g.setColour (juce::Colour (0xffb0b0b0)); g.strokePath (pth, juce::PathStrokeType (1.6f));
+                };
+                const juce::String nom = (selTonoIdx >= 0 && selTonoIdx < keys.size()) ? keys[selTonoIdx].nombre : juce::String();
+                drawCombo (tonoComboRect(), juce::String::fromUTF8 ("TONO"), nom);
+                drawCombo (arrComboRect(),  juce::String::fromUTF8 ("ARREGLO"), selectedArrName());
 
-                auto box = tonoComboRect().toFloat();
-                g.setColour (juce::Colour (0xff1c1c1c)); g.fillRoundedRectangle (box, 10.0f);
-                g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (box, 10.0f, 1.0f);
-                juce::String nom = (selTonoIdx >= 0 && selTonoIdx < keys.size()) ? keys[selTonoIdx].nombre : juce::String();
-                g.setColour (juce::Colours::white); g.setFont (npFontMarca (16.0f, true));
-                g.drawText (nom, tonoComboRect().reduced (16, 0), juce::Justification::centred);
-                const float cx = box.getRight() - 16.0f, cy = box.getCentreY();   // chevron ▾
-                juce::Path pth; pth.startNewSubPath (cx - 5.0f, cy - 3.0f);
-                pth.lineTo (cx, cy + 3.0f); pth.lineTo (cx + 5.0f, cy - 3.0f);
-                g.setColour (juce::Colour (0xffb0b0b0)); g.strokePath (pth, juce::PathStrokeType (1.6f));
+                // ── Selector de Guía: dos pills (Tracks / Neural) ──
+                {
+                    const bool forzada = guiaForzadaNeural();
+                    const int  efc = guiaEfectiva();
+                    auto lbl = guiaRowArea().translated (0, -guiaLabelH()).withHeight (guiaLabelH() - 2);
+                    g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (npFontMarca (12.5f, false));
+                    g.drawText (juce::String::fromUTF8 ("GU\xc3\x8d" "A"), lbl, juce::Justification::centred);
+
+                    auto pill = [&] (juce::Rectangle<int> rc, const juce::String& txt, bool on, bool dim)
+                    {
+                        auto box = rc.toFloat();
+                        g.setColour (on ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1c1c1c));
+                        g.fillRoundedRectangle (box, 10.0f);
+                        g.setColour (on ? juce::Colour (0x66ffffff) : juce::Colour (0x33ffffff));
+                        g.drawRoundedRectangle (box, 10.0f, 1.0f);
+                        g.setColour (dim ? juce::Colour (0xff5a5a5a) : (on ? juce::Colours::white : juce::Colour (0xffd0d0d0)));
+                        g.setFont (npFontMarca (14.0f, on));
+                        g.drawText (txt, rc.reduced (6, 0), juce::Justification::centred);
+                    };
+                    pill (guiaTracksRect(), juce::String::fromUTF8 ("Tracks"),  efc == 0, forzada);
+                    pill (guiaNeuralRect(), juce::String::fromUTF8 ("Neural"),  efc == 1, false);
+
+                    // Aviso como "chip" redondeado, centrado y fino (color según el estado).
+                    auto drawNota = [&] (juce::Colour c, const juce::String& txt)
+                    {
+                        auto area = guiaNoteRect();
+                        const int fw = juce::jmin (area.getWidth(), (int) (txt.length() * 5.7f) + 30);
+                        auto chip = area.withSizeKeepingCentre (fw, area.getHeight()).toFloat();
+                        const float r = chip.getHeight() * 0.5f;
+                        g.setColour (c.withAlpha (0.13f)); g.fillRoundedRectangle (chip, r);
+                        g.setColour (c.withAlpha (0.38f)); g.drawRoundedRectangle (chip, r, 1.0f);
+                        g.setColour (c.brighter (0.15f)); g.setFont (npFontMarca (10.5f, false));
+                        g.drawFittedText (txt, chip.toNearestInt().reduced (12, 0), juce::Justification::centred, 1);
+                    };
+                    if (forzada)
+                        drawNota (juce::Colour (0xffe0a53a),
+                                  juce::String::fromUTF8 ("El arreglo usa gu\xc3\xad" "a din\xc3\xa1mica \xc2\xb7 saltos y repeticiones"));
+                    else if (efc == 1)
+                        drawNota (juce::Colour (0xff3ED66E),
+                                  juce::String::fromUTF8 ("Saltar secciones, repetir y usar arreglos"));
+                    else
+                        drawNota (juce::Colour (0xff9aa0a6),
+                                  juce::String::fromUTF8 ("Reproduce la canci\xc3\xb3n tal cual \xc2\xb7 sin saltos"));
+
+                    // Casilla opcional (solo en modo Track): título + advertencia (2 líneas).
+                    if (efc == 0 && ! forzada)
+                    {
+                        auto row = repTrackRect();
+                        // Línea 1: casilla + título, centrado.
+                        auto top = row.removeFromTop (npEsIPhone() ? 22 : 24);
+                        const juce::String titulo = juce::String::fromUTF8 ("Habilitar botones Repetir e Infinito");
+                        g.setFont (npFontMarca (12.5f, true));
+                        const int boxSz = top.getHeight() - 6;
+                        const int txtW  = (int) (titulo.length() * 6.1f);
+                        const int totW  = juce::jmin (top.getWidth(), boxSz + 9 + txtW);
+                        auto grp = top.withSizeKeepingCentre (totW, top.getHeight());
+                        auto box = grp.removeFromLeft (boxSz).withSizeKeepingCentre (boxSz, boxSz).toFloat();
+                        g.setColour (repTrack ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1c1c1c));
+                        g.fillRoundedRectangle (box, 4.0f);
+                        g.setColour (juce::Colour (0x55ffffff)); g.drawRoundedRectangle (box, 4.0f, 1.0f);
+                        if (repTrack)
+                        {
+                            g.setColour (juce::Colours::white);
+                            juce::Path ch; ch.startNewSubPath (box.getX() + box.getWidth() * 0.24f, box.getCentreY());
+                            ch.lineTo (box.getCentreX() - box.getWidth() * 0.02f, box.getBottom() - box.getHeight() * 0.28f);
+                            ch.lineTo (box.getRight() - box.getWidth() * 0.18f, box.getY() + box.getHeight() * 0.28f);
+                            g.strokePath (ch, juce::PathStrokeType (2.0f));
+                        }
+                        grp.removeFromLeft (9);
+                        g.setColour (juce::Colour (0xffe8e8e8));
+                        g.drawText (titulo, grp, juce::Justification::centredLeft);
+                        // Línea 2: advertencia (ámbar), centrada, hasta 2 renglones.
+                        g.setColour (juce::Colour (0xffe0a53a)); g.setFont (npFontMarca (10.5f, false));
+                        g.drawFittedText (juce::String::fromUTF8 (
+                            "Advertencia: no ir\xc3\xa1 de la mano con tu gu\xc3\xad" "a Track. Recomendamos la "
+                            "gu\xc3\xad" "a din\xc3\xa1mica para un mejor uso de estas funciones."),
+                            row.reduced (10, 0), juce::Justification::centredTop, 2);
+                    }
+                }
             }
             else
             {
@@ -2329,6 +2477,69 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         }
         else if (tonoComboRect().contains (e.getPosition()))
             showTonoMenu();
+        else if (arrComboRect().contains (e.getPosition()))
+            showArrMenu();
+        else if (guiaTracksRect().contains (e.getPosition()))
+        {   // Tracks solo disponible en Original; con arreglo se queda en Neural
+            if (! guiaForzadaNeural()) { guiaMode = 0; repaint(); }
+        }
+        else if (guiaNeuralRect().contains (e.getPosition()))
+        { guiaMode = 1; repaint(); }
+        else if (! guiaForzadaNeural() && guiaEfectiva() == 0 && repTrackRect().contains (e.getPosition()))
+        { repTrack = ! repTrack; repaint(); }   // permitir repetir/∞ en modo Track
+    }
+
+    void showArrMenu()
+    {
+        juce::PopupMenu m;
+        m.setLookAndFeel (&tonoLnf);
+        m.addItem (1, juce::String::fromUTF8 ("Original"), true, selArrIdx == 0);   // 1 => idx 0
+        for (int i = 0; i < arrNames.size(); ++i)
+            m.addItem (i + 2, arrNames[i], true, selArrIdx == i + 1);               // i+2 => idx i+1
+        if (arrNames.size() > 0)   // submenús para renombrar (2000+) y borrar (1000+) arreglos
+        {
+            m.addSeparator();
+            juce::PopupMenu ren;
+            for (int i = 0; i < arrNames.size(); ++i)
+                ren.addItem (2000 + i, arrNames[i]);
+            m.addSubMenu (juce::String::fromUTF8 ("Renombrar arreglo"), ren);
+            juce::PopupMenu del;
+            for (int i = 0; i < arrNames.size(); ++i)
+                del.addItem (1000 + i, arrNames[i]);
+            m.addSubMenu (juce::String::fromUTF8 ("Borrar arreglo"), del);
+        }
+        auto scr = localAreaToGlobal (arrComboRect());
+        juce::Component::SafePointer<RepEditPanel> sp (this);
+        m.showMenuAsync (juce::PopupMenu::Options()
+                             .withTargetScreenArea (scr)
+                             .withMinimumWidth (arrComboRect().getWidth())
+                             .withMaximumNumColumns (1)
+                             .withStandardItemHeight (npEsIPhone() ? 30 : 26),
+            [sp] (int r)
+            {
+                if (sp == nullptr || r <= 0) return;
+                if (r >= 2000)   // renombrar el arreglo r-2000
+                {
+                    const int ri = r - 2000;
+                    if (ri < 0 || ri >= sp->arrNames.size()) return;
+                    if (sp->onRenameArr) sp->onRenameArr (sp->songId, sp->arrNames[ri]);
+                    return;   // la caja se refresca desde el contenedor tras renombrar
+                }
+                if (r >= 1000)   // borrar el arreglo r-1000
+                {
+                    const int di = r - 1000;
+                    if (di < 0 || di >= sp->arrNames.size()) return;
+                    const juce::String nom = sp->arrNames[di];
+                    if (sp->onDeleteArr) sp->onDeleteArr (sp->songId, nom);
+                    sp->arrNames.remove (di);                       // quitar de la caja al instante
+                    if (sp->selArrIdx == di + 1) sp->selArrIdx = 0; // si estaba elegido, volver a Original
+                    else if (sp->selArrIdx > di + 1) sp->selArrIdx -= 1;
+                    sp->repaint();
+                    return;
+                }
+                sp->selArrIdx = r - 1;   // 1->0 (Original), 2->1, ...
+                sp->repaint();
+            });
     }
 
     void showTonoMenu()
@@ -2742,24 +2953,29 @@ struct PadPanel : public juce::Component
         fader.setBounds (rFader);
         r.removeFromRight (ph ? 8 : 12);
 
-        auto top = r.removeFromTop (ph ? 44 : 60);
-        rLink = top.removeFromLeft (ph ? 50 : 58).reduced (0, ph ? 6 : 8);
+        auto top = r.removeFromTop (ph ? 38 : 48);     // barra selectora más baja
+        rLink = top.removeFromLeft (ph ? 46 : 52).reduced (0, ph ? 5 : 7);
         top.removeFromLeft (ph ? 8 : 10);
-        rName = top.reduced (0, ph ? 5 : 6);           // la barra de vidrio ocupa el resto
-        { auto inner = rName.reduced (6); rPort = inner.removeFromLeft (inner.getHeight()); }   // portada cuadrada DENTRO de la barra
-        r.removeFromTop (ph ? 4 : 8);
-        rStatus = r.removeFromTop (ph ? 14 : 18);
-        r.removeFromTop (ph ? 6 : 10);
+        rName = top.reduced (0, ph ? 4 : 5);           // la barra de vidrio ocupa el resto
+        { auto inner = rName.reduced (5); rPort = inner.removeFromLeft (inner.getHeight()); }   // portada cuadrada DENTRO de la barra
+        r.removeFromTop (ph ? 4 : 7);
+        rStatus = r.removeFromTop (ph ? 13 : 16);
+        r.removeFromTop (ph ? 5 : 8);
 
-        // Grilla estilo referencia: 6 columnas × 2 filas, celdas grandes llenando el área.
-        const int cols = 6, rows = 2, gap = ph ? 6 : 10;
-        const int cw  = (r.getWidth()  - (cols - 1) * gap) / cols;
-        const int chh = (r.getHeight() - (rows - 1) * gap) / rows;
+        // Grilla 6×2: celdas compactas, juntas y centradas (estilo igual, solo más chico).
+        const int cols = 6, rows = 2, gap = ph ? 4 : 6;
+        int cw = (r.getWidth() - (cols - 1) * gap) / cols;
+        cw = juce::jmin (cw, ph ? 50 : 62);            // tope de ancho -> botones más chicos
+        const int chh = ph ? 38 : 46;                 // alto fijo más chico
+        const int gridW = cols * cw + (cols - 1) * gap;
+        const int gridH = rows * chh + (rows - 1) * gap;
+        const int ox = r.getX() + juce::jmax (0, (r.getWidth()  - gridW) / 2);
+        const int oy = r.getY() + juce::jmax (0, (r.getHeight() - gridH) / 2);
         for (int i = 0; i < 12; ++i)
         {
             const int cx = i % cols, cy = i / cols;
-            rCell[i] = juce::Rectangle<int> (r.getX() + cx * (cw + gap),
-                                             r.getY() + cy * (chh + gap), cw, chh);
+            rCell[i] = juce::Rectangle<int> (ox + cx * (cw + gap),
+                                             oy + cy * (chh + gap), cw, chh);
         }
     }
 
@@ -2767,13 +2983,14 @@ struct PadPanel : public juce::Component
                    bool active, bool playing, bool ready)
     {
         auto rf = b.toFloat();
+        const float rad = 9.0f;
         juce::Colour bg = active ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff232323);
         if (! ready) bg = bg.withAlpha (0.30f);
         g.setColour (bg);
-        g.fillRoundedRectangle (rf, 12.0f);
-        if (playing && ! active) { g.setColour (juce::Colour (0xff2E8BFF)); g.drawRoundedRectangle (rf.reduced (1.5f), 12.0f, 2.5f); }
+        g.fillRoundedRectangle (rf, rad);
+        if (playing && ! active) { g.setColour (juce::Colour (0xff2E8BFF)); g.drawRoundedRectangle (rf.reduced (1.5f), rad, 2.0f); }
         g.setColour (active ? juce::Colours::black : juce::Colour (0xfff2f2f2));
-        g.setFont (juce::Font ("Futura", npEsIPhone() ? 22.0f : 30.0f, juce::Font::bold));   // fuente de los tonos
+        g.setFont (juce::Font ("Futura", juce::jlimit (16.0f, 24.0f, b.getHeight() * 0.52f), juce::Font::bold));   // fuente de los tonos (escala al alto)
         g.drawText (txt, ready ? b : b.withTrimmedBottom (14), juce::Justification::centred);
         if (! ready)
         {

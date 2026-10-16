@@ -208,14 +208,14 @@ class MultiTrackAudio {
     }
   }
 
-  func play(from offsetSec: Double) {
+  func play(from offsetSec: Double, lead: Double = 0.20) {
     if !engine.isRunning { activarSesion(); engine.prepare(); try? engine.start() }
     scheduleAll(from: offsetSec)
     // Pre-rollear cada pista: deja los buffers listos para que TODAS arranquen exactamente
     // en el mismo instante. Sin esto, cada nodo se "calienta" al iniciar y entran desfasadas.
     for (_, player) in players { player.prepare(withFrameCount: 8192) }
-    // Margen de anticipacion comun (mayor que antes) para que ninguna pista llegue tarde al arranque.
-    let lead = 0.20
+    // Margen de anticipacion comun. Grande al arrancar (sincroniza todas las pistas);
+    // corto en los re-seeks (saltos de arreglo) para no dejar hueco audible.
     // Anclar el arranque al RELOJ DE MUESTRAS del motor (no al reloj del sistema).
     // Todas las pistas comparten el mismo render clock del engine; darles el mismo
     // sampleTime futuro las hace arrancar EXACTAMENTE en el mismo frame, sin desfase.
@@ -249,11 +249,42 @@ class MultiTrackAudio {
     startDate = nil
   }
 
+  // Fundido del mixer (anti-click en los saltos). Rampa suave por pasos en el hilo principal.
+  private var fadeTimer: Timer?
+  private func rampMixer(to target: Float, over dur: Double, then: (() -> Void)? = nil) {
+    fadeTimer?.invalidate()
+    let mixer = engine.mainMixerNode
+    let start = mixer.outputVolume
+    let steps = max(1, Int(dur / 0.003))          // pasos de ~3 ms
+    var i = 0
+    fadeTimer = Timer.scheduledTimer(withTimeInterval: dur / Double(steps), repeats: true) { t in
+      i += 1
+      let f = Float(i) / Float(steps)
+      mixer.outputVolume = start + (target - start) * f
+      if i >= steps { t.invalidate(); mixer.outputVolume = target; then?() }
+    }
+  }
+
+  private var seekGen = 0
   func seek(to offsetSec: Double) {
     let wasPlaying = playing
-    for (_, p) in players { p.stop() }
-    startOffsetSec = max(0, min(offsetSec, durationSec))
-    if wasPlaying { play(from: startOffsetSec) } else { startDate = nil }
+    let target = max(0, min(offsetSec, durationSec))
+    seekGen += 1
+    let gen = seekGen
+    if wasPlaying {
+      // Anti-click: fundido de salida corto → saltar → fundido de entrada corto.
+      rampMixer(to: 0.0, over: 0.015) { [weak self] in
+        guard let self = self, gen == self.seekGen else { return }
+        for (_, p) in self.players { p.stop() }
+        self.startOffsetSec = target
+        self.play(from: target, lead: 0.04)       // lead corto: sin hueco audible en el salto
+        self.rampMixer(to: 1.0, over: 0.022)
+      }
+    } else {
+      for (_, p) in players { p.stop() }
+      startOffsetSec = target
+      startDate = nil
+    }
   }
 
   func stop() {

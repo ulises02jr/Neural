@@ -111,6 +111,9 @@ public:
         addChildComponent (settingsPanel);
 
         loadStorageCfg();
+        loadArr();
+        loadGuiaSel();
+        loadTrans();
         loadInOut();
         loadPadPlayer();
         loadKeyMap();
@@ -154,9 +157,32 @@ public:
         liveServer.getPerfiles = [this] { const juce::ScopedLock l (chartLock); return perfilesJson; };
         liveServer.getState = [this]
         {
+            // Arreglo activo (secuencia de índices de sección, sin Conteo). Vacío = canción completa.
+            // 'step' se reindexa a la lista FILTRADA (arrStr) para que concuerde con el chart.
+            juce::String arrStr; int stepNow = -1;
+            {
+                const juce::ScopedLock sl (graphLock);
+                if (arrangementActive.load() && arrangement.size() > 0)
+                {
+                    const int rawStep = arrStep.load();
+                    bool first = true; int filtPos = 0;
+                    for (int i = 0; i < arrangement.size(); ++i)
+                    {
+                        const int s = arrangement[i];
+                        if (s < 0) continue;   // omitir Conteo (kConteoIdx) en el chart
+                        if (! first) arrStr << ",";
+                        arrStr << s; first = false;
+                        if (i <= rawStep) stepNow = filtPos;   // sección real actual en la lista filtrada
+                        ++filtPos;
+                    }
+                    if (stepNow < 0 && filtPos > 0) stepNow = 0;   // aún en el Conteo: resaltar la 1ª
+                }
+            }
             juce::String j;
             j << "{\"idx\":" << liveSectionIdx.load()
               << ",\"ver\":" << liveSongVer.load()
+              << ",\"step\":" << stepNow
+              << ",\"arr\":[" << arrStr << "]"
               << ",\"playing\":" << (playing.load() ? "true" : "false") << "}";
             return j;
         };
@@ -177,6 +203,18 @@ public:
         midiMapBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         midiMapBtn.onClick = [this] { toggleMidiMapMode(); refreshMapButtons(); };
         addChildComponent (midiMapBtn);
+
+        saveArrBtn.setButtonText (juce::String::fromUTF8 ("Guardar arreglo"));   // Fase A: aplica el arreglo editado
+        saveArrBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff14301a));
+        saveArrBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff8fe0a0));
+        saveArrBtn.onClick = [this] { guardarArreglo(); };
+        addChildComponent (saveArrBtn);   // se muestra solo en la barra de Editar
+
+        saveAsNewBtn.setButtonText (juce::String::fromUTF8 ("Guardar como nuevo"));
+        saveAsNewBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        saveAsNewBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff8fe0a0));
+        saveAsNewBtn.onClick = [this] { guardarArregloComoNuevo(); };
+        addChildComponent (saveAsNewBtn);
 
         faderStrip.onMouseDown = [this] (const juce::MouseEvent& e)   // en modo MIDI, el click arma el fader
         {
@@ -212,7 +250,26 @@ public:
         // Nuevo flujo: al elegir tono se cierra la ventana y la barra de "preparando"
         // aparece en la portada de la canción (como al cargar).
         repEdit.onElegir = [this] (int sem, juce::String nombre, bool yaListo)
-        { prepararTono (sem, nombre, yaListo); };
+        { const int sid = repEdit.songId; const bool add = repEdit.addFlow;
+          const juce::String arr = repEdit.selectedArrName();
+          // ¿cambió el tono? (solo canciones ya en el repertorio). Si NO cambió, no recargamos
+          // el setlist (esa recarga reiniciaba a la canción 1); solo aplicamos el arreglo.
+          int curSem = 0; bool found = false;
+          if (! add)
+              for (int i = 0; i < repertoire.size(); ++i)
+                  if (repertoire.getReference (i).id == sid)
+                  { curSem = repertoire.getReference (i).tono; found = true; break; }
+          const bool tonoCambia = add || ! found || sem != curSem;
+          // Guía elegida en el diálogo (preferencia para Original; con arreglo se fuerza Neural igual)
+          songGuia[sid] = (repEdit.guiaMode == 1) ? 1 : 0;
+          if (repEdit.repTrack) songRepTrack.insert (sid); else songRepTrack.erase (sid);   // permitir repetir/∞ en Track
+          saveGuiaSel();
+          if (tonoCambia) { pendingArrName = arr; prepararTono (sem, nombre, yaListo); }  // recarga: loadSong aplica el arreglo
+          else            { pendingArrName.clear(); }                                     // sin recarga: no dejar pendiente
+          aplicarArregloASong (sid, arr);        // aplica/guarda el arreglo (en vivo si es la canción actual)
+          aplicarGuiaSegunEstado(); };           // dejar la guía (Tracks/Neural) acorde al estado
+        repEdit.onDeleteArr = [this] (int sid, juce::String nombre) { borrarArreglo (sid, nombre); };
+        repEdit.onRenameArr = [this] (int sid, juce::String nombre) { pedirRenombrarArreglo (sid, nombre); };
         repEdit.onNeedCovers = [this] (juce::Array<RepEditPanel::BibItem> items) { loadBibCovers (items); };
         repEdit.onInOut = [this] (int sid, double inS, double outS)   // #2 guardar inicio/fin
         {
@@ -255,7 +312,10 @@ public:
         addAndMakeVisible (playButton);
 
         // returnButton ahora es un icono vectorial (SkipStartButton), no texto.
-        returnButton.onClick = [this] { if (clickOrArm (kaReturn)) return; seekSeconds (0.0); };
+        returnButton.onClick = [this] {
+            if (clickOrArm (kaReturn)) return;
+            irAlInicio();
+        };
         addAndMakeVisible (returnButton);
 
         barNextBtn.pointsRight = true;                 // flecha derecha; barPrevBtn apunta a la izquierda
@@ -266,6 +326,36 @@ public:
 
         fadeButton.onClick = [this] { if (clickOrArm (kaFade)) return; toggleFade(); };
         addAndMakeVisible (fadeButton);
+
+        transBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x8f\xad"));   // ⏭ siguiente
+        transBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        transBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        transBtn.onClick = [this]
+        {
+            const int at = autoTrans.load();
+            juce::PopupMenu m;
+            m.addSectionHeader (juce::String::fromUTF8 ("Ahora (al instante)"));
+            m.addItem (1, juce::String::fromUTF8 ("Autolink (corte seco)"));
+            m.addItem (2, juce::String::fromUTF8 ("Sobreponer (crossfade 2 compases)"));
+            m.addSeparator();
+            m.addSectionHeader (juce::String::fromUTF8 ("Al terminar la canci\xc3\xb3n (autom\xc3\xa1tico)"));
+            m.addItem (3, juce::String::fromUTF8 ("Autolink al terminar"), true, at == 1);
+            m.addItem (4, juce::String::fromUTF8 ("Sobreponer al terminar"), true, at == 2);
+            m.addItem (5, juce::String::fromUTF8 ("Desactivar autom\xc3\xa1tico"), at != 0, false);
+            juce::Component::SafePointer<MainComponent> sp (this);
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&transBtn),
+                [sp] (int r)
+                {
+                    if (sp == nullptr || r <= 0) return;
+                    if      (r == 1) sp->transicionSiguiente (false);
+                    else if (r == 2) sp->transicionSiguiente (true);
+                    else if (r == 3) sp->setTransActual (1);   // guarda por repertorio + canción
+                    else if (r == 4) sp->setTransActual (2);
+                    else if (r == 5) sp->setTransActual (0);
+                    sp->repaint();
+                });
+        };
+        addChildComponent (transBtn);
 
         timeLabel.setJustificationType (juce::Justification::centred);
         timeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffe8e8e8));
@@ -375,7 +465,9 @@ public:
         setAudioChannels (0, 32);   // hasta 32 salidas (interfaces multicanal)
         auto setup = deviceManager.getAudioDeviceSetup();
        #if JUCE_IOS
-        setup.bufferSize = 1024;  // iPad: mas holgura con muchos stems/canciones largas (evita cortes)
+        setup.bufferSize = 512;   // iPad: 512 = misma latencia que el Mac. Con 1024 el conteo y los saltos
+                                   // se desfasaban (ventana de ~23 ms). Si reaparecen cortes con canciones muy
+                                   // pesadas, subir a 640/768 (no a 1024).
        #else
         setup.bufferSize = 512;   // escritorio: buen balance latencia/estabilidad
        #endif
@@ -456,6 +548,12 @@ public:
             padTemp.setSize (2, juce::jmax (spb, 2048) + 8);
             for (auto* pv : padVoices) if (pv->res) { pv->res->setResamplingRatio (pv->fileRate / sampleRate); pv->res->prepareToPlay (spb, sampleRate); }
         }
+        {
+            const juce::ScopedLock tl (tailLock);   // Fase D: cola del crossfade
+            tailTemp.setSize (2, juce::jmax (spb, 2048) + 8);
+            for (int i = 0; i < resamplers2.size(); ++i)
+                if (i < fileRates2.size()) { resamplers2[i]->setResamplingRatio (fileRates2[i] / sampleRate); resamplers2[i]->prepareToPlay (spb, sampleRate); }
+        }
         prepared.store (true);
     }
     void releaseResources() override
@@ -463,12 +561,50 @@ public:
         prepared.store (false);
         for (auto* r : resamplers) r->releaseResources();
         { const juce::ScopedLock pl (padLock); for (auto* pv : padVoices) if (pv->res) pv->res->releaseResources(); }
+        { const juce::ScopedLock tl (tailLock); for (auto* r : resamplers2) r->releaseResources(); }
     }
 
     void getNextAudioBlock (const juce::AudioSourceChannelInfo& info) override
     {
         renderTracks (info);   // mezcla de la canción (puede salir temprano y dejar el buffer en silencio)
+        mixTail (info);        // Fase D: cola de la canción saliente (crossfade), independiente del graphLock
         mixPad (info);         // el pad SIEMPRE se mezcla encima (suena aunque no haya canción o esté en pausa)
+    }
+
+    // Fase D — suma la "cola" de la canción saliente con fade-out (crossfade Sobreponer).
+    void mixTail (const juce::AudioSourceChannelInfo& info)
+    {
+        if (! tailActive.load()) return;
+        const juce::ScopedTryLock tl (tailLock);
+        if (! tl.isLocked() || resamplers2.isEmpty()) return;
+        const int nn = info.numSamples;
+        if (tailTemp.getNumSamples() < nn) return;   // dimensionado en prepareToPlay
+        auto* b = info.buffer;
+        const int useCh = juce::jmin (b->getNumChannels(), 32);
+        if (useCh < 1) return;
+        const double step = (double) nn / juce::jmax (1.0, deviceSampleRate * juce::jmax (0.2, tailFadeSec));
+        const float gStart = (float) tailGainCur;
+        const float gEnd   = (float) juce::jmax (0.0, tailGainCur - step);
+        const float mg = masterGain.load();
+        for (int t = 0; t < resamplers2.size(); ++t)
+        {
+            if (t < kMaxTracks && tailIsClick[t]) continue;   // no sonar el click de la saliente (evita choque con el click nuevo)
+            tailTemp.clear();
+            juce::AudioSourceChannelInfo ti (&tailTemp, 0, nn);
+            resamplers2.getUnchecked (t)->getNextAudioBlock (ti);
+            const float* sL = tailTemp.getReadPointer (0);
+            const float* sR = tailTemp.getNumChannels() > 1 ? tailTemp.getReadPointer (1) : sL;
+            float* oL = b->getWritePointer (0, info.startSample);
+            float* oR = useCh > 1 ? b->getWritePointer (1, info.startSample) : nullptr;
+            for (int n = 0; n < nn; ++n)
+            {
+                const float g = (gStart + (gEnd - gStart) * (n / (float) nn)) * mg;
+                oL[n] += sL[n] * g;
+                if (oR) oR[n] += sR[n] * g;
+            }
+        }
+        tailGainCur = gEnd;
+        if (tailGainCur <= 0.0005) tailActive.store (false);   // terminó el fade; se limpia en la próxima transición
     }
 
     void mixPad (const juce::AudioSourceChannelInfo& info)
@@ -711,8 +847,31 @@ public:
             for (auto* r : resamplers)       r->flushBuffers();
             const double fr = fileRates.isEmpty() ? 44100.0 : fileRates[0];
             positionOut.store ((long long) (sk * deviceSampleRate / fr));
+            // Guía dinámica: al saltar, cortar el anuncio en curso y reprogramar según la nueva posición.
+            cueActiveBuf = -1; cuePos = 0; cuePendingIdx.store (-1);
+            cueSchedStep = -1000; linSchedSec = -1000;
+            cntIdx = cntN;   // cancelar el conteo hablado restante tras un salto
+            // Salto inmediato del usuario o repetición: anunciar la sección en la que caímos.
+            if (cueAnnounceLanded.exchange (false) && guideOn.load() && playing.load())
+            {
+                const double ps = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
+                int landSec = -999;
+                if (arrangementActive.load() && arrangement.size() > 0)
+                {
+                    const int st = arrStep.load();
+                    landSec = (st >= 0 && st < arrangement.size()) ? arrangement[st] : -999;
+                    if (landSec < 0) landSec = liveSectionIndexAt (ps);   // conteo u otros → por posición
+                }
+                else landSec = liveSectionIndexAt (ps);
+                if (landSec >= 0)
+                {
+                    const int clip = guideClipForSection (landSec);
+                    if (clip >= 0) { cueActiveBuf = clip; cuePos = 0; }
+                }
+            }
+            else cueAnnounceLanded.store (false);
         }
-        if (! playing.load()) return;
+        if (! playing.load()) { guideWasPlaying = false; return; }   // pausa: re-armar guía al reanudar
 
         const int nn = info.numSamples;
         const int nch = juce::jmax (1, info.buffer->getNumChannels());
@@ -732,14 +891,29 @@ public:
             else                  ciG = (float) juce::jlimit (0.0, 1.0, (p - a) / (b - a));
         }
 
+        float afG = 1.0f;   // fundido de entrada tras un salto de arreglo no contiguo (anti-click)
+        {
+            const double fs = arrFadeStart.load(), fe = arrFadeEnd.load();
+            if (fs >= 0.0 && fe > fs)
+            {
+                const double p = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
+                if (p >= fe || p < fs - 0.5) arrFadeStart.store (-1.0);          // terminó o saltamos lejos
+                else if (p >= fs)            afG = (float) juce::jlimit (0.0, 1.0, (p - fs) / (fe - fs));
+            }
+        }
+
         for (int t = 0; t < resamplers.size(); ++t)
         {
             temp.clear();
             juce::AudioSourceChannelInfo ti (&temp, 0, nn);
             resamplers.getUnchecked (t)->getNextAudioBlock (ti);
-            const bool audible = ! trackMuted[t].load() && (! anySolo || trackSolo[t].load());
-            const float cg = (t < kMaxTracks && trackNoFade[t]) ? 1.0f : ciG;   // Click/Guía no suben
-            const float g = audible ? trackGain[t].load() * busGain[trackFamily[t]].load() * cg : 0.0f;
+            // Con guía Neural activa, la pista "Guía" del usuario se silencia (solo suena la voz).
+            const bool guiaSilenciada = guideOn.load() && t < kMaxTracks && trackIsGuia[t];
+            const bool audible = ! guiaSilenciada && ! trackMuted[t].load() && (! anySolo || trackSolo[t].load());
+            const bool noFade = (t < kMaxTracks && trackNoFade[t]);              // Click/Guía
+            const float cg = noFade ? 1.0f : ciG;                                // Click/Guía no suben en el conteo
+            const float jf = noFade ? 1.0f : afG;                                // ni en el fundido del salto (downbeat crujiente y a tiempo)
+            const float g = audible ? trackGain[t].load() * busGain[trackFamily[t]].load() * cg * jf : 0.0f;
             const float* tL = temp.getReadPointer (0);
             const float* tR = temp.getNumChannels() > 1 ? temp.getReadPointer (1) : tL;
 
@@ -822,19 +996,249 @@ public:
             }
         }
 
+        // ── Guía dinámica: dispara y mezcla el cue de voz por la ruta/fader de "Guía" ──
+        if (guideOn.load())
+        {
+            const long long blkStart = positionOut.load();
+            // Conteo hablado: dispara en el beat EXACTO cortando lo anterior (ritmo de metrónomo).
+            if (cntIdx < cntN && blkStart + nn > cntAt[cntIdx])
+            {
+                cueActiveBuf = cntClip[cntIdx]; cuePos = 0; ++cntIdx;
+            }
+            else if (cueActiveBuf < 0)   // disparo normal de sección: cuando llegamos al instante programado
+            {
+                const int pend = cuePendingIdx.load();
+                const long long fireAt = cueFireAtSample.load();
+                if (pend >= 0 && fireAt >= 0 && blkStart + nn > fireAt)
+                { cueActiveBuf = pend; cuePos = 0; cuePendingIdx.store (-1); }
+            }
+            if (cueActiveBuf >= 0 && cueActiveBuf < (int) guideBuffers.size())
+            {
+                const auto& cbuf = guideBuffers[(size_t) cueActiveBuf];
+                const int blen = cbuf.getNumSamples();
+                if (blen <= 0) { cueActiveBuf = -1; }
+                else
+                {
+                    const float* cs = cbuf.getReadPointer (0);
+                    float gg = 1.0f; int fi = 10;
+                    if (guiaTrkIdx >= 0 && guiaTrkIdx < kMaxTracks)
+                    {
+                        gg = trackGain[guiaTrkIdx].load() * busGain[trackFamily[guiaTrkIdx]].load();
+                        if (trackMuted[guiaTrkIdx].load()) gg = 0.0f;
+                        fi = trackRouteFam[guiaTrkIdx];
+                    }
+                    int cmode = famMode[fi], cbase = famBaseCh[fi];
+                    if (featSalidas <= 2 && cbase >= 2) cbase = 0;
+                    if (autoPan.load()) { cmode = 1; cbase = (useCh >= 2 ? 1 : 0); }
+                    for (int n = 0; n < nn && cuePos < blen; ++n, ++cuePos)
+                    {
+                        const float s = cs[cuePos] * gg;
+                        if (cmode == 2 && cbase >= 0 && cbase < useCh) { out[cbase][n] += s; if (cbase + 1 < useCh) out[cbase + 1][n] += s; }
+                        else if (cbase >= 0 && cbase < useCh) out[cbase][n] += s;
+                    }
+                    if (cuePos >= blen) { cueActiveBuf = -1; cuePos = 0; }
+                }
+            }
+        }
+        else if (cueActiveBuf >= 0) { cueActiveBuf = -1; cuePos = 0; }
+
         const float m = masterGain.load();
         for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] = softClip (o[n] * m); }
         positionOut.fetch_add (nn);
 
         const double posSec = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
         const double fr2 = fileRates.isEmpty() ? 44100.0 : fileRates[0];
-        if ((loopActive.load() || loopOnce.load()) && loopEndSec.load() > 0.0 && posSec >= loopEndSec.load())
+
+        // ── Fase D: transición AUTOMÁTICA al terminar (armada). Pide al timer que haga la transición. ──
+        if (autoTrans.load() != 0 && autoReqPending.load() == 0 && ! arrangementActive.load()
+            && indiceSiguiente() >= 0)
         {
-            seekTo.store ((long long) (juce::jmax (0.0, loopStartSec.load()) * fr2));
+            const double outS = songOutSec.load();
+            const double effEnd = (outS > 0.0) ? juce::jmin (outS, totalSeconds()) : totalSeconds();
+            if (effEnd > 0.1)
+            {
+                if (autoTrans.load() == 2)   // Sobreponer: arrancar el cruce ~2 compases antes del final
+                {
+                    const double bars = (bpm > 0.0) ? 2.0 * juce::jmax (1, beatsPerBar) * 60.0 / bpm : 3.0;
+                    if (posSec >= effEnd - bars - 0.02) autoReqPending.store (2);
+                }
+                else                         // Autolink: al llegar al final
+                {
+                    if (posSec >= effEnd - 0.02) autoReqPending.store (1);
+                }
+            }
+        }
+
+        // ── Guía dinámica: programa el cue de la PRÓXIMA sección, 1 compás antes del cambio ──
+        const bool guiaOn = guideOn.load() && guideLoaded.load() && playing.load();
+        const bool arrOn  = arrangementActive.load() && arrangement.size() > 0;
+        const bool haySec = arrOn || sectionTimes.size() > 0;
+
+        // (a) Al darle Play: armar el CONTEO hablado (uno,dos / uno,dos,tres,cuatro) sobre los 2 compases.
+        //     Si la canción no tiene conteo, se anuncia la 1ª sección de una.
+        if (guiaOn && ! guideWasPlaying)
+        {
+            cueSchedStep = -1000; linSchedSec = -1000; guideWasLoop = false;
+            buildCountIn();
+            // Arrancamos desde el inicio (en/antes del conteo)?
+            const double songStart0 = sectionTimes.isEmpty() ? 0.0 : sectionTimes[0];
+            const bool desdeInicio = posSec < songStart0 + 0.05;
+            if (cntN == 0 && desdeInicio)   // sin conteo pero desde el inicio → anunciar la 1ª sección directo
+            {
+                const int firstSec = arrOn ? (arrangement[0] >= 0 ? arrangement[0] : -999)
+                                           : (sectionTimes.size() > 0 ? 0 : -999);
+                if (firstSec >= 0)
+                {
+                    const int clip = guideClipForSection (firstSec);
+                    if (clip >= 0) { cueActiveBuf = clip; cuePos = 0; }
+                }
+            }
+        }
+        guideWasPlaying = guiaOn;
+        // El conteo hablado aún no termina (y solo mientras estamos ANTES del inicio de la canción).
+        const bool enConteoVoz = (cntIdx < cntN) && (sectionTimes.isEmpty() || posSec < sectionTimes[0] - 0.02);
+
+        // (b) Anunciar la PRÓXIMA sección — o el DESTINO si hay un salto encolado — 1 compás antes.
+        //     (No programa secciones mientras corre el conteo hablado del inicio.)
+        if (guiaOn && haySec && ! enConteoVoz)
+        {
+            const bool enLoop = (loopActive.load() || loopOnce.load()) && loopEndSec.load() > 0.0;
+            const int ctx = arrOn ? arrStep.load()     : liveSectionIndexAt (posSec);
+            const int q   = arrOn ? queuedStep.load()  : queuedSection.load();
+            if (ctx != cueSchedStep || q != linSchedSec || enLoop != guideWasLoop)
+            {
+                cueSchedStep = ctx; linSchedSec = q; guideWasLoop = enLoop;
+                cuePendingIdx.store (-1);
+                int annSec = -999; double fireSec = -1.0;
+                if (enLoop)   // repetición: anunciar la MISMA sección, 1 compás antes de que vuelva a repetir
+                {
+                    annSec  = liveSectionIndexAt (loopStartSec.load());
+                    fireSec = tiempoUnCompasAntes (loopEndSec.load());
+                }
+                else
+                {
+                    int curSecIdx = -999;
+                    if (arrOn)
+                    {
+                        curSecIdx = (ctx >= 0 && ctx < arrangement.size()) ? arrangement[ctx] : -999;
+                        if (q >= 0 && q < arrangement.size() && arrangement[q] >= 0) annSec = arrangement[q];        // destino encolado
+                        else if (ctx + 1 < arrangement.size())                       annSec = arrangement[ctx + 1];  // siguiente
+                        else if (arrLoop.load())                                     annSec = arrangement[0];
+                    }
+                    else
+                    {
+                        curSecIdx = ctx;
+                        if (q >= 0 && q < sectionTimes.size())   annSec = q;          // destino encolado (índice de sección)
+                        else if (ctx + 1 < sectionTimes.size())  annSec = ctx + 1;    // siguiente
+                    }
+                    if (curSecIdx != -999) fireSec = tiempoUnCompasAntes (secEndOf (curSecIdx));
+                }
+                if (annSec >= 0 && fireSec >= 0.0)
+                {
+                    const int clip = guideClipForSection (annSec);
+                    if (clip >= 0)
+                    {
+                        cueFireAtSample.store ((long long) (juce::jmax (0.0, fireSec) * deviceSampleRate));
+                        cuePendingIdx.store (clip);
+                    }
+                }
+            }
+        }
+        else if (! guiaOn) { cueSchedStep = -1000; linSchedSec = -1000; guideWasLoop = false; }
+
+        // ── Salto en vivo encolado (Fase B): al terminar la sección actual, saltar a la encolada ──
+        bool boundaryHandled = false;
+        // Arreglo: encolar un PASO; salta al terminar la sección del paso actual
+        if (arrangementActive.load() && arrangement.size() > 0 && queuedStep.load() >= 0)
+        {
+            const int step = arrStep.load();
+            const int secIdx = (step >= 0 && step < arrangement.size()) ? arrangement[step] : -999;
+            if (secIdx != -999 && posSec >= secEndOf (secIdx) - 1.0e-4)
+            {
+                const int q = queuedStep.exchange (-1);
+                if (q >= 0 && q < arrangement.size())
+                {
+                    arrStep.store (q);
+                    const double tgt = secStartOf (arrangement[q]);
+                    seekTo.store ((long long) (tgt * fr2));
+                    arrFadeStart.store (tgt); arrFadeEnd.store (tgt + kArrFadeSec);   // anti-click
+                    boundaryHandled = true;
+                }
+            }
+        }
+        if (! boundaryHandled && queuedSection.load() >= 0 && ! sectionTimes.isEmpty())
+        {
+            const int qf = queuedFromSec.load();   // fijo: sección donde se encoló (kConteoIdx = conteo)
+            const double endQF = (qf == kConteoIdx) ? (sectionTimes.isEmpty() ? 0.0 : sectionTimes[0])
+                               : ((qf >= 0 && qf + 1 < sectionTimes.size()) ? sectionTimes[qf + 1] : totalSeconds());
+            if (posSec >= endQF - 1.0e-4)
+            {
+                const int q = queuedSection.exchange (-1);
+                queuedFromSec.store (-1);
+                queuedStep.store (-1);   // limpiar también el resaltado
+                if (q >= 0 && q < sectionTimes.size())
+                {
+                    seekTo.store ((long long) (sectionTimes[q] * fr2));
+                    arrFadeStart.store (sectionTimes[q]); arrFadeEnd.store (sectionTimes[q] + kArrFadeSec);   // anti-click
+                    if (arrangementActive.load())   // sincronizar el paso del arreglo con el salto
+                    {
+                        int st = -1;
+                        for (int k = 0; k < arrangement.size(); ++k) if (arrangement[k] == q) { st = k; break; }
+                        if (st >= 0) arrStep.store (st);
+                    }
+                    boundaryHandled = true;
+                }
+            }
+        }
+        // ── Repetición (repetir/∞): PRIORIDAD sobre el avance del arreglo — repite la sección actual ──
+        if (! boundaryHandled && (loopActive.load() || loopOnce.load())
+            && loopEndSec.load() > 0.0 && posSec >= loopEndSec.load() - 1.0e-4)
+        {
+            const double ls = juce::jmax (0.0, loopStartSec.load());
+            seekTo.store ((long long) (ls * fr2));
+            arrFadeStart.store (ls); arrFadeEnd.store (ls + kArrFadeSec);   // anti-click
             if (loopOnce.load())
             {
                 loopOnce.store (false);
                 if (! loopActive.load()) { loopStartSec.store (-1.0); loopEndSec.store (-1.0); }
+            }
+            boundaryHandled = true;
+        }
+        // ── Arreglo activo (Fase A): al terminar cada sección, saltar al siguiente paso ──
+        if (boundaryHandled)
+        {
+            // ya saltamos a la sección encolada; no aplicar el manejo normal de fin en este bloque
+        }
+        else if (arrangementActive.load() && arrangement.size() > 0)
+        {
+            const int step   = arrStep.load();
+            const int secIdx = (step >= 0 && step < arrangement.size()) ? arrangement[step] : -999;
+            if (secIdx != -999)
+            {
+                const double endSec = secEndOf (secIdx);
+                if (posSec >= endSec - 1.0e-4)
+                {
+                    const int next = step + 1;
+                    if (next < arrangement.size())
+                    {
+                        arrStep.store (next);
+                        const double nStart = secStartOf (arrangement[next]);
+                        // Solo saltamos si NO es contiguo (si lo es, seguimos sin cortar = seamless).
+                        if (std::abs (nStart - endSec) > 1.0e-3)
+                        {
+                            seekTo.store ((long long) (nStart * fr2));
+                            arrFadeStart.store (nStart); arrFadeEnd.store (nStart + kArrFadeSec);   // anti-click
+                        }
+                    }
+                    else
+                    {   // fin del arreglo: volver al inicio del arreglo (loop) o parar ahí
+                        const double fStart = secStartOf (arrangement[0]);
+                        arrStep.store (0);
+                        if (! arrLoop.load()) playing.store (false);
+                        seekTo.store ((long long) (fStart * fr2));
+                        arrFadeStart.store (fStart); arrFadeEnd.store (fStart + kArrFadeSec);   // anti-click
+                    }
+                }
             }
         }
         else if (clickSecArmed.load() && clickLenSec.load() > 0.0)
@@ -860,7 +1264,9 @@ public:
             const double outS = songOutSec.load();                       // #2 punto de salida (si hay)
             const double effEnd = (outS > 0.0) ? juce::jmin (outS, totalSeconds()) : totalSeconds();
             const long long endDev = (long long) (effEnd * deviceSampleRate);
-            if (endDev > 0 && positionOut.load() >= endDev)
+            // Si hay transición automática armada y pedida, NO parar: el timer hará la transición.
+            const bool transPendiente = (autoTrans.load() != 0 && autoReqPending.load() != 0);
+            if (endDev > 0 && positionOut.load() >= endDev && ! transPendiente)
             {
                 playing.store (false);
                 const double inS = juce::jmax (0.0, songInSec.load());   // volver al inicio (o al punto de entrada)
@@ -945,22 +1351,7 @@ public:
         double vs = 0.0, ve = 0.0; getViewWindow (vs, ve);
         const double span = juce::jmax (0.001, ve - vs);
 
-        if (currentSong >= 0 && bpm > 0.0)
-        {
-            const double secPerEighth = 30.0 / bpm;
-            const int perBar = juce::jmax (1, beatsPerBar) * 2;
-            for (int j = (int) std::floor (vs / secPerEighth); j * secPerEighth <= ve; ++j)
-            {
-                const double t = j * secPerEighth;
-                if (t < vs || t < 0.0) continue;
-                const float gx = inner.getX() + (float) ((t - vs) / span) * inner.getWidth();
-                float a = 0.035f;
-                if (j % 2 == 0) a = 0.085f;
-                if (j % perBar == 0) a = 0.17f;
-                g.setColour (juce::Colours::white.withAlpha (a));
-                g.drawVerticalLine ((int) gx, (float) inner.getY(), (float) inner.getBottom());
-            }
-        }
+        // (El grid de beats se dibuja más abajo, en posición compactada, encima de la onda por sección.)
 
         const bool preparandoActual = (preparandoSongId >= 0 && currentSong < 0);   // tono preparándose, sin canción cargada
         if (preparandoActual)
@@ -1009,27 +1400,63 @@ public:
         {
             const double total = totalSeconds();
             const double posNow = positionSeconds();
-            auto drawBlk = [&] (double t0, double t1, const juce::String& name)
+            // t0/t1 = posición en pantalla (ya compactada). srcT0/srcT1 = tramo real de audio (para la onda).
+            auto drawBlk = [&] (double t0, double t1, const juce::String& name, int idx = -1,
+                                double srcT0 = -1.0, double srcT1 = -1.0)
             {
                 if (t1 <= vs || t0 >= ve || t1 <= t0) return;
                 const double c0 = juce::jmax (t0, vs);
                 const double c1 = juce::jmin (t1, ve);
                 const float x0 = inner.getX() + (float) ((c0 - vs) / span) * inner.getWidth();
                 const float x1 = inner.getX() + (float) ((c1 - vs) / span) * inner.getWidth();
-                juce::Rectangle<float> blk (x0 + 1.5f, (float) inner.getY() + 1.0f,
-                                            juce::jmax (10.0f, x1 - x0 - 3.0f), (float) inner.getHeight() - 2.0f);
-                const bool act = (posNow >= t0 && posNow < t1);
-                g.setColour (act ? juce::Colour (0x22ffffff) : juce::Colour (0x07ffffff));
-                g.fillRoundedRectangle (blk, 8.0f);
-                g.setColour (act ? juce::Colour (0x99ffffff) : juce::Colour (0x33ffffff));
-                g.drawRoundedRectangle (blk, 8.0f, 1.3f);
-                const float tw = juce::jmin (blk.getWidth() - 8.0f, (float) name.length() * 7.2f + 14.0f);
-                juce::Rectangle<float> chip (blk.getX() + 4.0f, blk.getY() + 3.0f, juce::jmax (18.0f, tw), 19.0f);
-                g.setColour (juce::Colour (0xcc0c0c0c));
-                g.fillRoundedRectangle (chip, 5.0f);
-                g.setColour (act ? juce::Colours::white : juce::Colour (0xffe6e6e6));
-                g.setFont (juce::Font (12.5f, juce::Font::bold));
-                g.drawText (name, chip.reduced (6.0f, 0.0f), juce::Justification::centredLeft, true);
+                juce::Rectangle<float> blk (x0 + 0.5f, (float) inner.getY() + 2.0f,
+                                            juce::jmax (10.0f, x1 - x0 - 1.0f), (float) inner.getHeight() - 4.0f);
+                // Onda del tramo real. Si el bloque está recortado por vs/ve, dibujar SOLO la porción
+                // visible de la onda (si no, se estira al hacer scroll en reproducción).
+                if (srcT0 >= 0.0 && srcT1 > srcT0 && thumb.getTotalLength() > 0.0)
+                {
+                    const double vSrc0 = srcT0 + (c0 - t0);   // display<->source es 1:1 (misma duración)
+                    const double vSrc1 = srcT0 + (c1 - t0);
+                    g.setColour (juce::Colour (0xffced1d6));
+                    thumb.drawChannels (g, blk.toNearestInt().reduced (1), vSrc0, vSrc1, 1.2f);
+                }
+                const double posNowC = seqDisplayNow();   // cursor en tiempo display (t0/t1 ya lo están)
+                const bool act = (posNowC >= t0 && posNowC < t1);
+                const float rad = 4.0f;   // esquinas sutiles: las secciones se ven pegadas (continuas)
+                // Relleno con degradado sutil (más claro arriba, más oscuro abajo)
+                {
+                    juce::ColourGradient grad (juce::Colour ((juce::uint32) (act ? 0x30ffffff : 0x0dffffff)), blk.getX(), blk.getY(),
+                                               juce::Colour ((juce::uint32) (act ? 0x12ffffff : 0x05ffffff)), blk.getX(), blk.getBottom(), false);
+                    g.setGradientFill (grad);
+                    g.fillRoundedRectangle (blk, rad);
+                }
+                // Borde suave
+                g.setColour (act ? juce::Colour (0x70ffffff) : juce::Colour (0x24ffffff));
+                g.drawRoundedRectangle (blk, rad, 1.0f);
+                // Etiqueta discreta: chica, en la esquina sup-izq, recuadro tenue
+                {
+                    g.setFont (juce::Font (10.5f, juce::Font::bold));
+                    const float tw = juce::jmin (blk.getWidth() - 10.0f, (float) name.length() * 6.0f + 12.0f);
+                    juce::Rectangle<float> chip (blk.getX() + 5.0f, blk.getY() + 4.0f, juce::jmax (14.0f, tw), 15.0f);
+                    g.setColour (juce::Colour (0x59000000));
+                    g.fillRoundedRectangle (chip, 4.0f);
+                    g.setColour (act ? juce::Colours::white : juce::Colour (0xffc8ccd2));
+                    g.drawText (name, chip.reduced (5.0f, 0.0f), juce::Justification::centredLeft, true);
+                }
+
+                // Fase B: guardar el rect del nombre (tap en vivo = encolar) y resaltar la encolada
+                if (idx >= 0 && idx < arrChipRects.size())
+                {
+                    arrChipRects.set (idx, blk.toNearestInt());   // tap en cualquier parte del bloque encola
+                    if (! editMode && idx == queuedStep.load())
+                    {
+                        g.setColour (juce::Colour (0xff3ED66E));
+                        g.drawRoundedRectangle (blk.reduced (1.0f), 8.0f, 2.2f);
+                        juce::Rectangle<float> tag (blk.getRight() - 24.0f, blk.getY() + 3.0f, 20.0f, 18.0f);
+                        g.setColour (juce::Colour (0xff3ED66E)); g.setFont (juce::Font (15.0f, juce::Font::bold));
+                        g.drawText (juce::String::fromUTF8 ("\xe2\x86\x92"), tag, juce::Justification::centred);  // →
+                    }
+                }
 
                 const bool looped = (loopActive.load() || loopOnce.load())
                                     && std::abs (loopStartSec.load() - t0) < 0.06
@@ -1041,22 +1468,69 @@ public:
                     g.setFont (juce::Font (17.0f, juce::Font::bold));
                     g.drawText (juce::String::fromUTF8 (loopActive.load() ? "∞" : "↻"), cor, juce::Justification::centred);
                 }
+
+                // ── Editor (modo Editar): − quita este slot / + inserta una sección después ──
+                if (editMode && idx >= 0)
+                {
+                    const int r = 10;
+                    juce::Rectangle<int> minus ((int) blk.getX() + 5, (int) blk.getBottom() - 2 * r - 5, 2 * r, 2 * r);
+                    g.setColour (juce::Colour (0xffE5534B)); g.fillEllipse (minus.toFloat());
+                    g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
+                    g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), minus, juce::Justification::centred);
+                    slotMinusRect[idx] = minus;
+                    if (blk.getWidth() > 52.0f)   // + (azul) a la derecha: insertar sección después de este slot
+                    {
+                        juce::Rectangle<int> plus ((int) blk.getRight() - 2 * r - 5, (int) blk.getBottom() - 2 * r - 5, 2 * r, 2 * r);
+                        g.setColour (juce::Colour (0xff2E6BE6)); g.fillEllipse (plus.toFloat());
+                        g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
+                        g.drawText ("+", plus, juce::Justification::centred);
+                        slotPlusRect[idx] = plus;
+                    }
+                }
+
             };
 
-            // Bloque inicial "Conteo" (antes de la primera seccion)
-            if (! sectionTimes.isEmpty() && sectionTimes[0] > 0.4)
-                drawBlk (0.0, sectionTimes[0], "Conteo");
+            // Cubrimos la onda continua; se redibuja por SLOT de la secuencia en su posición display
+            g.setColour (juce::Colour (0xff0d0d0d));
+            g.fillRect (inner);
 
-            for (int i = 0; i < sectionTimes.size(); ++i)
+            const juce::Array<int> seq = mapSeq();
+            arrChipRects.clearQuick();
+            for (int k = 0; k < seq.size(); ++k) arrChipRects.add ({});
+            if (editMode) { slotMinusRect.clear(); slotPlusRect.clear(); }
+            addChipRect = {};
+
+            // Dibuja cada SLOT de la secuencia, pegados (compactados). Un slot repetido se dibuja varias veces.
+            double disp = 0.0;
+            for (int k = 0; k < seq.size(); ++k)
             {
-                const double t0 = sectionTimes[i];
-                const double t1 = (i + 1 < sectionTimes.size() ? sectionTimes[i + 1] : total);
-                drawBlk (t0, t1, sectionNames[i]);
+                const int s = seq[k];
+                const double d = seqDur (s);
+                drawBlk (disp, disp + d, secNameOf (s), k, secStartOf (s), secEndOf (s));
+                // Rayitas de beats de este slot, en su posición display
+                if (bpm > 0.0)
+                {
+                    const double secPerEighth = 30.0 / bpm;
+                    const int perBar = juce::jmax (1, beatsPerBar) * 2;
+                    const double rs0 = secStartOf (s), rs1 = secEndOf (s), sh = rs0 - disp;
+                    for (int j = (int) std::ceil (rs0 / secPerEighth - 1.0e-6); j * secPerEighth < rs1 - 1.0e-6; ++j)
+                    {
+                        const double t = j * secPerEighth;
+                        if (t < rs0 - 1.0e-6 || t < 0.0) continue;
+                        const double dt = t - sh;
+                        if (dt < vs || dt > ve) continue;
+                        const float gx = inner.getX() + (float) ((dt - vs) / span) * inner.getWidth();
+                        float a = 0.035f; if (j % 2 == 0) a = 0.085f; if (j % perBar == 0) a = 0.17f;
+                        g.setColour (juce::Colours::white.withAlpha (a));
+                        g.drawVerticalLine ((int) gx, (float) inner.getY(), (float) inner.getBottom());
+                    }
+                }
+                disp += d;
             }
 
             // #3 sección de click: bloque anexo "Click ∞" + agregar/quitar (modo edición)
             addClickBtnRect = {}; delClickBtnRect = {};
-            const double lastEnd = total;
+            const double lastEnd = disp;   // pegado al final del mapa (largo display de la secuencia)
             if (songHasClickSec)
             {
                 const double cl = clickSecLen();
@@ -1113,17 +1587,22 @@ public:
             }
         }
 
-        const double pos = positionSeconds();
-        if (currentSong >= 0 && pos >= vs && pos <= ve)
+        // Playhead en vivo, en posición DISPLAY de la secuencia
+        if (currentSong >= 0 && ! editMode)
         {
-            const float px = inner.getX() + (float) ((pos - vs) / span) * inner.getWidth();
-            g.setColour (juce::Colours::white.withAlpha (0.10f));
-            g.fillRect (juce::Rectangle<float> ((float) inner.getX(), (float) inner.getY(), px - inner.getX(), (float) inner.getHeight()));
-            g.setColour (juce::Colours::white);
-            g.fillRect (px - 1.0f, (float) inner.getY(), 2.0f, (float) inner.getHeight());
+            const double dpos = seqDisplayNow();
+            if (dpos >= vs && dpos <= ve)
+            {
+                const float px = inner.getX() + (float) ((dpos - vs) / span) * inner.getWidth();
+                g.setColour (juce::Colours::white.withAlpha (0.10f));
+                g.fillRect (juce::Rectangle<float> ((float) inner.getX(), (float) inner.getY(), px - inner.getX(), (float) inner.getHeight()));
+                g.setColour (juce::Colours::white);
+                g.fillRect (px - 1.0f, (float) inner.getY(), 2.0f, (float) inner.getHeight());
+            }
         }
 
-        // Marcadores de notas MIDI (cajas activas), en su tiempo, del color de la caja
+        // Marcadores de notas MIDI: solo en vivo y sin arreglo (en arreglo las posiciones no coinciden 1:1)
+        if (! editMode && ! arrangementActive.load())
         {
             const float by = (float) inner.getBottom() - 2.0f;
             for (int ci = 0; ci < currentMidiBoxes.size() && ci < 8; ++ci)
@@ -1141,6 +1620,7 @@ public:
             }
         }
 
+        // (El mapping fuera de Editar NUNCA se compacta: siempre la canción completa, lineal.)
         }   // ── fin del bloque del mapa (solo si mapBounds no está vacío) ──
 
         // Panel de faders (vidrio) fijo + doble linea del Master
@@ -1179,35 +1659,95 @@ public:
         { agregarSeccionClick(); return; }               // #3 + agrega la sección de click
         if (editMode && ! delClickBtnRect.isEmpty() && delClickBtnRect.contains (e.getPosition()))
         { quitarSeccionClick(); return; }                // #3 − elimina la sección de click
+        if (editMode)   // editor de secuencia: − quita el slot / + inserta una sección después
+        {
+            for (auto& kv : slotMinusRect)
+                if (! kv.second.isEmpty() && kv.second.contains (e.getPosition()))
+                { if (kv.first >= 0 && kv.first < editSeq.size()) editSeq.remove (kv.first); repaint (mapBounds); return; }
+            for (auto& kv : slotPlusRect)
+                if (! kv.second.isEmpty() && kv.second.contains (e.getPosition()))
+                { mostrarMenuInsertar (kv.first); return; }
+        }
+        pendingChipK = -1;
+        if (! editMode)   // en vivo: un TAP en un slot encola el salto; un ARRASTRE desliza el mapa
+        {
+            for (int k = 0; k < arrChipRects.size(); ++k)
+                if (! arrChipRects[k].isEmpty() && arrChipRects[k].contains (e.getPosition()))
+                { pendingChipK = k; break; }   // recordar; la acción se decide en mouseUp (tap vs drag)
+        }
         if (! mapBounds.contains (e.getPosition())) return;
         isDragging = true;
         dragSeeks = ! playing.load();
-        dragStartCenter = browsing ? browseCenter : positionSeconds();
+        dragStartCenter = browsing ? browseCenter : seqDisplayNow();   // centro en tiempo display
     }
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (! isDragging) return;
         auto inner = mapBounds.reduced (8);
-        const double win = juce::jmin (20.0, totalSeconds());
+        const double win = juce::jmin (20.0, seqTotalOf (mapSeq()));
         const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * npMapDragSens();
         lastInteractionMs = juce::Time::getMillisecondCounter();
-        if (dragSeeks) seekSeconds (dragStartCenter - dx);
-        else { browsing = true; browseCenter = juce::jlimit (0.0, totalSeconds(), dragStartCenter - dx); repaint (mapBounds); }
+        const double dt = dragStartCenter - dx;
+        if (dragSeeks)
+        {
+            seekToDisplay (dt);   // el drag va en tiempo display -> real
+            // En arreglo, seqDisplayNow() va con atraso (el seek es asíncrono y arrStep cambia ya):
+            // seguimos la vista con el valor arrastrado para que NO se jale/salte.
+            if (arrangementActive.load())
+            { browsing = true; browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), dt); }
+            repaint (mapBounds);
+        }
+        else { browsing = true; browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), dt); repaint (mapBounds); }
+    }
+    // Acción de TAP sobre un slot del mapa (en vivo): encola el salto o salta si está parado.
+    void tapChip (int k)
+    {
+        if (! guideOn.load()) return;   // saltar a secciones solo en modo Guía Neural
+        const juce::Array<int> seq = mapSeq();
+        if (k < 0 || k >= seq.size()) return;
+        const int sec = seq[k];
+        if (playing.load())   // reproduciendo: encolar (salta al terminar la sección actual)
+        {
+            if (queuedStep.load() == k) { queuedStep.store (-1); queuedSection.store (-1); queuedFromSec.store (-1); }  // tocar de nuevo = cancelar
+            else
+            {
+                queuedStep.store (k);   // resaltado + salto (arreglo)
+                if (! arrangementActive.load() && sec != kConteoIdx)   // modo natural: encolar por sección
+                {
+                    const double p = positionSeconds();
+                    const bool enConteo = (! sectionTimes.isEmpty() && p < sectionTimes[0] - 1.0e-3);
+                    queuedSection.store (sec);
+                    queuedFromSec.store (enConteo ? kConteoIdx : liveSectionIndexAt (p));
+                }
+            }
+        }
+        else   // parado: salto inmediato (para posicionarse)
+        {
+            seekSeconds (secStartOf (sec));
+            if (arrangementActive.load()) arrStep.store (k);
+        }
+        repaint (mapBounds);
     }
     void mouseUp (const juce::MouseEvent& e) override
     {
         if (! isDragging) return;
         isDragging = false;
+        const bool wasTap = e.getDistanceFromDragStart() < 5;
+        if (! editMode && pendingChipK >= 0 && wasTap)   // tap en un slot → encolar/saltar
+        { const int k = pendingChipK; pendingChipK = -1; tapChip (k); return; }
+        pendingChipK = -1;
         if (dragSeeks)
         {
             if (e.getDistanceFromDragStart() < 5) seekFromMouse (e);          // clic simple
             else
             {                                                                // al soltar el arrastre, cae en un click
                 auto inner = mapBounds.reduced (8);
-                const double win = juce::jmin (20.0, totalSeconds());
+                const double win = juce::jmin (20.0, seqTotalOf (mapSeq()));
                 const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * npMapDragSens();
-                seekSeconds (snapToBeat (dragStartCenter - dx));
+                seekToDisplay (dragStartCenter - dx);
             }
+            browsing = false;   // la vista vuelve a seguir el cursor real (ya aplicado el seek)
+            repaint (mapBounds);
         }
         else { browsing = false; repaint (mapBounds); }
     }
@@ -1224,15 +1764,17 @@ public:
         if (! mapBounds.contains (e.getPosition())) return;
         double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
         if (w.isReversed) d = -d;
+        // Scroll de dos dedos: en tiempo DISPLAY (compactado del arreglo), igual que el arrastre.
+        // Antes iba en tiempo real y en los arreglos se atoraba (real != display).
         if (playing.load())
         {
-            if (! browsing) browseCenter = positionSeconds();
+            if (! browsing) browseCenter = seqDisplayNow();
             browsing = true;
-            browseCenter = juce::jlimit (0.0, totalSeconds(), browseCenter + d * 14.0);
+            browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), browseCenter + d * 14.0);
             lastInteractionMs = juce::Time::getMillisecondCounter();
             repaint (mapBounds);
         }
-        else seekSeconds (positionSeconds() + d * 14.0);
+        else seekToDisplay (seqDisplayNow() + d * 14.0);
     }
 
     // #4 teclas: en modo mapping asigna/desasigna; en modo normal dispara lo mapeado
@@ -1493,6 +2035,8 @@ public:
             playButton.setBounds   (cx - BW / 2, gy, BW, BH);
             returnButton.setBounds (cx - BW / 2 - G - BW, gy, BW, BH);
             fadeButton.setBounds   (cx + BW / 2 + G, gy, BW, BH);
+            transBtn.setBounds     (cx + BW / 2 + G + BW + G, gy, BW, BH);
+            transBtn.setVisible    (! editMode && indiceSiguiente() >= 0);
         }
         connStatus.setVisible (false);
         area.removeFromTop (phone ? 1 : 6);   // iPhone: subir un poco las tarjetas
@@ -1596,11 +2140,13 @@ public:
         {
             area.removeFromTop (5);
             auto bar = area.removeFromTop (34);
-            editBarBounds = juce::Rectangle<int> (bar.getX(), bar.getY(), 400, bar.getHeight());
+            editBarBounds = juce::Rectangle<int> (bar.getX(), bar.getY(), 760, bar.getHeight());
             auto b = editBarBounds;
-            keyMapBtn.setBounds (b.removeFromLeft (188)); b.removeFromLeft (8);
-            midiMapBtn.setBounds (b.removeFromLeft (150));
-            keyMapBtn.toFront (false); midiMapBtn.toFront (false);
+            keyMapBtn.setBounds (b.removeFromLeft (172)); b.removeFromLeft (6);
+            midiMapBtn.setBounds (b.removeFromLeft (128)); b.removeFromLeft (6);
+            saveArrBtn.setBounds (b.removeFromLeft (140)); b.removeFromLeft (6);
+            saveAsNewBtn.setBounds (b.removeFromLeft (180));
+            keyMapBtn.toFront (false); midiMapBtn.toFront (false); saveArrBtn.toFront (false); saveAsNewBtn.toFront (false);
             area.removeFromTop (5);
         }
         else area.removeFromTop (8);
@@ -1761,6 +2307,7 @@ private:
         fetchPadPacks();
         loadCachedPerfiles();
         fetchPerfiles();
+        fetchArreglosServer();   // arreglos por organización (con caché local)
         fetchPlan();
     }
 
@@ -1874,6 +2421,7 @@ private:
                     sp->refreshEditAvailability();
                     sp->repaint();
                     sp->aplicarPlan (feats);
+                    sp->fetchGuideClips();   // guía dinámica: precargar la librería de clips de voz
                     sp->guardarConfigCuenta();
                     // "Recordar mi contraseña": guardar/borrar en el Keychain del sistema.
                     if (sp->loginOverlay != nullptr && sp->loginOverlay->quiereRecordar())
@@ -1888,6 +2436,7 @@ private:
                     }
                     sp->fetchPadPacks();
                     sp->fetchPerfiles();
+                    sp->fetchArreglosServer();   // arreglos por organización (con caché local)
                     if (sp->repPicker.isVisible()) sp->openRepertoirePicker();
                     sp->connStatus.setText (juce::String::fromUTF8 ("Sesion: ")
                                             + v.getProperty ("org_nombre", "").toString(),
@@ -2010,6 +2559,71 @@ private:
                 { const juce::ScopedLock l (chartLock); perfilesJson = txt; }
                 npAppDir().getChildFile ("perfiles.json").replaceWithText (txt);
             }
+        });
+    }
+
+    // ── Arreglos por organización (servidor) ──────────────────────
+    void fetchArreglosServer()   // baja los arreglos de la org y actualiza el caché local
+    {
+        if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
+        const juce::String url = serverUrl + "/api/live/arreglos";
+        const juce::String tok = serverToken;
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, url, tok]
+        {
+            auto v = juce::JSON::parse (httpGet (url, tok));
+            if (! (bool) v.getProperty ("ok", false)) return;
+            auto arr = v.getProperty ("arreglos", juce::var());
+            juce::MessageManager::callAsync ([sp, arr]
+            {
+                if (sp == nullptr) return;
+                sp->songArrs.clear();
+                if (auto* a = arr.getArray())
+                    for (auto& e : *a)
+                    {
+                        const int id = (int) e.getProperty ("id", 0);
+                        const juce::String nom = e.getProperty ("name", "").toString();
+                        juce::Array<int> seq;
+                        if (auto* s = e.getProperty ("seq", juce::var()).getArray())
+                            for (auto& x : *s) seq.add ((int) x);
+                        if (id > 0 && nom.isNotEmpty() && seq.size() > 0)
+                        {
+                            sp->songArrs[id].push_back ({ nom, seq });
+                            if ((bool) e.getProperty ("last", false)) sp->songLastArr[id] = nom;   // arreglo activo
+                        }
+                    }
+                sp->saveArr();     // refresca el caché local (offline)
+                sp->repaint();
+            });
+        });
+    }
+    void pushArreglosServer()   // sube TODOS los arreglos de la org (reemplaza en el servidor)
+    {
+        if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
+        juce::Array<juce::var> a;
+        for (auto& kv : songArrs)
+        {
+            const auto lit = songLastArr.find (kv.first);
+            const juce::String last = (lit != songLastArr.end()) ? lit->second : juce::String();
+            for (auto& ar : kv.second)
+            {
+                if (ar.second.size() == 0) continue;
+                juce::DynamicObject::Ptr o = new juce::DynamicObject();
+                o->setProperty ("id", kv.first);
+                o->setProperty ("name", ar.first);
+                juce::Array<juce::var> sq; for (int s : ar.second) sq.add (s);
+                o->setProperty ("seq", sq);
+                o->setProperty ("last", ar.first == last);   // arreglo activo de esa canción (lo sigue el chart del repertorio)
+                a.add (juce::var (o.get()));
+            }
+        }
+        const juce::String js = juce::JSON::toString (juce::var (a));
+        const juce::String url = serverUrl + "/api/live/arreglos";
+        const juce::String tok = serverToken;
+        juce::Thread::launch ([url, js, tok]
+        {
+            juce::StringPairArray p; p.set ("arreglos", js);
+            httpPostForm (url, p, tok);
         });
     }
 
@@ -2289,7 +2903,7 @@ private:
         setup.outputChannels.clear();
         setup.outputChannels.setRange (0, 32, true);
        #if JUCE_IOS
-        setup.bufferSize = 1024;
+        setup.bufferSize = 512;   // igual que el Mac (ver nota en el constructor): evita el desfase del conteo/saltos
        #else
         setup.bufferSize = 512;
        #endif
@@ -2480,9 +3094,12 @@ private:
         editBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         editBtn.repaint();
         if (editMode) playing.store (false);          // en edición no se reproduce
+        if (editMode) initEditSeq();                  // preparar la secuencia del arreglo para editar
         updateTransportEnabled();
         keyMapBtn.setVisible (editMode);              // #4 botones de mapping solo en la barra de Editar
         midiMapBtn.setVisible (editMode);
+        saveArrBtn.setVisible (editMode);             // "Guardar arreglo" solo en edición
+        saveAsNewBtn.setVisible (editMode);           // "Guardar como nuevo" solo en edición
         if (! editMode && (keyMapMode || midiMapMode))   // al salir de edición, salir de los mappings
         {
             keyMapMode = false; midiMapMode = false; clearArm(); setFadersArmable (false);
@@ -3052,7 +3669,13 @@ private:
                 if (! addFlow)
                     for (int i = 0; i < sp->repertoire.size(); ++i)
                         if (sp->repertoire.getReference (i).id == songId) { curSem = sp->repertoire.getReference (i).tono; break; }
-                sp->repEdit.openTono (songId, title, addFlow, ks, i2, o2, pIntro, pOutro, curSem);
+                // Arreglos guardados de esta canción + cuál está activo (para la caja "Arreglo")
+                const juce::StringArray arrs = sp->arrNamesFor (songId);
+                int curArrIdx = 0;   // 0 = Original
+                { auto lit = sp->songLastArr.find (songId);
+                  if (lit != sp->songLastArr.end() && lit->second.isNotEmpty())
+                      curArrIdx = arrs.indexOf (lit->second) + 1; }   // +1 por "Original"
+                sp->repEdit.openTono (songId, title, addFlow, ks, i2, o2, pIntro, pOutro, curSem, arrs, juce::jmax (0, curArrIdx), sp->guiaSelFor (songId), sp->repTrackFor (songId));
                 sp->repEdit.setVisible (true); sp->repEdit.toFront (true);
             });
         });
@@ -3130,6 +3753,214 @@ private:
             a.add (juce::var (o.get()));
         }
         npAppDir().getChildFile ("inout.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+    }
+    // Arreglos por canción (varios, con nombre) — persistencia local por id
+    void loadArr()
+    {
+        songArrs.clear(); songLastArr.clear();
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("arreglos.json"));
+        if (auto* a = v.getArray())
+            for (auto& e : *a)
+            {
+                const int id = (int) e.getProperty ("id", 0);
+                if (id <= 0) continue;
+                juce::Array<int> seq;
+                if (auto* sa = e.getProperty ("seq", juce::var()).getArray())
+                    for (auto& s : *sa) seq.add ((int) s);
+                const juce::String name = e.getProperty ("name", "").toString();
+                if (seq.size() > 0 && name.isNotEmpty()) songArrs[id].push_back ({ name, seq });
+                if ((bool) e.getProperty ("last", false)) songLastArr[id] = name;
+            }
+    }
+    void saveArr()
+    {
+        juce::Array<juce::var> a;
+        for (auto& kv : songArrs)
+        {
+            const auto lit = songLastArr.find (kv.first);
+            const juce::String last = (lit != songLastArr.end()) ? lit->second : juce::String();
+            for (auto& ar : kv.second)
+            {
+                if (ar.second.size() == 0) continue;
+                juce::DynamicObject::Ptr o = new juce::DynamicObject();
+                o->setProperty ("id", kv.first);
+                o->setProperty ("name", ar.first);
+                juce::Array<juce::var> sq; for (int s : ar.second) sq.add (s);
+                o->setProperty ("seq", sq);
+                o->setProperty ("last", ar.first == last);
+                a.add (juce::var (o.get()));
+            }
+        }
+        npAppDir().getChildFile ("arreglos.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+    }
+    // ── Guía por canción (Tracks / Neural), persistente en guia_sel.json ──
+    void loadGuiaSel()
+    {
+        songGuia.clear(); songRepTrack.clear();
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("guia_sel.json"));
+        if (auto* a = v.getArray())
+            for (auto& e : *a)
+            {
+                const int id = (int) e.getProperty ("id", 0);
+                if (id > 0)
+                {
+                    songGuia[id] = (int) e.getProperty ("guia", 0) == 1 ? 1 : 0;
+                    if ((bool) e.getProperty ("rep", false)) songRepTrack.insert (id);
+                }
+            }
+    }
+    void saveGuiaSel()
+    {
+        juce::Array<juce::var> a;
+        std::set<int> ids;
+        for (auto& kv : songGuia) ids.insert (kv.first);
+        for (int id : songRepTrack) ids.insert (id);
+        for (int id : ids)
+        {
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("id", id);
+            auto g = songGuia.find (id);
+            o->setProperty ("guia", g != songGuia.end() ? g->second : 0);
+            o->setProperty ("rep", songRepTrack.count (id) > 0);
+            a.add (juce::var (o.get()));
+        }
+        npAppDir().getChildFile ("guia_sel.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+    }
+    // ── Transición "al terminar" por REPERTORIO + canción, persistente en transiciones.json ──
+    //    estructura: { setlistId: { songId: modo } }  modo 1=Autolink, 2=Sobreponer
+    void loadTrans()
+    {
+        transPorSetlist.clear();
+        auto v = juce::JSON::parse (npAppDir().getChildFile ("transiciones.json"));
+        if (auto* a = v.getArray())
+            for (auto& e : *a)
+            {
+                const juce::String setl = e.getProperty ("setlist", "").toString();
+                const int sid  = (int) e.getProperty ("id", 0);
+                const int modo = (int) e.getProperty ("modo", 0);
+                if (setl.isNotEmpty() && sid > 0 && (modo == 1 || modo == 2))
+                    transPorSetlist[setl][sid] = modo;
+            }
+    }
+    void saveTrans()
+    {
+        juce::Array<juce::var> a;
+        for (auto& kv : transPorSetlist)
+            for (auto& sg : kv.second)
+            {
+                if (sg.second != 1 && sg.second != 2) continue;
+                juce::DynamicObject::Ptr o = new juce::DynamicObject();
+                o->setProperty ("setlist", kv.first);
+                o->setProperty ("id", sg.first);
+                o->setProperty ("modo", sg.second);
+                a.add (juce::var (o.get()));
+            }
+        npAppDir().getChildFile ("transiciones.json").replaceWithText (juce::JSON::toString (juce::var (a)));
+    }
+    int transSelFor (int sid) const   // modo "al terminar" guardado para (setlist actual, canción); 0 = ninguno
+    {
+        if (lastSetlistId.isEmpty()) return 0;
+        auto s = transPorSetlist.find (lastSetlistId);
+        if (s == transPorSetlist.end()) return 0;
+        auto it = s->second.find (sid);
+        return (it != s->second.end()) ? it->second : 0;
+    }
+    void setTransActual (int modo)   // guarda/borra el modo "al terminar" para la canción actual en el setlist actual
+    {
+        autoTrans.store (modo);
+        if (lastSetlistId.isEmpty() || currentSong < 0 || currentSong >= repertoire.size()) return;
+        const int sid = repertoire.getReference (currentSong).id;
+        if (modo == 1 || modo == 2) transPorSetlist[lastSetlistId][sid] = modo;
+        else                        transPorSetlist[lastSetlistId].erase (sid);
+        saveTrans();
+    }
+    int guiaSelFor (int sid) const   // 0 = Tracks (por defecto), 1 = Neural
+    { auto it = songGuia.find (sid); return (it != songGuia.end()) ? it->second : 0; }
+    bool repTrackFor (int sid) const   // ¿permitir repetir/∞ en modo Track para esta canción?
+    { return songRepTrack.count (sid) > 0; }
+    // Deja guideOn en el valor correcto para el estado actual: un arreglo activo SIEMPRE usa Neural;
+    // en Original se respeta la elección de la canción (songGuia). Rearma el cue si se enciende.
+    void aplicarGuiaSegunEstado()
+    {
+        const int sid = currentSongId();
+        const bool neural = arrangementActive.load() ? true : (sid > 0 && guiaSelFor (sid) == 1);
+        repetirEnTrack = (sid > 0 && repTrackFor (sid));   // permiso de repetir/∞ en modo Track
+        const bool antes = guideOn.load();
+        guideOn.store (neural);
+        cueSchedStep = -1;
+        if (neural) { computeGuiaRoute(); if (! antes) fetchGuideClips(); }
+        updateNeuralCtrls();
+    }
+    bool repetirPermitido() const { return guideOn.load() || repetirEnTrack; }
+    // Atenúa/deshabilita repetir y ∞ salvo en Neural (o si la canción habilitó repetir en Track).
+    // Las flechas ‹ › quedan siempre activas: son navegación por sección en ambos modos.
+    void updateNeuralCtrls()
+    {
+        const bool on = repetirPermitido();
+        for (auto* b : { (juce::Component*) &repeatBtn, (juce::Component*) &infiniteBtn })
+        {
+            b->setAlpha (on ? 1.0f : 0.3f);
+            b->setInterceptsMouseClicks (on, on);
+            b->repaint();
+        }
+    }
+    // nombres de arreglos guardados de una canción (para la caja "Arreglo" del diálogo)
+    juce::StringArray arrNamesFor (int sid) const
+    {
+        juce::StringArray out;
+        auto it = songArrs.find (sid);
+        if (it != songArrs.end()) for (auto& ar : it->second) out.add (ar.first);
+        return out;
+    }
+    // Aplica el arreglo elegido (del diálogo) a una canción. "" / "Original" = sin arreglo.
+    // Si la canción YA está cargada, lo aplica en vivo al instante (porque la recarga del
+    // setlist no vuelve a cargar una canción que ya es la actual).
+    void aplicarArregloASong (int sid, juce::String arrName)
+    {
+        const bool esOriginal = (arrName.isEmpty() || arrName == juce::String::fromUTF8 ("Original"));
+        songLastArr[sid] = esOriginal ? juce::String() : arrName;   // recordar la elección ("" = Original)
+        saveArr();
+        const bool esActual = (currentSong >= 0 && currentSong < repertoire.size()
+                               && repertoire.getReference (currentSong).id == sid);
+        if (! esActual) return;
+        if (esOriginal) { arrLoadedName.clear(); clearArrangement(); }
+        else
+        {
+            bool aplicado = false;
+            auto it = songArrs.find (sid);
+            if (it != songArrs.end())
+                for (auto& ar : it->second)
+                    if (ar.first == arrName && ar.second.size() > 0)
+                    { arrLoadedName = ar.first; setArrangement (ar.second, ar.first, false); aplicado = true; break; }
+            if (! aplicado) { arrLoadedName.clear(); clearArrangement(); }
+        }
+        if (editMode) initEditSeq();
+        pushArreglosServer();   // subir el flag "activo" para que el repertorio (app) siga el arreglo correcto
+        rebuildRepertoireStrip();   // refrescar el chip del arreglo en la tarjeta
+        repaint();
+    }
+    // Borra un arreglo guardado de una canción (local + servidor por reemplazo).
+    void borrarArreglo (int sid, juce::String nombre)
+    {
+        auto it = songArrs.find (sid);
+        if (it != songArrs.end())
+        {
+            auto& lst = it->second;
+            for (size_t i = 0; i < lst.size(); ++i)
+                if (lst[i].first == nombre) { lst.erase (lst.begin() + (long) i); break; }
+            if (lst.empty()) songArrs.erase (it);
+        }
+        // si el borrado era el "último aplicado", volver a Original
+        auto lit = songLastArr.find (sid);
+        if (lit != songLastArr.end() && lit->second == nombre) songLastArr[sid] = juce::String();
+        // si estaba activo en la canción cargada, quitarlo en vivo
+        if (arrLoadedName == nombre && currentSong >= 0 && currentSong < repertoire.size()
+            && repertoire.getReference (currentSong).id == sid)
+        { arrLoadedName.clear(); clearArrangement(); if (editMode) initEditSeq(); }
+        saveArr();
+        pushArreglosServer();   // reemplaza la lista de la org en el servidor (deja fuera el borrado)
+        rebuildRepertoireStrip();   // refrescar el chip del arreglo en la tarjeta
+        repaint();
     }
     void loadPadPlayer()
     {
@@ -3520,6 +4351,7 @@ private:
             playing.store (false);
             positionOut.store (0);
             seekTo.store (-1);
+            autoReqPending.store (0);   // Fase D: limpiar pedido de transición al cambiar de canción
             resamplers.clear();
             bufferingSources.clear();
             readerSources.clear();
@@ -3533,6 +4365,10 @@ private:
             numTracks = 0;
             loadingSong.store (false);
         }
+        arrangementActive.store (false);   // desactivar arreglo ANTES de limpiar (el hilo de audio lo chequea)
+        arrStep.store (0); arrLoop.store (false);
+        arrangement.clear(); arrangementName.clear();
+        queuedSection.store (-1); queuedFromSec.store (-1); queuedStep.store (-1);   // Fase B: sin salto encolado al cambiar de canción
         sectionTimes.clear();
         sectionNames.clear();
         clickSecArmed.store (false); songHasClickSec = false;   // sin canción no hay bloque "Click ∞"
@@ -3590,6 +4426,8 @@ private:
             c->cover = s.cover;
             c->titulo = s.titulo;
             c->tono = s.tonoNombre;
+            { auto lit = songLastArr.find (s.id);   // chip del arreglo activo ("" = Original → sin chip)
+              c->arrNombre = (lit != songLastArr.end()) ? lit->second : juce::String(); }
             c->editMode = editMode;
             c->index = i;
             c->songId = s.id;
@@ -3663,6 +4501,7 @@ private:
         if (index < songReady.size() && ! songReady[index]) return;   // audio aún no descargado
         snapshotCurrentMix();   // recuerda la mezcla de la canción anterior
         currentSong = index;
+        browsing = false;       // al cambiar de canción, el mapa vuelve a seguir el inicio
         if (padEnabled.load() && padMode == 0) { padApplyTone(); updatePadUi(); }   // pad en Auto: re-afina a la tonalidad de la canción
         const auto& sng = repertoire.getReference (index);
 
@@ -3674,6 +4513,7 @@ private:
             playing.store (false);
             positionOut.store (0);
             seekTo.store (-1);
+            autoReqPending.store (0);   // Fase D: limpiar pedido de transición al cambiar de canción
             resamplers.clear();
             bufferingSources.clear();
             readerSources.clear();
@@ -3683,6 +4523,12 @@ private:
             stemFiles.clear();
             lengthSamples = 0;
             numTracks = 0;
+            // RESET del arreglo al cambiar de canción (si no, se queda el de la canción anterior → se atora)
+            arrangementActive.store (false);
+            arrStep.store (0); arrLoop.store (false);
+            arrangement.clear(); arrangementName.clear(); arrLoadedName.clear();
+            editSeq.clearQuick();
+            queuedSection.store (-1); queuedFromSec.store (-1); queuedStep.store (-1);
 
             curFamFiles = sng.famFiles;
             curFamNames = sng.famNames;
@@ -3726,6 +4572,32 @@ private:
         aplicarInOut (sng.id);                         // #2 punto de inicio/fin de esta canción
         if (songInSec.load() > 0.0) seekSeconds (songInSec.load());
 
+        // Aplicar el arreglo elegido (diálogo) o el último usado de esta canción. "" / "Original" = natural.
+        {
+            juce::String want = pendingArrName;            // elegido en el diálogo de carga
+            pendingArrName.clear();
+            if (want.isEmpty())                            // sin elección explícita: usar el último aplicado
+            {
+                auto lit = songLastArr.find (sng.id);
+                if (lit != songLastArr.end()) want = lit->second;
+            }
+            arrLoadedName.clear();
+            if (want.isNotEmpty() && want != juce::String::fromUTF8 ("Original"))
+            {
+                auto it = songArrs.find (sng.id);
+                if (it != songArrs.end())
+                    for (auto& ar : it->second)
+                        if (ar.first == want && ar.second.size() > 0)
+                        {
+                            arrLoadedName = ar.first;
+                            setArrangement (ar.second, ar.first, false);
+                            break;
+                        }
+            }
+            songLastArr[sng.id] = arrLoadedName;           // recordar lo aplicado ("" = Original)
+        }
+        if (editMode) initEditSeq();   // si estamos editando y cambiamos de canción, preparar su secuencia
+
         {
             const juce::ScopedLock sl (midiLock);
             currentMidiBoxes = sng.midiBoxes;
@@ -3755,6 +4627,8 @@ private:
             applyMix (songMixCache[currentSong]);   // mezcla del repertorio (si hay)
         else
             applyGlobalOverrides();                 // sin caché: aplicar buses/mute generales si toca
+        aplicarGuiaSegunEstado();                      // guía (Tracks/Neural) según canción/arreglo
+        autoTrans.store (transSelFor (sng.id));        // transición "al terminar" guardada para esta canción en este repertorio
         highlightSongButton();
         resized();
         repaint();
@@ -3822,6 +4696,7 @@ private:
         faderOrder.addArray (rest);
 
         buildBuses();
+        computeGuiaRoute();   // guía dinámica: ubicar el track/ruta "Guía" para enrutar los cues de voz
         updateFaderVisibility();
         if (midiMapMode) setFadersArmable (true);   // #5/#6 mantener faders armables si se rearma la UI en modo MIDI
     }
@@ -3839,8 +4714,8 @@ private:
             if (idx < 0) { idx = familyNames.size(); familyNames.add (fam); }
             trackFamily[i] = idx;
             trackIsClick[i] = fam.equalsIgnoreCase ("Click");                          // #3 solo click
-            trackNoFade[i] = trackIsClick[i]
-                          || fam.equalsIgnoreCase (juce::String::fromUTF8 ("Gu\xc3\xad" "a"));   // Click/Guía no suben en el conteo
+            trackIsGuia[i]  = fam.equalsIgnoreCase (juce::String::fromUTF8 ("Gu\xc3\xad" "a"));   // pista de guía del usuario
+            trackNoFade[i] = trackIsClick[i] || trackIsGuia[i];                         // Click/Guía no suben en el conteo
         }
         for (int f = 0; f < familyNames.size() && f < 16; ++f)
         {
@@ -4094,8 +4969,9 @@ private:
             seekSeconds (juce::jmax (0.0, positionSeconds() + dir * secPerBar));
         }
     }
-    void seekSection (int dir)   // saltar al inicio de la sección anterior/siguiente
+    void seekSection (int dir)   // saltar al inicio de la sección anterior/siguiente (navegación: ambos modos)
     {
+        cueAnnounceLanded.store (true); // en Neural anuncia la sección donde se cae (en Track se ignora)
         if (sectionTimes.isEmpty()) { seekBar (dir); return; }   // respaldo: por compás
         juce::Array<double> anchors;
         if (sectionTimes[0] > 0.4) anchors.add (0.0);            // bloque "Conteo"
@@ -4225,10 +5101,13 @@ private:
 
     void getViewWindow (double& vs, double& ve) const
     {
-        const double total = totalSeconds();
+        const double total = seqTotalOf (mapSeq());   // largo del mapa (secuencia) en tiempo display
         const double win = juce::jmin (20.0, juce::jmax (4.0, total));
-        const double center = browsing ? browseCenter : positionSeconds();
-        // Aguja fija al inicio (borde izquierdo): el mapa se desplaza por debajo
+        // El centro (aguja) va en tiempo DISPLAY (de la secuencia) para alinear con el mapa dibujado
+        const double center = browsing ? browseCenter : seqDisplayNow();
+        // Aguja fija al inicio (borde izquierdo): el mapa se desplaza por debajo.
+        // Igual para natural y arreglo (sin acote) para poder llegar hasta el final del mapa.
+        juce::ignoreUnused (total);
         vs = center;
         ve = vs + win;
     }
@@ -4250,6 +5129,9 @@ private:
             splash.setVisible (false);
             if (serverToken.isEmpty()) mostrarLoginDialog();   // el login aparece DESPUÉS del splash (~2s)
         }
+        // Fase D: transición automática pedida por el hilo de audio (al terminar la canción).
+        if (const int req = autoReqPending.exchange (0))
+            transicionSiguiente (req == 2);
         // Sesión única: latido cada ~15 s para detectar expulsión aunque la app esté quieta.
         if (serverToken.isNotEmpty() && serverSession.isNotEmpty())
         {
@@ -4341,6 +5223,56 @@ private:
         playButton.setButtonText (p ? "Pausa" : "Play");
     }
 
+    int indiceSiguiente() const   // siguiente canción lista del setlist (-1 si no hay)
+    {
+        for (int i = currentSong + 1; i < repertoire.size(); ++i)
+            if (i >= songReady.size() || songReady[i]) return i;
+        return -1;
+    }
+    // Fase D — Transición a la siguiente canción. crossfade=false → Autolink (corte seco).
+    void transicionSiguiente (bool crossfade)
+    {
+        const int next = indiceSiguiente();
+        if (next < 0) return;   // no hay siguiente lista
+        if (! crossfade)        // Autolink: corte seco
+        {
+            loadSong (next);
+            seekSeconds (0.0);
+            if (countInEnabled) prepararConteo();
+            guideWasPlaying = false;                 // re-armar conteo/guía de voz de la nueva canción
+            cueActiveBuf = -1; cuePos = 0; cuePendingIdx.store (-1);
+            playing.store (true);
+            playButton.setButtonText ("Pausa");
+            return;
+        }
+        // Sobreponer (crossfade 2 compases): la canción actual pasa a la "cola" (fade-out)
+        // y la siguiente arranca al frente a full. Sin cortes porque la cola se mezcla aparte.
+        if (resamplers.isEmpty())
+        { loadSong (next); seekSeconds (0.0); playing.store (true); playButton.setButtonText ("Pausa"); return; }
+        const double barsSec = (bpm > 0.0) ? 2.0 * juce::jmax (1, beatsPerBar) * 60.0 / bpm : 3.0;
+        {
+            const juce::ScopedLock sl (graphLock);
+            const juce::ScopedLock tl (tailLock);
+            readerSources2.swapWith (readerSources);       // el grafo actual (saliente) va a la cola
+            bufferingSources2.swapWith (bufferingSources);
+            resamplers2.swapWith (resamplers);
+            fileRates2.swapWith (fileRates);
+            // Marcar las pistas de click de la saliente para NO sonarlas en la cola
+            // (así el click viejo no choca con el click de la canción nueva).
+            for (int i = 0; i < kMaxTracks; ++i) tailIsClick[i] = trackIsClick[i];
+            tailFadeSec = barsSec;
+            tailGainCur = 1.0;
+            tailActive.store (true);
+        }
+        loadSong (next);          // carga la siguiente al frente (limpia el grafo viejo que quedó en 'resamplers')
+        seekSeconds (0.0);
+        if (countInEnabled) prepararConteo();
+        guideWasPlaying = false;                 // re-armar conteo/guía de voz de la nueva canción
+        cueActiveBuf = -1; cuePos = 0; cuePendingIdx.store (-1);
+        playing.store (true);
+        playButton.setButtonText ("Pausa");
+    }
+
     double tiempoUnCompasAntes (double ts) const   // 1 compás antes de ts (por grilla o bpm)
     {
         const auto& g = currentBeatGrid;
@@ -4427,6 +5359,7 @@ private:
 
     void toggleRepeatOnce()   // repetir una vez la sección actual
     {
+        if (! repetirPermitido() && ! loopOnce.load()) return;   // repetir solo en Neural o si la canción lo habilitó en Track
         if (loopOnce.load())
         {
             loopOnce.store (false);
@@ -4448,6 +5381,7 @@ private:
     }
     void toggleLoopInfinite()   // loop infinito de la sección actual (o de la sección de click si estamos en ella)
     {
+        if (! repetirPermitido() && ! loopActive.load() && ! clickLoopOn.load()) return;   // ∞ solo en Neural o si la canción lo habilitó en Track
         if (! featInfinito && ! loopActive.load() && ! clickLoopOn.load()) { avisoPlanInfinito(); return; }   // solo bloquea al ENCENDER
         if (songHasClickSec && clickLenSec.load() > 0.0 && positionSeconds() >= totalSeconds() - 0.15)
         {   // #3 en/cerca del bloque de click, el ∞ enciende/apaga su loop (reactivable, sin saltos)
@@ -4473,13 +5407,26 @@ private:
         repaint (mapBounds);
     }
 
+    // Volver al inicio (botón reiniciar y tecla kaReturn): con arreglo va al PRIMER paso
+    void irAlInicio()
+    {
+        queuedStep.store (-1); queuedSection.store (-1); queuedFromSec.store (-1);   // cancelar saltos encolados
+        if (arrangementActive.load() && arrangement.size() > 0)
+        {
+            seekSeconds (secStartOf (arrangement[0]));
+            arrStep.store (0);
+            browsing = false;
+        }
+        else seekSeconds (0.0);
+    }
+
     // ── #4 mapping de teclado ──
     void doAct (int a)
     {
         switch (a)
         {
             case kaPlay:      togglePlay();        break;
-            case kaReturn:    seekSeconds (0.0);   break;
+            case kaReturn:    irAlInicio();        break;
             case kaPrevBar:   seekSection (-1);    break;
             case kaNextBar:   seekSection (+1);    break;
             case kaFade:      toggleFade();        break;
@@ -4887,16 +5834,663 @@ private:
         if (! inner.contains (e.getPosition())) return;
         double vs = 0.0, ve = 0.0; getViewWindow (vs, ve);
         const double frac = juce::jlimit (0.0, 1.0, (double) (e.x - inner.getX()) / juce::jmax (1, inner.getWidth()));
-        seekSeconds (snapToBeat (vs + frac * (ve - vs)));   // al soltar, cae en un click
+        seekToDisplay (vs + frac * (ve - vs));   // display -> real (y fija el paso)
     }
     void seekSeconds (double sec)
     {
         countInActive.store (false);   // #1 cualquier seek manual cancela el conteo
         const double fr = fileRates.isEmpty() ? 44100.0 : fileRates[0];
         seekTo.store ((long long) (juce::jmax (0.0, sec) * fr));
+        // Si hay arreglo activo, recomputar en qué paso caímos (la sección que contiene 'sec').
+        if (arrangementActive.load() && arrangement.size() > 0)
+        {
+            const int curSec = liveSectionIndexAt (juce::jmax (0.0, sec));
+            int best = arrStep.load();
+            if (best < 0 || best >= arrangement.size() || arrangement[best] != curSec)
+            {
+                best = -1;
+                for (int k = 0; k < arrangement.size(); ++k)
+                    if (arrangement[k] == curSec) { best = k; break; }
+            }
+            if (best >= 0) arrStep.store (best);
+        }
         repaint (mapBounds);
     }
 
+    // ── Arreglo de la canción (Fase A): activar / limpiar ──
+    // 'orden' = índices de sección en el orden deseado. Se posiciona en la 1ª sección.
+    void setArrangement (const juce::Array<int>& orden, const juce::String& nombre, bool loop)
+    {
+        double firstStart = 0.0; bool hasFirst = false;
+        {
+            const juce::ScopedLock sl (graphLock);
+            arrangement = orden;
+            arrangementName = nombre;
+            arrLoop.store (loop);
+            arrStep.store (0);
+            arrangementActive.store (orden.size() > 0);
+            if (orden.size() > 0) { firstStart = secStartOf (orden[0]); hasFirst = true; }
+        }
+        liveSongVer.fetch_add (1);   // avisar a los músicos que el arreglo cambió (chart lo sigue)
+        aplicarGuiaSegunEstado();    // un arreglo activo fuerza la guía Neural
+        if (hasFirst) seekSeconds (firstStart);
+        repaint();
+    }
+
+    void clearArrangement()
+    {
+        arrangementActive.store (false);   // el hilo de audio lo chequea primero
+        {
+            const juce::ScopedLock sl (graphLock);
+            arrangement.clear();
+            arrangementName.clear();
+            arrStep.store (0);
+            arrLoop.store (false);
+        }
+        liveSongVer.fetch_add (1);   // avisar a los músicos (chart vuelve a la canción completa)
+        aplicarGuiaSegunEstado();    // sin arreglo: volver a la guía elegida (Tracks/Neural)
+        repaint();
+    }
+
+    // ── Helpers de rango de sección (soportan Conteo = kConteoIdx) ──
+    double secStartOf (int idx) const
+    {
+        if (idx == kConteoIdx) return 0.0;
+        if (idx >= 0 && idx < sectionTimes.size()) return sectionTimes[idx];
+        return 0.0;
+    }
+    double secEndOf (int idx) const
+    {
+        if (idx == kConteoIdx) return sectionTimes.isEmpty() ? 0.0 : sectionTimes[0];
+        if (idx >= 0 && idx < sectionTimes.size())
+            return (idx + 1 < sectionTimes.size()) ? sectionTimes[idx + 1] : totalSeconds();
+        return totalSeconds();
+    }
+    juce::String secNameOf (int idx) const
+    {
+        if (idx == kConteoIdx) return "Conteo";
+        if (idx >= 0 && idx < sectionNames.size()) return sectionNames[idx];
+        return "?";
+    }
+    bool hayConteo() const { return ! sectionTimes.isEmpty() && sectionTimes[0] > 0.4; }
+
+    // ── Guía dinámica: slug del nombre de sección (DEBE coincidir con el del script Python) ──
+    static juce::String slugSeccion (juce::String s)
+    {
+        s = s.toLowerCase().trim();
+        s = s.replace (juce::String::fromUTF8 ("\xc3\xa1"), "a")   // á
+             .replace (juce::String::fromUTF8 ("\xc3\xa9"), "e")   // é
+             .replace (juce::String::fromUTF8 ("\xc3\xad"), "i")   // í
+             .replace (juce::String::fromUTF8 ("\xc3\xb3"), "o")   // ó
+             .replace (juce::String::fromUTF8 ("\xc3\xba"), "u")   // ú
+             .replace (juce::String::fromUTF8 ("\xc3\xbc"), "u")   // ü
+             .replace (juce::String::fromUTF8 ("\xc3\xb1"), "n");  // ñ
+        juce::String out;
+        for (auto ch : s)
+        {
+            if (ch == ' ') out << '_';
+            else if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-') out << ch;
+        }
+        return out;
+    }
+    // Índice del clip de voz para una sección (o -1 si no hay). Conteo/Click/negativos = sin aviso.
+    int guideClipForSection (int secIdx) const
+    {
+        if (secIdx < 0) return -1;
+        const juce::String slug = slugSeccion (secNameOf (secIdx));
+        auto it = guideSlugToIdx.find (slug);
+        return (it != guideSlugToIdx.end()) ? it->second : -1;
+    }
+    // Localiza la pista "Guía" de la canción actual (para rutear/escalar el cue igual que ella).
+    void computeGuiaRoute()
+    {
+        guiaTrkIdx = -1;
+        for (int i = 0; i < numTracks && i < kMaxTracks; ++i)
+        {
+            const int fam = trackFamily[i];
+            const juce::String fn = (fam >= 0 && fam < familyNames.size()) ? familyNames[fam] : juce::String();
+            if (fn.equalsIgnoreCase (juce::String::fromUTF8 ("Gu\xc3\xad" "a")))
+            { guiaTrkIdx = i; break; }
+        }
+    }
+    // Arma el conteo hablado de 2 compases al inicio (uno,dos / uno,dos,tres,cuatro). Hilo de audio.
+    // Usa la GRILLA real de beats para que caiga clavado sobre los tiempos (sin drift por BPM).
+    void buildCountIn()
+    {
+        cntN = 0; cntIdx = 0;
+        if (! guideOn.load() || ! guideLoaded.load()) return;
+        if (sectionTimes.isEmpty()) return;
+        const double songStart = sectionTimes[0];
+        // Solo hay conteo si arrancamos ANTES del inicio de la canción (no al reanudar a mitad).
+        const double posNow = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
+        if (posNow >= songStart - 0.05) return;
+        const int bpb  = juce::jmax (1, beatsPerBar);
+        const double lead = 0.06;                    // disparar ~60 ms antes (ataque del clip)
+
+        // Posiciones del conteo por TEMPO (negras), "pegadas" (snap) al beat de grilla más cercano.
+        // Robusto ante grillas dañadas/dobladas (ej. Coritos quedó en corcheas): el tempo manda,
+        // la grilla solo afina. Así el conteo cae bien aunque la grilla tenga el doble de beats.
+        const double beatSec = (bpm > 0.0) ? 60.0 / bpm : 0.5;
+        int expected = (int) std::llround (songStart / beatSec);   // negras que caben en el conteo
+        expected = juce::jlimit (0, 2 * bpb, expected);            // como mucho 2 compases
+        if (expected <= 0) return;
+        std::vector<double> conteo;
+        for (int k = expected; k >= 1; --k)
+        {
+            const double t = songStart - k * beatSec;
+            if (t < -0.05) continue;
+            double best = t, bestd = beatSec * 0.4;   // tolerancia de snap (< medio beat)
+            for (int i = 0; i < currentBeatGrid.size(); ++i)
+            {
+                const double gb = currentBeatGrid[i];
+                if (gb >= songStart) break;           // grilla ordenada; más allá no sirve
+                const double dd = std::abs (gb - t);
+                if (dd < bestd) { bestd = dd; best = gb; }
+            }
+            conteo.push_back (best);
+        }
+        const int win = (int) conteo.size();
+        if (win <= 0) return;
+
+        auto addClip = [&] (double t, int ci)
+        {
+            if (cntN >= 8 || ci < 0) return;
+            cntAt[cntN] = (long long) (juce::jmax (0.0, t - lead) * deviceSampleRate);
+            cntClip[cntN] = ci; ++cntN;
+        };
+        auto idxOf = [this] (const char* slug) -> int
+        { auto it = guideSlugToIdx.find (juce::String (slug)); return it != guideSlugToIdx.end() ? it->second : -1; };
+
+        // Primera sección real (nombre que irá en el tiempo 1 del compás del nombre).
+        int firstSec = -999;
+        if (arrangementActive.load() && arrangement.size() > 0)
+        { for (int k = 0; k < arrangement.size(); ++k) if (arrangement[k] >= 0) { firstSec = arrangement[k]; break; } }
+        else if (sectionTimes.size() > 0) firstSec = 0;
+        const int clipFirst = (firstSec >= 0) ? guideClipForSection (firstSec) : -1;
+        const char* seq[4] = { "conteo_1", "conteo_2", "conteo_3", "conteo_4" };
+
+        if (win >= 2 * bpb)   // 2 compases completos: uno,dos | NOMBRE,dos,tres,cuatro
+        {
+            addClip (conteo[0],       idxOf ("conteo_1"));
+            addClip (conteo[bpb / 2], idxOf ("conteo_2"));
+            addClip (conteo[bpb],     clipFirst);
+            for (int k = 1; k < bpb && k < 4; ++k) addClip (conteo[bpb + k], idxOf (seq[k]));
+        }
+        else   // 1 compás (o menos): NOMBRE en el 1er tiempo del último compás, luego 2,3,4
+        {
+            const int base = juce::jmax (0, win - bpb);   // inicio del último compás dentro del conteo
+            addClip (conteo[base], clipFirst);
+            for (int k = 1; base + k < win && k < 4; ++k) addClip (conteo[base + k], idxOf (seq[k]));
+        }
+    }
+    // Descarga + decodifica la librería de clips de voz (una vez). Hilo de fondo.
+    void fetchGuideClips()
+    {
+        if (serverUrl.isEmpty() || serverToken.isEmpty()) return;
+        if (guideLoaded.load() || guideLoading.exchange (true)) return;
+        const juce::String url = serverUrl, tok = serverToken;
+        const double outSR = juce::jmax (8000.0, deviceSampleRate);
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::Thread::launch ([sp, url, tok, outSR]
+        {
+            juce::AudioFormatManager fm;
+            fm.registerBasicFormats();
+           #if JUCE_MAC || JUCE_IOS
+            fm.registerFormat (new juce::CoreAudioFormat(), false);   // decodifica MP3 vía el SO
+           #endif
+            juce::File cacheDir = npAppDir().getChildFile ("guia_clips");
+            cacheDir.createDirectory();
+
+            auto v = juce::JSON::parse (httpGet (url + "/api/live/guia/list", tok));
+            auto arr = v.getProperty ("clips", juce::var());
+            juce::StringArray slugs;
+            std::map<juce::String, juce::int64> srvBytes;   // tamaño del clip en el servidor (cache-busting)
+            if (auto* a = arr.getArray())
+                for (auto& e : *a)
+                {
+                    auto s = e.getProperty ("slug", "").toString();
+                    if (s.isNotEmpty()) { slugs.add (s); srvBytes[s] = (juce::int64) e.getProperty ("bytes", 0); }
+                }
+
+            std::vector<juce::AudioBuffer<float>> bufs;
+            std::map<juce::String, int> idx;
+            for (auto& slug : slugs)
+            {
+                juce::File f = cacheDir.getChildFile (slug + ".mp3");
+                const juce::int64 want = srvBytes.count (slug) ? srvBytes[slug] : 0;
+                // Re-descarga si falta o si el tamaño del servidor cambió (clip regenerado).
+                if (! f.existsAsFile() || f.getSize() <= 0 || (want > 0 && f.getSize() != want))
+                    httpDownload (url + "/api/live/guia/" + slug + ".mp3", tok, f);
+                if (! f.existsAsFile() || f.getSize() <= 0) continue;
+                std::unique_ptr<juce::AudioFormatReader> rd (fm.createReaderFor (f));
+                if (rd == nullptr || rd->lengthInSamples <= 0) continue;
+                const int srcLen = (int) rd->lengthInSamples;
+                juce::AudioBuffer<float> tmp ((int) juce::jmax ((juce::uint32) 1, rd->numChannels), srcLen);
+                rd->read (&tmp, 0, srcLen, 0, true, true);
+                juce::AudioBuffer<float> mono (1, srcLen);
+                for (int n = 0; n < srcLen; ++n)
+                {
+                    float sum = 0.0f; for (int c = 0; c < tmp.getNumChannels(); ++c) sum += tmp.getSample (c, n);
+                    mono.setSample (0, n, sum / juce::jmax (1, tmp.getNumChannels()));
+                }
+                const double ratio = rd->sampleRate / outSR;   // muestras fuente por muestra de salida
+                if (ratio <= 0.0) continue;
+                const int outLen = (int) std::ceil ((double) srcLen / ratio) + 2;
+                juce::AudioBuffer<float> dst (1, outLen);
+                dst.clear();
+                juce::LagrangeInterpolator interp;
+                interp.process (ratio, mono.getReadPointer (0), dst.getWritePointer (0), outLen);
+                idx[slug] = (int) bufs.size();
+                bufs.push_back (std::move (dst));
+            }
+
+            juce::MessageManager::callAsync ([sp, bufs = std::move (bufs), idx]() mutable
+            {
+                if (sp == nullptr) { return; }
+                sp->guideBuffers = std::move (bufs);
+                sp->guideSlugToIdx = idx;
+                sp->guideLoaded.store (true);
+                sp->guideLoading.store (false);
+            });
+        });
+    }
+
+    // ── Editor de arreglo (modo Editar): SECUENCIA ordenada (permite repetir/insertar/quitar) ──
+    void initEditSeq()
+    {
+        editSeq.clearQuick();
+        if (arrangementActive.load() && arrangement.size() > 0) { editSeq = arrangement; return; }
+        if (hayConteo()) editSeq.add (kConteoIdx);
+        for (int i = 0; i < sectionTimes.size(); ++i) editSeq.add (i);
+    }
+    void resetEditSeq()   // volver al mapa por defecto (todas en orden) y quitar arreglo
+    {
+        editSeq.clearQuick();
+        if (hayConteo()) editSeq.add (kConteoIdx);
+        for (int i = 0; i < sectionTimes.size(); ++i) editSeq.add (i);
+        arrLoadedName.clear(); clearArrangement();
+        const int sid = currentSongId();   // volver a "Original" (los arreglos guardados se conservan)
+        if (sid > 0) { songLastArr[sid] = juce::String(); saveArr(); }
+    }
+    juce::Array<int> naturalSeq() const
+    {
+        juce::Array<int> s;
+        if (hayConteo()) s.add (kConteoIdx);
+        for (int i = 0; i < sectionTimes.size(); ++i) s.add (i);
+        return s;
+    }
+    // Secuencia que se dibuja ahora: en Editar la que se edita; en vivo el arreglo activo; si no, natural.
+    juce::Array<int> mapSeq() const
+    {
+        if (editMode) return editSeq;
+        if (arrangementActive.load() && arrangement.size() > 0) return arrangement;
+        return naturalSeq();
+    }
+    double seqDur (int idx) const { return juce::jmax (0.0, secEndOf (idx) - secStartOf (idx)); }
+    double seqTotalOf (const juce::Array<int>& seq) const { double t = 0.0; for (int e : seq) t += seqDur (e); return t; }
+    double seqDispStartOf (const juce::Array<int>& seq, int k) const
+    { double t = 0.0; for (int i = 0; i < k && i < seq.size(); ++i) t += seqDur (seq[i]); return t; }
+    // Posición de pantalla (display) del cursor de reproducción
+    double seqDisplayNow() const
+    {
+        if (! arrangementActive.load()) return positionSeconds();   // natural: display == real
+        auto seq = mapSeq(); if (seq.isEmpty()) return 0.0;
+        const int st = juce::jlimit (0, seq.size() - 1, arrStep.load());
+        const double off = juce::jlimit (0.0, seqDur (seq[st]), positionSeconds() - secStartOf (seq[st]));
+        return seqDispStartOf (seq, st) + off;
+    }
+    // Display -> real (y devuelve el paso de la secuencia donde cae)
+    double seqRealFromDisplay (double dt, int* outStep = nullptr) const
+    {
+        auto seq = mapSeq(); if (seq.isEmpty()) { if (outStep) *outStep = 0; return juce::jmax (0.0, dt); }
+        double acc = 0.0;
+        for (int k = 0; k < seq.size(); ++k)
+        {
+            const double d = seqDur (seq[k]);
+            if (dt < acc + d || k == seq.size() - 1)
+            { if (outStep) *outStep = k; return secStartOf (seq[k]) + juce::jlimit (0.0, d, dt - acc); }
+            acc += d;
+        }
+        if (outStep) *outStep = seq.size() - 1;
+        return juce::jmax (0.0, dt);
+    }
+    void seekToDisplay (double dt)
+    {
+        const juce::Array<int> seq = mapSeq();
+        if (dt <= 0.05 && seq.size() > 0)   // al borde izquierdo: ir EXACTO al inicio del mapa (sin snap)
+        {
+            seekSeconds (secStartOf (seq[0]));
+            if (arrangementActive.load()) arrStep.store (0);
+            browsing = false;
+            return;
+        }
+        int st = -1;
+        const double real = seqRealFromDisplay (dt, &st);
+        if (arrangementActive.load() && st >= 0)
+        {
+            // En arreglo el tiempo es por tramos: NO ajustar a beat (el snap podía caer en
+            // otra sección real y "trabar" el deslizamiento). Caemos exacto en el display.
+            seekSeconds (real);
+            arrStep.store (st);
+        }
+        else
+            seekSeconds (snapToBeat (real));
+    }
+    int currentSongId() const
+    { return (currentSong >= 0 && currentSong < repertoire.size()) ? repertoire.getReference (currentSong).id : -1; }
+    // Crea o SOBRESCRIBE (si ya existe el nombre) un arreglo de la canción actual
+    void guardarSeqConNombre (const juce::String& nombre)
+    {
+        if (editSeq.size() == 0 || nombre.trim().isEmpty()) return;
+        const juce::String nom = nombre.trim();
+        const int sid = currentSongId();
+        // Aviso: al usar una versión personalizada, la guía de tracks pasa a guía dinámica (una vez por canción/sesión).
+        if (sid > 0 && guiaSelFor (sid) == 0 && guiaAvisada.insert (sid).second)
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+                juce::String::fromUTF8 ("Gu\xc3\xad" "a din\xc3\xa1mica"),
+                juce::String::fromUTF8 ("Est\xc3\xa1s usando una versi\xc3\xb3n personalizada de la canci\xc3\xb3n. "
+                                        "Se cambiar\xc3\xa1 tu gu\xc3\xad" "a de track por una gu\xc3\xad" "a din\xc3\xa1mica."));
+        arrLoadedName = nom;
+        setArrangement (editSeq, nom, false);
+        if (sid > 0)
+        {
+            auto& lst = songArrs[sid];
+            bool found = false;
+            for (auto& ar : lst) if (ar.first == nom) { ar.second = editSeq; found = true; break; }
+            if (! found) lst.push_back ({ nom, editSeq });
+            songLastArr[sid] = nom;
+            saveArr();
+            pushArreglosServer();   // sincronizar con la organización (servidor)
+        }
+    }
+    void guardarArreglo()           // "Guardar arreglo": sobrescribe el arreglo cargado (si no hay, pide nombre)
+    {
+        if (arrLoadedName.isNotEmpty()) guardarSeqConNombre (arrLoadedName);
+        else pedirNombreArreglo();
+    }
+    void guardarArregloComoNuevo() { pedirNombreArreglo (true); }   // siempre pide nombre y crea otro
+    void cerrarNombreDlg()
+    {
+        juce::Component::SafePointer<MainComponent> sp (this);
+        juce::MessageManager::callAsync ([sp] { if (sp) sp->nombreDlg.reset(); });
+    }
+    void pedirNombreArreglo (bool comoNuevo = false)
+    {
+        struct Dlg : public juce::Component
+        {
+            juce::TextEditor field;
+            juce::TextButton okBtn, cancelBtn;
+            juce::String titulo { juce::String::fromUTF8 ("Guardar arreglo") };
+            juce::String subt   { juce::String::fromUTF8 ("Pon\xc3\xa9 un nombre para este arreglo") };
+            std::function<void (juce::String)> onOk;
+            std::function<void ()> onClose;
+            Dlg()
+            {
+                setAlwaysOnTop (true);
+                field.setText ("Mi arreglo", false);
+                field.setJustification (juce::Justification::centredLeft);
+                field.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff1c1c1c));
+                field.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+                field.setColour (juce::TextEditor::outlineColourId, juce::Colour (0x33ffffff));
+                field.setColour (juce::TextEditor::focusedOutlineColourId, juce::Colour (0x662E6BE6));
+                field.setIndents (12, 0);
+                field.onReturnKey = [this] { confirmar(); };
+                field.onEscapeKey = [this] { if (onClose) onClose(); };
+                addAndMakeVisible (field);
+                okBtn.setButtonText (juce::String::fromUTF8 ("Guardar"));
+                okBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2E6BE6));
+                okBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+                okBtn.onClick = [this] { confirmar(); };
+                addAndMakeVisible (okBtn);
+                cancelBtn.setButtonText (juce::String::fromUTF8 ("Cancelar"));
+                cancelBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a2a2a));
+                cancelBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe6e6e6));
+                cancelBtn.onClick = [this] { if (onClose) onClose(); };
+                addAndMakeVisible (cancelBtn);
+            }
+            juce::Rectangle<int> panel() const { return getLocalBounds().withSizeKeepingCentre (380, 208); }
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (juce::Colour (0xB0000000));
+                auto p = panel().toFloat();
+                g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (p, 16.0f);
+                g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (p, 16.0f, 1.2f);
+                auto t = panel();
+                g.setColour (juce::Colours::white); g.setFont (juce::Font (17.0f, juce::Font::bold));
+                g.drawText (titulo, t.getX(), t.getY() + 20, t.getWidth(), 24, juce::Justification::centred);
+                g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (13.0f));
+                g.drawText (subt, t.getX() + 20, t.getY() + 48, t.getWidth() - 40, 18, juce::Justification::centred);
+                g.setColour (juce::Colour (0xff9aa0a6)); g.setFont (juce::Font (11.5f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("NOMBRE"), fieldRect().getX(), fieldRect().getY() - 18, 120, 15,
+                            juce::Justification::centredLeft);
+            }
+            juce::Rectangle<int> fieldRect() const
+            {
+                auto p = panel(); return juce::Rectangle<int> (p.getX() + 40, p.getY() + 96, p.getWidth() - 80, 38);
+            }
+            void resized() override
+            {
+                field.setBounds (fieldRect());
+                auto p = panel();
+                const int bw = (p.getWidth() - 80 - 14) / 2, by = p.getBottom() - 56, bh = 40;
+                okBtn.setBounds (p.getX() + 40, by, bw, bh);
+                cancelBtn.setBounds (p.getX() + 40 + bw + 14, by, bw, bh);
+            }
+            void mouseDown (const juce::MouseEvent& e) override { if (! panel().contains (e.getPosition()) && onClose) onClose(); }
+            void confirmar() { const auto nom = field.getText().trim(); if (nom.isNotEmpty() && onOk) onOk (nom); if (onClose) onClose(); }
+            void enfocar() { field.grabKeyboardFocus(); field.selectAll(); }
+        };
+
+        auto* d = new Dlg();
+        d->field.setText (dlgInicial.isNotEmpty() ? dlgInicial : juce::String ("Mi arreglo"), false);
+        if (dlgTitulo.isNotEmpty()) d->titulo = dlgTitulo;
+        else if (comoNuevo)         d->titulo = juce::String::fromUTF8 ("Guardar como nuevo");
+        if (dlgSubt.isNotEmpty())   d->subt = dlgSubt;
+        else if (comoNuevo)         d->subt = juce::String::fromUTF8 ("Pon\xc3\xa9 un nombre para el nuevo arreglo");
+        if (dlgOkTxt.isNotEmpty())  d->okBtn.setButtonText (dlgOkTxt);
+        juce::Component::SafePointer<MainComponent> sp (this);
+        auto cb = dlgOnOk;   // si hay callback custom (renombrar), usarlo; si no, guardar normal
+        d->onOk    = [sp, cb] (juce::String nom) { if (sp) { if (cb) cb (nom); else sp->guardarSeqConNombre (nom); sp->repaint(); } };
+        d->onClose = [sp] { if (sp) sp->cerrarNombreDlg(); };
+        nombreDlg.reset (d);
+        addAndMakeVisible (d);
+        d->setBounds (getLocalBounds());
+        d->toFront (true);
+        d->enfocar();
+        // limpiar los parámetros de un solo uso
+        dlgTitulo.clear(); dlgSubt.clear(); dlgInicial.clear(); dlgOkTxt.clear(); dlgOnOk = nullptr;
+    }
+    // Diálogo para RENOMBRAR un arreglo (mismo estilo, con el nombre actual precargado).
+    void pedirRenombrarArreglo (int sid, juce::String viejo)
+    {
+        dlgTitulo  = juce::String::fromUTF8 ("Renombrar arreglo");
+        dlgSubt    = juce::String::fromUTF8 ("Nuevo nombre para el arreglo");
+        dlgInicial = viejo;
+        dlgOkTxt   = juce::String::fromUTF8 ("Renombrar");
+        dlgOnOk    = [this, sid, viejo] (juce::String nuevo) { renombrarArreglo (sid, viejo, nuevo); };
+        pedirNombreArreglo();
+    }
+    void renombrarArreglo (int sid, juce::String viejo, juce::String nuevo)
+    {
+        nuevo = nuevo.trim();
+        if (nuevo.isEmpty() || nuevo == viejo) return;
+        auto it = songArrs.find (sid);
+        if (it != songArrs.end())
+        {
+            for (auto& ar : it->second) if (ar.first == nuevo) return;   // evitar nombre duplicado
+            for (auto& ar : it->second) if (ar.first == viejo) { ar.first = nuevo; break; }
+        }
+        auto lit = songLastArr.find (sid);
+        if (lit != songLastArr.end() && lit->second == viejo) songLastArr[sid] = nuevo;
+        if (arrLoadedName == viejo) { arrLoadedName = nuevo; arrangementName = nuevo; }
+        saveArr();
+        pushArreglosServer();
+        rebuildRepertoireStrip();
+        // refrescar la caja "Arreglo" del diálogo si está abierto para esa canción
+        if (repEdit.isVisible() && repEdit.songId == sid)
+        {
+            juce::String selName = repEdit.selectedArrName();
+            if (selName == viejo) selName = nuevo;
+            repEdit.arrNames = arrNamesFor (sid);
+            repEdit.selArrIdx = (selName == juce::String::fromUTF8 ("Original"))
+                                  ? 0 : repEdit.arrNames.indexOf (selName) + 1;
+            repEdit.repaint();
+        }
+        repaint();
+    }
+    // + : lista "Insertar sección" DESPUÉS del slot k — altura FIJA con scroll (permite repetir cualquier sección)
+    void mostrarMenuInsertar (int k)
+    {
+        struct Picker : public juce::Component, public juce::ListBoxModel
+        {
+            juce::ListBox list { "secpick", nullptr };
+            juce::StringArray items;
+            juce::Array<int> ids;
+            std::function<void (int)> onPick;
+            Picker()
+            {
+                list.setModel (this);
+                list.setRowHeight (30);
+                list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff202329));
+                list.setColour (juce::ListBox::outlineColourId, juce::Colour (0x33ffffff));
+                list.setOutlineThickness (1);
+                addAndMakeVisible (list);
+            }
+            int getNumRows() override { return items.size(); }
+            void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool sel) override
+            {
+                if (row < 0 || row >= items.size()) return;
+                if (sel) { g.setColour (juce::Colour (0x552E6BE6)); g.fillRect (0, 0, w, h); }
+                g.setColour (row == items.size() - 1 ? juce::Colour (0xff9aa0a6) : juce::Colours::white);
+                g.setFont (juce::Font (14.0f));
+                g.drawText (items[row], 12, 0, w - 16, h, juce::Justification::centredLeft);
+                g.setColour (juce::Colour (0x12ffffff));
+                g.fillRect (0, h - 1, w, 1);
+            }
+            void listBoxItemClicked (int row, const juce::MouseEvent&) override
+            {
+                if (row >= 0 && row < ids.size() && onPick) onPick (ids[row]);
+            }
+            void resized() override { list.setBounds (getLocalBounds()); }
+        };
+
+        auto* p = new Picker();
+        if (hayConteo()) { p->items.add (juce::String::fromUTF8 ("Cuenta Inicial")); p->ids.add (kConteoIdx); }
+        // Nombres de sección (usa sectionNames; si faltara alguno, cae a "Sección N")
+        const int nSec = juce::jmax (sectionNames.size(), sectionTimes.size());
+        for (int i = 0; i < nSec; ++i)
+        {
+            const juce::String nm = (i < sectionNames.size() && sectionNames[i].isNotEmpty())
+                                      ? sectionNames[i]
+                                      : (juce::String::fromUTF8 ("Secci\xc3\xb3n ") + juce::String (i + 1));
+            p->items.add (nm); p->ids.add (i);
+        }
+        p->items.add (juce::String::fromUTF8 ("Restablecer el mapa por defecto")); p->ids.add (9999);
+        p->list.updateContent();   // IMPRESCINDIBLE: refrescar el nº de filas tras poblar items
+        p->setSize (190, 250);   // altura FIJA (~8 filas visibles); el resto se ve con scroll
+
+        juce::Component::SafePointer<MainComponent> sp (this);
+        Picker* pp = p;
+        p->onPick = [sp, k, pp] (int id)
+        {
+            if (sp != nullptr)
+            {
+                if (id == 9999) sp->resetEditSeq();
+                else { const int pos = juce::jlimit (0, sp->editSeq.size(), k + 1); sp->editSeq.insert (pos, id); }
+                sp->repaint();
+            }
+            if (auto* cob = pp->findParentComponentOfClass<juce::CallOutBox>()) cob->dismiss();
+        };
+        const auto mp = juce::Desktop::getInstance().getMousePosition();
+        juce::CallOutBox::launchAsynchronously (std::unique_ptr<juce::Component> (p),
+                                                juce::Rectangle<int> (mp.x, mp.y, 1, 1), nullptr);
+    }
+    // Dibuja el arreglo como la forma de onda COMPACTADA (secciones pegadas, sin huecos) con − y +
+    // Dibuja el mapping como el ARREGLO: solo las secciones del arreglo, pegadas (sin huecos),
+    // con la forma de onda de cada una y pills de nombre — igual look que el mapa normal.
+    // editable = modo Editar (muestra − y + chiquitos). Guarda el layout para el seek/playhead.
+    void drawArrMap (juce::Graphics& g, juce::Rectangle<int> inner, const juce::Array<int>& seq, bool editable)
+    {
+        arrSegRects.clearQuick(); arrSegSec.clearQuick();
+        if (editable) { slotMinusRect.clear(); addChipRect = {}; }
+        g.setColour (juce::Colour (0xff0a0a0a)); g.fillRect (inner);   // tapa la onda/bloques lineales de abajo
+        const int n = seq.size();
+        if (n <= 0)
+        {
+            g.setColour (juce::Colour (0xffb0b0b0)); g.setFont (juce::Font (13.0f));
+            g.drawText (juce::String::fromUTF8 ("Arreglo vac\xc3\xado \xe2\x80\x94 tocá + para agregar secciones"), inner.withTrimmedRight (40), juce::Justification::centred);
+            if (editable)   // + para volver a agregar
+            {
+                juce::Rectangle<int> add (inner.getRight() - 30, inner.getCentreY() - 13, 26, 26);
+                g.setColour (juce::Colour (0xff2E6BE6)); g.fillEllipse (add.toFloat());
+                g.setColour (juce::Colours::white); g.setFont (juce::Font (18.0f, juce::Font::bold));
+                g.drawText ("+", add, juce::Justification::centred);
+                addChipRect = add;
+            }
+            return;
+        }
+        double tot = 0.0;
+        for (int k = 0; k < n; ++k) tot += juce::jmax (0.25, secEndOf (seq[k]) - secStartOf (seq[k]));
+        if (tot <= 0.0) return;
+        const int curStep = (! editable && arrangementActive.load()) ? arrStep.load() : -1;
+        const double posNow = positionSeconds();
+        int x = inner.getX();
+        for (int k = 0; k < n; ++k)
+        {
+            const int s = seq[k];
+            const bool isConteo = (s == kConteoIdx);
+            const double d = juce::jmax (0.25, secEndOf (s) - secStartOf (s));
+            int w = (k == n - 1) ? (inner.getRight() - x) : (int) std::round (d / tot * inner.getWidth());
+            if (w < 6) w = 6;
+            juce::Rectangle<int> seg (x, inner.getY(), w, inner.getHeight());
+            arrSegRects.add (seg); arrSegSec.add (s);
+            auto in2 = seg.reduced (1, 1);
+            // onda del segmento
+            if (! isConteo && thumb.getTotalLength() > 0.0)
+            {
+                g.setColour (juce::Colour (0xffced1d6));
+                thumb.drawChannels (g, in2, secStartOf (s), secEndOf (s), 1.2f);
+            }
+            else if (isConteo)
+            {
+                g.setColour (juce::Colour (0x14ffd27f)); g.fillRect (in2);
+            }
+            // resaltar el paso que suena (playback)
+            if (! editable && k == curStep) { g.setColour (juce::Colour (0x15ffffff)); g.fillRect (seg); }
+            // divisoria
+            if (k > 0) { g.setColour (juce::Colour (0x33ffffff)); g.fillRect (x - 1, inner.getY(), 2, inner.getHeight()); }
+            // nombre (chip arriba-izquierda, igual que el mapa normal)
+            {
+                const juce::String nm = secNameOf (s);
+                const float tw = juce::jmin ((float) seg.getWidth() - 8.0f, (float) nm.length() * 7.0f + 14.0f);
+                juce::Rectangle<float> chip ((float) seg.getX() + 4.0f, (float) seg.getY() + 3.0f, juce::jmax (16.0f, tw), 18.0f);
+                g.setColour (juce::Colour (0xcc0c0c0c)); g.fillRoundedRectangle (chip, 5.0f);
+                g.setColour (juce::Colours::white); g.setFont (juce::Font (11.5f, juce::Font::bold));
+                g.drawText (nm, chip.reduced (6.0f, 0.0f), juce::Justification::centredLeft, true);
+            }
+            // − quitar esta sección (solo en edición) — la quita y el resto se compacta
+            if (editable)
+            {
+                const int r = 9;
+                juce::Rectangle<int> minus (seg.getX() + 4, seg.getBottom() - 2 * r - 5, 2 * r, 2 * r);
+                g.setColour (juce::Colour (0xffE5534B)); g.fillEllipse (minus.toFloat());
+                g.setColour (juce::Colours::white); g.setFont (juce::Font (13.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), minus, juce::Justification::centred);
+                slotMinusRect[s] = minus;
+            }
+            // playhead (playback): dentro del segmento que suena
+            if (! editable && k == curStep && posNow >= secStartOf (s) - 0.02 && posNow <= secEndOf (s) + 0.05)
+            {
+                const float frac = (float) ((posNow - secStartOf (s)) / juce::jmax (0.05, secEndOf (s) - secStartOf (s)));
+                const float px = seg.getX() + juce::jlimit (0.0f, 1.0f, frac) * seg.getWidth();
+                g.setColour (juce::Colours::white.withAlpha (0.10f));
+                g.fillRect (juce::Rectangle<float> ((float) seg.getX(), (float) seg.getY(), px - seg.getX(), (float) seg.getHeight()));
+                g.setColour (juce::Colours::white);
+                g.fillRect (px - 1.0f, (float) inner.getY(), 2.0f, (float) inner.getHeight());
+            }
+            x += w;
+        }
+    }
     juce::String serverUrl, serverToken, serverSession;
     juce::Array<SongEntry> repertoire;
     juce::Array<double> songMaster;   // master (dB) independiente por cancion
@@ -4924,11 +6518,46 @@ private:
     juce::OwnedArray<juce::BufferingAudioSource> bufferingSources;
     juce::OwnedArray<juce::ResamplingAudioSource> resamplers;
     juce::Array<double> fileRates;
+    // ── Fase D: "cola" de la canción saliente para el crossfade (Sobreponer) ──
+    juce::OwnedArray<juce::AudioFormatReaderSource> readerSources2;
+    juce::OwnedArray<juce::BufferingAudioSource> bufferingSources2;
+    juce::OwnedArray<juce::ResamplingAudioSource> resamplers2;
+    juce::Array<double> fileRates2;
+    juce::CriticalSection tailLock;                // protege el segundo grafo (aparte de graphLock)
+    std::atomic<bool> tailActive { false };        // hay cola sonando (fade-out)
+    std::atomic<int>  autoTrans { 0 };             // transición armada al terminar: 0 off, 1 Autolink, 2 Sobreponer
+    std::atomic<int>  autoReqPending { 0 };        // pedido del hilo de audio al timer (0 none, 1 autolink, 2 crossfade)
+    double tailGainCur = 0.0;                       // ganancia actual de la cola (hilo de audio)
+    double tailFadeSec = 3.0;                       // duración del fade-out (2 compases del saliente)
+    juce::AudioBuffer<float> tailTemp;             // buffer temporal del tail (dimensionado en prepareToPlay)
     juce::StringArray trackNames;
     juce::StringArray trackServerFam;          // familia (del servidor) por track
     juce::StringArray curFamFiles, curFamNames;
     juce::Array<double> sectionTimes;
     juce::StringArray sectionNames;
+    // ── Arreglo de la canción (Fase A) ──
+    // arrangement = índices de sección en el orden a reproducir (ej: [0,2,2,3]).
+    //   Cada valor indexa sectionTimes/sectionNames. Vacío/inactivo = orden lineal normal.
+    //   Se lee/escribe bajo graphLock (igual que sectionTimes), seguro para el hilo de audio.
+    juce::Array<int>  arrangement;
+    std::atomic<bool> arrangementActive { false };
+    std::atomic<int>  arrStep { 0 };          // paso actual dentro de arrangement (hilo audio <-> UI)
+    std::atomic<bool> arrLoop { false };      // al terminar el arreglo, reiniciarlo
+    juce::String      arrangementName;        // nombre del arreglo cargado (para la UI)
+    // Editor de arreglo (modo Editar): línea de tiempo COMPACTADA del arreglo (sin huecos)
+    static constexpr int kConteoIdx = -2;
+    // Edición: SECUENCIA ordenada del arreglo (permite repetir/insertar/quitar secciones)
+    juce::Array<int> editSeq;                                        // secuencia que se edita (índices de sección / kConteoIdx)
+    std::map<int, juce::Rectangle<int>> slotMinusRect, slotPlusRect; // rects − (quitar) y + (insertar) por slot de la secuencia
+    juce::Rectangle<int> addChipRect;                                // (sin uso con el modelo de secuencia; se mantiene por compat)
+    // Reproducción con arreglo: mapping compactado (solo secciones del arreglo, pegadas)
+    juce::Array<juce::Rectangle<int>> arrSegRects;                   // rect de cada segmento del arreglo dibujado (seek/tap)
+    juce::Array<int> arrSegSec;                                      // sección (o kConteoIdx) de cada segmento dibujado
+    juce::Array<juce::Rectangle<int>> arrChipRects;                  // rect del bloque de cada sección en vivo (tap = encolar salto)
+    std::atomic<int>  queuedSection { -1 };                          // Fase B (natural): sección encolada para saltar al terminar la actual
+    std::atomic<int>  queuedFromSec { -1 };                          // Fase B (natural): sección donde se encoló (se salta al terminar ESA)
+    std::atomic<int>  queuedStep { -1 };                             // Fase B (arreglo): PASO encolado; salta al terminar la sección actual
+    juce::String      arrLoadedName;                                 // nombre del arreglo cargado ("" = nuevo, aún sin guardar)
     juce::Array<juce::File> stemFiles;
     double bpm = 0.0;
     double gridBaseBpm = 0.0;   // tempo base de la grilla (mediana) para escalar el BPM mostrado en medleys
@@ -4990,6 +6619,7 @@ private:
 
     bool browsing = false, isDragging = false, dragSeeks = false;
     bool lastPlaying = false;
+    int  pendingChipK = -1;                 // slot tocado en vivo (acción al soltar: tap=encolar, drag=deslizar)
     double dragStartCenter = 0.0, browseCenter = 0.0;
     juce::uint32 lastInteractionMs = 0;
 
@@ -5030,7 +6660,45 @@ private:
     std::atomic<bool> loopOnce { false };       // repetir una vez
     std::atomic<double> loopStartSec { -1.0 };
     std::atomic<double> loopEndSec { -1.0 };
+    // Anti-click en saltos de arreglo no contiguos: fundido de entrada corto en el destino.
+    std::atomic<double> arrFadeStart { -1.0 };
+    std::atomic<double> arrFadeEnd   { -1.0 };
+    static constexpr double kArrFadeSec = 0.020;   // 20 ms
 
+    // ── Guía dinámica: anuncia la próxima sección (voz) 1 compás antes, por la ruta/fader de "Guía" ──
+    std::atomic<bool> guideOn { false };                       // toggle (persistente)
+    std::vector<juce::AudioBuffer<float>> guideBuffers;        // clips mono @ deviceSampleRate (idx)
+    std::map<juce::String, int> guideSlugToIdx;                // slug de sección -> índice de buffer
+    std::atomic<bool> guideLoaded { false };
+    std::atomic<bool> guideLoading { false };
+    std::atomic<int>  cuePendingIdx { -1 };                    // clip a disparar (lo pone el timer)
+    std::atomic<long long> cueFireAtSample { -1 };             // instante de disparo (muestras del dispositivo)
+    int cueSchedStep = -1000;                                  // paso del arreglo ya programado (hilo timer)
+    int linSchedSec  = -1000;                                  // sección ya programada en modo lineal
+    bool guideWasPlaying = false;                              // detectar inicio de Play (anunciar 1ª sección)
+    bool guideWasLoop = false;                                 // detectar entrada/salida de repetición (re-programar cue)
+    std::atomic<bool> cueAnnounceLanded { false };             // salto inmediato: anunciar la sección donde se cae
+    int cueActiveBuf = -1;                                     // clip sonando (hilo de audio)
+    int cuePos = 0;
+    int guiaTrkIdx = -1;                                       // pista "Guía" (ruta/fader) de la canción actual
+    // Conteo hablado del inicio (2 compases: uno,dos / uno,dos,tres,cuatro)
+    long long cntAt[8] = { 0 };                               // instante (muestras del dispositivo) de cada número
+    int cntClip[8] = { -1 };                                  // índice de clip (conteo_1..4) de cada número
+    int cntN = 0, cntIdx = 0;                                 // total y siguiente a disparar
+
+    // Arreglos guardados por canción (varios, con nombre). Persistente en arreglos.json por id.
+    std::map<int, std::vector<std::pair<juce::String, juce::Array<int>>>> songArrs;  // id -> [{nombre, secuencia}]
+    std::map<int, juce::String> songLastArr;   // id -> último arreglo aplicado ("" = Original)
+    std::map<int, int> songGuia;               // id -> guía elegida (0 = Tracks, 1 = Neural). Ausente = Tracks.
+    std::set<int> songRepTrack;                // ids que habilitaron repetir/∞ en modo Track
+    std::map<juce::String, std::map<int,int>> transPorSetlist;   // setlistId -> (songId -> modo 1/2) transición al terminar
+    bool repetirEnTrack = false;               // la canción actual permite repetir/∞ en Track
+    std::set<int> guiaAvisada;                 // ids ya avisados del cambio a guía dinámica (una vez por sesión)
+    juce::String pendingArrName;               // arreglo elegido en el diálogo de carga, a aplicar en loadSong
+    std::unique_ptr<juce::Component> nombreDlg;  // diálogo propio (redondeado) para nombrar el arreglo
+    // Parámetros de un solo uso para reutilizar el diálogo de nombre (guardar / renombrar)
+    juce::String dlgTitulo, dlgSubt, dlgInicial, dlgOkTxt;
+    std::function<void (juce::String)> dlgOnOk;
     // #2 punto de inicio/fin por canción (-1 = sin definir)
     std::map<int, std::pair<double,double>> songInOut;   // id de canción -> {inicio, fin}
     std::atomic<double> songInSec  { -1.0 };
@@ -5038,6 +6706,8 @@ private:
 
     // #3 sección de click: bloque de 2 compases DESPUÉS del final, con metrónomo sintetizado
     bool trackIsClick[kMaxTracks] = { false };
+    bool tailIsClick[kMaxTracks] = { false };          // Fase D: pistas de click de la saliente (no suenan en la cola del crossfade)
+    bool trackIsGuia[kMaxTracks]  = { false };          // pista "Guía" del usuario (se silencia con guía Neural)
     std::set<int> clickSecSongs;                 // ids de canciones con sección de click (persistente)
     bool songHasClickSec = false;                // la canción actual tiene sección de click
     std::atomic<bool> clickSecArmed { false };   // hay sección de click (para el hilo de audio)
@@ -5093,12 +6763,13 @@ private:
     TriIconButton barPrevBtn, barNextBtn;         // flechas de navegacion por seccion (icono vectorial)
     PlayIconButton playButton;
     FadeIconButton fadeButton;
+    juce::TextButton transBtn;                    // Fase D: transición en vivo a la siguiente canción
     juce::Array<double> preFadeVals;
     int fadeDir = 0;            // -1 bajando, +1 subiendo, 0 quieto
     bool fadedDown = false;
     juce::Label connStatus, timeLabel, masterLabel;
     juce::Slider masterSlider;
-    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn, keyMapBtn;
+    juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn, keyMapBtn, saveArrBtn, saveAsNewBtn;
     IconButton faderViewBtn, repeatBtn, infiniteBtn, settingsBtn, repertoireBtn;
     FaderStripComp faderStrip;
     HScrollViewport faderViewport;

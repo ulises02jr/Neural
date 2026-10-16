@@ -77,3 +77,28 @@ target_link_libraries(NeuralPlaySpike
 if (APPLE)
     target_link_libraries(NeuralPlaySpike PRIVATE "-framework Security")
 endif()
+
+# ─────────────────────────────────────────────────────────────
+# Windows
+#   Fase 1: arranca con WASAPI (viene activo por defecto en JUCE, no requiere
+#           nada extra). Suficiente para probar la app en Windows.
+#   Fase 2: soporte ASIO para las 32 salidas con interfaz de audio pro.
+#           Se activa con:  -DNP_ENABLE_ASIO=ON -DASIO_SDK_DIR=<ruta al ASIO SDK>
+#           (el SDK de ASIO se descarga gratis de Steinberg; no se versiona aquí).
+# ─────────────────────────────────────────────────────────────
+if (WIN32)
+    # Windows Credential Manager (guardado seguro de contraseña) vive en Advapi32.
+    target_link_libraries(NeuralPlaySpike PRIVATE Advapi32)
+
+    option(NP_ENABLE_ASIO "Compilar con soporte ASIO (requiere ASIO SDK de Steinberg)" OFF)
+    if (NP_ENABLE_ASIO)
+        if (NOT DEFINED ASIO_SDK_DIR)
+            message(FATAL_ERROR "NP_ENABLE_ASIO=ON requiere -DASIO_SDK_DIR=<ruta a la carpeta del ASIO SDK>")
+        endif()
+        target_compile_definitions(NeuralPlaySpike PRIVATE JUCE_ASIO=1)
+        target_include_directories(NeuralPlaySpike PRIVATE "${ASIO_SDK_DIR}/common")
+        message(STATUS "NeuralPlay: ASIO activado (SDK: ${ASIO_SDK_DIR})")
+    else()
+        message(STATUS "NeuralPlay (Windows): usando WASAPI por defecto (ASIO desactivado)")
+    endif()
+endif()

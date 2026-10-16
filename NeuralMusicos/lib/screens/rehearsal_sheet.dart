@@ -51,6 +51,8 @@ class _RehearsalBody extends StatefulWidget {
 class _RehearsalBodyState extends State<_RehearsalBody> {
   bool _cargando = true;
   String? _status;
+  bool _tonoNoListo = false;   // el tono pedido no esta renderizado -> ofrecer "Generar"
+  bool _generando = false;     // render en curso (disparado desde la app)
   final List<_Stem> _stems = [];
   final List<_Sec> _secciones = [];
   String? _famActiva;
@@ -66,6 +68,12 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   int _cacheBytes = 0;
   double _dragAcc = 0;
 
+  // Arreglo activo (índices de sección reales, con repeticiones). Vacío = canción completa.
+  // Cuando hay arreglo, el AUDIO del ensayo salta de sección en sección siguiendo el orden.
+  List<int> _arr = const [];
+  int _arrStep = 0;
+  bool get _arrOn => _arr.isNotEmpty;
+
   @override
   void initState() {
     super.initState();
@@ -80,10 +88,55 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     super.dispose();
   }
 
+  /// Dispara el render del tono en el servidor y hace polling del progreso.
+  /// Al terminar, recarga las pistas (que ya quedan listas).
+  Future<void> _generarTono() async {
+    setState(() {
+      _generando = true;
+      _tonoNoListo = false;
+      _status = '⏳ Generando el tono…';
+    });
+    final ok = await Api.I.pedirRenderTono(widget.numero, widget.sem);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _generando = false;
+        _tonoNoListo = true;
+        _status = 'No pude iniciar la generación del tono. Probá de nuevo.';
+      });
+      return;
+    }
+    // Polling cada 2.5 s hasta que el tono quede listo (o se agote el tiempo).
+    const maxIntentos = 160; // ~6.5 min tope
+    for (int i = 0; i < maxIntentos; i++) {
+      await Future.delayed(const Duration(milliseconds: 2500));
+      if (!mounted) return;
+      final e = await Api.I.estadoRenderTono(widget.numero, widget.sem);
+      if (!mounted) return;
+      if (e == null) continue;
+      if (e['listo'] == true) {
+        await _cargar();   // ya está: carga las pistas y arranca el ensayo
+        return;
+      }
+      final prog = (e['progreso'] ?? '').toString();
+      setState(() {
+        _status = prog.isNotEmpty ? '⏳ Generando el tono…  $prog' : '⏳ Generando el tono…';
+      });
+    }
+    // Se tardó demasiado: dejar que reintente.
+    if (!mounted) return;
+    setState(() {
+      _generando = false;
+      _tonoNoListo = true;
+      _status = 'El tono está tardando más de lo normal. Probá de nuevo en un momento.';
+    });
+  }
+
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
       _status = null;
+      _tonoNoListo = false;
     });
     final j = await Api.I.pistas(widget.numero, widget.sem);
     if (!mounted) return;
@@ -99,8 +152,9 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       final t = widget.sem;
       setState(() {
         _cargando = false;
+        _tonoNoListo = true;
         _status = '🎚️ El tono ${t > 0 ? '+' : ''}$t todavía no está preparado.\n'
-            'Abrí la canción en su tono original o esperá a que se genere.';
+            'Podés generarlo ahora (tarda un momento) o abrir la canción en su tono original.';
       });
       return;
     }
@@ -126,6 +180,12 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     // Marcadores para que el chart siga la musica (los lee ChartScreen).
     AudioEngine.I.loadedSecs =
         _secciones.where((s) => s.i >= 0).map((s) => [s.t, s.i.toDouble()]).toList();
+
+    // Arreglo activo de la canción (si tiene): el ensayo seguirá ese orden.
+    _arr = await Api.I.songArrangement(widget.numero);
+    _arrStep = 0;
+    AudioEngine.I.arrStep = _arrOn ? 0 : null;   // el chart resalta el paso exacto (o sync normal)
+    if (!mounted) return;
 
     if (_stems.isEmpty) {
       setState(() { _cargando = false; _status = 'No hay pistas para este tono.'; });
@@ -179,6 +239,14 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         _status = null;
         _cacheBytes = bytes;
       });
+      // Con arreglo: posicionar el cursor en el inicio del primer paso.
+      if (_arrOn) {
+        _arrStep = 0;
+        final r0 = _rangeReal(_arr[0]);
+        _pos = r0[0];
+        try { await AudioEngine.I.seek(r0[0]); } catch (_) {}
+        if (mounted) setState(() {});
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -195,6 +263,48 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       if (!_playing) return;
       final p = await AudioEngine.I.position();
       if (!mounted) return;
+
+      // ── Con arreglo: el audio salta de sección en sección en el orden del arreglo ──
+      if (_arrOn) {
+        final rg = _rangeReal(_arr[_arrStep.clamp(0, _arr.length - 1)]);
+        if (_loop && _loopRange != null && p >= _loopRange![1] - 0.05) {
+          await AudioEngine.I.seek(_loopRange![0]);
+          setState(() => _pos = _loopRange![0]);
+          return;
+        }
+        if (p >= rg[1] - 0.05) {   // terminó el tramo actual → siguiente paso del arreglo
+          final next = _arrStep + 1;
+          if (next >= _arr.length) {
+            final r0 = _rangeReal(_arr[0]);
+            if (_loop) {            // repetir todo el arreglo
+              _arrStep = 0; _pubArrStep();
+              await AudioEngine.I.seek(r0[0]);
+              setState(() => _pos = r0[0]);
+            } else {
+              await AudioEngine.I.pause();
+              _arrStep = 0; _pubArrStep();
+              await AudioEngine.I.seek(r0[0]);
+              setState(() { _playing = false; _pos = r0[0]; });
+              _timer?.cancel();
+            }
+            return;
+          }
+          final prevEnd = rg[1];
+          _arrStep = next; _pubArrStep();
+          final rn = _rangeReal(_arr[_arrStep]);
+          if ((rn[0] - prevEnd).abs() > 0.05) {
+            await AudioEngine.I.seek(rn[0]);   // salto no contiguo → reposicionar (con fundido nativo)
+            setState(() => _pos = rn[0]);
+          } else {
+            setState(() => _pos = p);          // contiguo: el audio sigue sin cortar (seamless)
+          }
+          return;
+        }
+        setState(() => _pos = p);
+        return;
+      }
+
+      // ── Sin arreglo: canción completa (comportamiento original) ──
       if (_loop && _loopRange != null && p >= _loopRange![1] - 0.05) {
         await AudioEngine.I.seek(_loopRange![0]);
         setState(() => _pos = _loopRange![0]);
@@ -217,7 +327,16 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       setState(() => _playing = false);
       _timer?.cancel();
     } else {
-      if (_pos >= _dur) _pos = 0;
+      if (_arrOn) {
+        final rg = _rangeReal(_arr[_arrStep.clamp(0, _arr.length - 1)]);
+        // Si estamos fuera del tramo actual, arrancar al inicio de ese paso.
+        if (_pos < rg[0] - 0.05 || _pos >= rg[1] - 0.05) {
+          _pos = rg[0];
+          await AudioEngine.I.seek(rg[0]);
+        }
+      } else {
+        if (_pos >= _dur) _pos = 0;
+      }
       await AudioEngine.I.play(_pos);
       setState(() => _playing = true);
       _startTimer();
@@ -228,6 +347,32 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     if (!_audioOk) return;
     await AudioEngine.I.seek(t);
     setState(() => _pos = t);
+  }
+
+  // Ir al inicio: con arreglo, al primer paso; sin arreglo, a 0.
+  Future<void> _goStart() async {
+    if (_arrOn) {
+      _arrStep = 0;
+      _pubArrStep();
+      final r0 = _rangeReal(_arr[0]);
+      await _seek(r0[0]);
+    } else {
+      await _seek(0);
+    }
+  }
+
+  // Publica el paso exacto del arreglo para que el chart resalte la sección correcta
+  // (aunque se repita). null = sin arreglo → el chart usa su sync normal.
+  void _pubArrStep() { AudioEngine.I.arrStep = _arrOn ? _arrStep : null; }
+
+  // Saltar al paso k del arreglo (desde la barra de secciones).
+  Future<void> _irPaso(int k) async {
+    if (!_arrOn || k < 0 || k >= _arr.length) return;
+    _arrStep = k;
+    _pubArrStep();
+    final rg = _rangeReal(_arr[k]);
+    if (_loop) _loopRange = rg;
+    await _seek(rg[0]);
   }
 
   void _aplicarGanancias() {
@@ -247,6 +392,61 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       if (p >= start && p < end) return [start, end];
     }
     return [_secciones.first.t, _secciones.length > 1 ? _secciones[1].t : _dur];
+  }
+
+  // ───────── Arreglo: rangos de audio y tiempo "display" (compactado) ─────────
+
+  /// Rango de audio [inicio, fin] de la sección real [r] (índice de chart).
+  List<double> _rangeReal(int r) {
+    for (var i = 0; i < _secciones.length; i++) {
+      if (_secciones[i].i == r) {
+        final start = _secciones[i].t;
+        final end = i < _secciones.length - 1 ? _secciones[i + 1].t : _dur;
+        return [start, end];
+      }
+    }
+    return [0, 0];
+  }
+
+  double _stepDur(int k) {
+    if (k < 0 || k >= _arr.length) return 0;
+    final rg = _rangeReal(_arr[k]);
+    return (rg[1] - rg[0]).clamp(0, double.infinity).toDouble();
+  }
+
+  double get _arrTotal {
+    var t = 0.0;
+    for (var k = 0; k < _arr.length; k++) { t += _stepDur(k); }
+    return t;
+  }
+
+  double _arrDispStart(int k) {
+    var t = 0.0;
+    for (var i = 0; i < k && i < _arr.length; i++) { t += _stepDur(i); }
+    return t;
+  }
+
+  /// Posición en tiempo display (de la secuencia del arreglo) del cursor actual.
+  double _arrDisplayNow() {
+    if (!_arrOn) return _pos;
+    final k = _arrStep.clamp(0, _arr.length - 1);
+    final rg = _rangeReal(_arr[k]);
+    final off = (_pos - rg[0]).clamp(0.0, (rg[1] - rg[0]).clamp(0.0, double.infinity));
+    return _arrDispStart(k) + off;
+  }
+
+  /// Display → (paso, tiempo real de audio). Devuelve [real, paso].
+  List<double> _arrRealFromDisplay(double dt) {
+    var acc = 0.0;
+    for (var k = 0; k < _arr.length; k++) {
+      final d = _stepDur(k);
+      if (dt < acc + d || k == _arr.length - 1) {
+        final rg = _rangeReal(_arr[k]);
+        return [rg[0] + (dt - acc).clamp(0.0, d), k.toDouble()];
+      }
+      acc += d;
+    }
+    return [0, 0];
   }
 
   int get _secActiva {
@@ -355,6 +555,17 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 10),
         child: Column(children: [
           Text(t, textAlign: TextAlign.center, style: const TextStyle(color: NW.txt2, fontSize: 13, height: 1.6)),
+          if (_generando) ...[
+            const SizedBox(height: 16),
+            const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4)),
+          ] else if (_tonoNoListo) ...[
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _generarTono,
+              icon: const Icon(Icons.graphic_eq, size: 18),
+              label: const Text('Generar este tono'),
+            ),
+          ],
           if (_status != null && _status!.contains('Intentá')) ...[
             const SizedBox(height: 14),
             OutlinedButton(onPressed: _cargar, child: const Text('Reintentar')),
@@ -418,8 +629,11 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   }
 
   Widget _transport() {
+    // Con arreglo, la barra avanza en tiempo "display" (la secuencia del arreglo).
+    final double cur = _arrOn ? _arrDisplayNow() : _pos;
+    final double total = _arrOn ? _arrTotal : _dur;
     return Row(children: [
-      Text(_fmt(_pos), style: const TextStyle(color: NW.txt2, fontSize: 12, fontFamily: NW.mono)),
+      Text(_fmt(cur), style: const TextStyle(color: NW.txt2, fontSize: 12, fontFamily: NW.mono)),
       Expanded(
         child: SliderTheme(
           data: const SliderThemeData(
@@ -431,28 +645,81 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
             overlayShape: RoundSliderOverlayShape(overlayRadius: 14),
           ),
           child: Slider(
-            value: _dur > 0 ? _pos.clamp(0, _dur) : 0,
-            max: _dur > 0 ? _dur : 1,
+            value: total > 0 ? cur.clamp(0, total) : 0,
+            max: total > 0 ? total : 1,
             onChanged: _audioOk
                 ? (v) => setState(() {
-                      _pos = v;
-                      AudioEngine.I.scrubPos = v; // el chart sigue el arrastre en vivo
+                      if (_arrOn) {
+                        final rr = _arrRealFromDisplay(v);
+                        _pos = rr[0];
+                        _arrStep = rr[1].toInt();
+                        _pubArrStep();
+                      } else {
+                        _pos = v;
+                      }
+                      AudioEngine.I.scrubPos = _pos; // el chart sigue el arrastre en vivo
                     })
                 : null,
             onChangeEnd: _audioOk
                 ? (v) {
                     AudioEngine.I.scrubPos = null;
-                    _seek(v);
+                    if (_arrOn) {
+                      final rr = _arrRealFromDisplay(v);
+                      _arrStep = rr[1].toInt();
+                      _pubArrStep();
+                      _seek(rr[0]);
+                    } else {
+                      _seek(v);
+                    }
                   }
                 : null,
           ),
         ),
       ),
-      Text(_fmt(_dur), style: const TextStyle(color: NW.txt2, fontSize: 12, fontFamily: NW.mono)),
+      Text(_fmt(total), style: const TextStyle(color: NW.txt2, fontSize: 12, fontFamily: NW.mono)),
     ]);
   }
 
+  String _nombreReal(int r) {
+    for (final s in _secciones) { if (s.i == r) return s.nombre; }
+    return '';
+  }
+
   Widget _secbar() {
+    // Con arreglo: una celda por PASO del arreglo (con repeticiones), en su orden.
+    if (_arrOn) {
+      return Container(
+        height: 26,
+        decoration: BoxDecoration(color: NW.bg, borderRadius: BorderRadius.circular(6)),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          children: List.generate(_arr.length, (k) {
+            final d = _stepDur(k);
+            final flex = (d * 1000).round().clamp(1, 1 << 30);
+            final cur = k == _arrStep;
+            return Expanded(
+              flex: flex,
+              child: GestureDetector(
+                onTap: () => _irPaso(k),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: cur ? _acentoSoft : NW.raised,
+                    border: Border(left: BorderSide(color: k == 0 ? Colors.transparent : NW.line)),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(_nombreReal(_arr[k]),
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      style: TextStyle(fontSize: 9, color: cur ? NW.txt : NW.txt2)),
+                ),
+              ),
+            );
+          }),
+        ),
+      );
+    }
+
     final activa = _secActiva;
     return Container(
       height: 26,
@@ -493,7 +760,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
 
   Widget _transportBtns() {
     return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      _tbtn('⏮', false, false, () => _seek(0)),
+      _tbtn('⏮', false, false, _goStart),
       const SizedBox(width: 12),
       _tbtn(_playing ? '❚❚' : '▶', true, false, _togglePlay),
       const SizedBox(width: 12),

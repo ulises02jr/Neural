@@ -48,7 +48,9 @@ class _ChartScreenState extends State<ChartScreen> {
   int _origBase = 0;
   bool _menor = false;
 
-  Chart? _chart;
+  Chart? _chart;      // lo que se muestra (en vivo con arreglo = secuencia del arreglo)
+  Chart? _fullChart;  // la canción completa tal como llega del servidor
+  List<int> _arr = const []; // arreglo activo: índices de sección reales, con repeticiones
   bool _cargando = true;
   bool _error = false;
   bool _offlineNoDisp = false; // sin internet y la canción no está descargada
@@ -137,19 +139,32 @@ class _ChartScreenState extends State<ChartScreen> {
       return;
     }
     if (_liveOffline) setState(() => _liveOffline = false);
+
+    // Arreglo activo (puede venir vacío = canción completa).
+    final arr = (s['arr'] as List).cast<int>();
+    final step = s['step'] as int;
+    final arrChanged = !_sameArr(arr, _arr);
+    if (arrChanged) _arr = arr;
+
     final ver = s['ver'] as int;
     if (ver != _liveVer) {
       _liveVer = ver;
-      await _cargar(); // cambio de cancion en vivo
+      await _cargar(); // cambio de canción o de arreglo: reconstruye con _arr al día
       if (!mounted) return;
+    } else if (arrChanged) {
+      _applyArr(); // el arreglo cambió sin cambiar la canción: reconstruir sin re-pedir
     }
+
     final playing = s['playing'] == true;
     if (playing != _audioPlaying) setState(() => _audioPlaying = playing);
-    final idx = s['idx'] as int;
+
+    // Con arreglo activo seguimos 'step' (posición dentro de la secuencia);
+    // sin arreglo seguimos 'idx' (sección real de la canción completa).
     final n = _chart?.secciones.length ?? 0;
-    if (idx >= 0 && idx < n && idx != _syncIdx) {
-      _syncIdx = idx;
-      _jump(idx, animate: false);
+    final target = _arr.isNotEmpty ? step : (s['idx'] as int);
+    if (target >= 0 && target < n && target != _syncIdx) {
+      _syncIdx = target;
+      _jump(target, animate: false);
     }
   }
 
@@ -184,11 +199,26 @@ class _ChartScreenState extends State<ChartScreen> {
     for (final m in ae.loadedSecs) {
       if (m[0] <= p + 0.03) { cur = m[1].toInt(); } else { break; }
     }
+    // Con arreglo: usar el paso EXACTO que publica el reproductor de ensayo (así
+    // una sección repetida resalta la ocurrencia correcta). Si no hay paso exacto,
+    // caer a mapear la sección real a su primera posición en el arreglo.
+    final int target = _arr.isEmpty
+        ? cur
+        : (ae.arrStep != null ? ae.arrStep!.clamp(0, _arr.length - 1) : _dispFromReal(cur));
     final n = _chart?.secciones.length ?? 0;
-    if (cur >= 0 && cur < n && cur != _syncIdx) {
-      _syncIdx = cur;
-      _jump(cur, animate: false); // instantáneo, como NeuralPlay
+    if (target >= 0 && target < n && target != _syncIdx) {
+      _syncIdx = target;
+      _jump(target, animate: false); // instantáneo, como NeuralPlay
     }
+  }
+
+  /// Primera posición en el arreglo mostrado cuya sección real sea [realSec]
+  /// (-1 si esa sección no está en el arreglo).
+  int _dispFromReal(int realSec) {
+    for (var i = 0; i < _arr.length; i++) {
+      if (_arr[i] == realSec) return i;
+    }
+    return -1;
   }
 
   void _cargarVista() {
@@ -244,27 +274,79 @@ class _ChartScreenState extends State<ChartScreen> {
     final c = _live
         ? await Api.I.liveSong(widget.liveBase!)
         : await Api.I.chart(widget.numero, _sem);
+    // Repertorio (no en vivo): respetar el arreglo activo de la canción (si tiene).
+    if (!_live) {
+      _arr = await Api.I.songArrangement(widget.numero);
+    }
     // Si no cargó y no es en vivo, distinguir "sin internet" de "error del servidor".
     bool offlineNoDisp = false;
     if (c == null && !_live) offlineNoDisp = !(await Api.I.online());
     if (!mounted) return;
     setState(() {
-      _chart = c;
+      _fullChart = c;
+      final disp = _buildDisplayChart(c);
+      _chart = disp;
       _offlineNoDisp = offlineNoDisp;
       _error = c == null && !_live; // en vivo, "sin cancion" no es error (esperando)
       _cargando = false;
       _syncIdx = -1;
-      if (c != null) {
+      if (disp != null) {
         if (_live) {
           _sem = 0;
-          _parseTono(c.tono); // el tono llega ya fijado por el operador
+          _parseTono(disp.tono); // el tono llega ya fijado por el operador
         }
         _keys
           ..clear()
-          ..addAll(List.generate(c.secciones.length, (_) => GlobalKey()));
-        if (_idx >= c.secciones.length) _idx = 0;
+          ..addAll(List.generate(disp.secciones.length, (_) => GlobalKey()));
+        if (_idx >= disp.secciones.length) _idx = 0;
       }
     });
+  }
+
+  /// Construye la lista de secciones a mostrar. En vivo con un arreglo activo,
+  /// reordena/repite las secciones de la canción según [_arr] (así el chart
+  /// refleja exactamente lo que suena en NeuralPlay). Sin arreglo = canción completa.
+  Chart? _buildDisplayChart(Chart? full) {
+    if (full == null) return null;
+    if (_arr.isEmpty) return full;   // sin arreglo (en vivo o repertorio) = canción completa
+    final secs = <ChartSection>[];
+    for (final r in _arr) {
+      if (r >= 0 && r < full.secciones.length) secs.add(full.secciones[r]);
+    }
+    if (secs.isEmpty) return full; // arreglo inválido → mostrar completa
+    return Chart(
+      numero: full.numero,
+      titulo: full.titulo,
+      artista: full.artista,
+      tono: full.tono,
+      tempo: full.tempo,
+      compas: full.compas,
+      secciones: secs,
+    );
+  }
+
+  /// Reconstruye el chart mostrado cuando cambia el arreglo (sin volver a
+  /// pedir la canción al servidor).
+  void _applyArr() {
+    final disp = _buildDisplayChart(_fullChart);
+    setState(() {
+      _chart = disp;
+      _syncIdx = -1;
+      if (disp != null) {
+        _keys
+          ..clear()
+          ..addAll(List.generate(disp.secciones.length, (_) => GlobalKey()));
+        if (_idx >= disp.secciones.length) _idx = 0;
+      }
+    });
+  }
+
+  static bool _sameArr(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   void _irTono(int semAbs) {
