@@ -327,9 +327,8 @@ public:
         fadeButton.onClick = [this] { if (clickOrArm (kaFade)) return; toggleFade(); };
         addAndMakeVisible (fadeButton);
 
-        transBtn.setButtonText (juce::String::fromUTF8 ("\xe2\x8f\xad"));   // ⏭ siguiente
-        transBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
-        transBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        // transBtn ahora es SkipNextButton (ícono "siguiente" dibujado como vector),
+        // idéntico en Mac e iOS. Antes usaba el glyph ⏭ que iOS mostraba como emoji/“?”.
         transBtn.onClick = [this]
         {
             const int at = autoTrans.load();
@@ -1749,7 +1748,12 @@ public:
             browsing = false;   // la vista vuelve a seguir el cursor real (ya aplicado el seek)
             repaint (mapBounds);
         }
-        else { browsing = false; repaint (mapBounds); }
+        else   // en vivo: mantener la posición navegada al soltar; el reloj de auto-regreso arranca ahora
+        {
+            if (! playing.load()) browsing = false;
+            else lastInteractionMs = juce::Time::getMillisecondCounter();
+            repaint (mapBounds);
+        }
     }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
@@ -5177,7 +5181,10 @@ private:
             }
         }
         timeLabel.setText (fmtTime (positionSeconds()) + "\n" + fmtTime (totalSeconds()), juce::dontSendNotification);
-        if (browsing && ! isDragging && (juce::Time::getMillisecondCounter() - lastInteractionMs > 1200))
+        // Auto-regreso a seguir la aguja tras un rato sin interacción (igual en vivo o parado).
+        // El reloj arranca al SOLTAR el dedo (ver mouseUp), para dar tiempo a mirar adelante
+        // y encolar el salto; luego el mapa vuelve a seguir la aguja solo — como en Mac.
+        if (browsing && ! isDragging && (juce::Time::getMillisecondCounter() - lastInteractionMs > 1800))
         { browsing = false; repaint (mapBounds); }
         if (playing.load() || browsing) repaint (mapBounds);
         if (playing.load() && currentBeatGrid.size() >= 2) repaint (compasBoxBounds);   // BPM que sigue el medley
@@ -6778,7 +6785,7 @@ private:
     TriIconButton barPrevBtn, barNextBtn;         // flechas de navegacion por seccion (icono vectorial)
     PlayIconButton playButton;
     FadeIconButton fadeButton;
-    juce::TextButton transBtn;                    // Fase D: transición en vivo a la siguiente canción
+    SkipNextButton transBtn;                      // Fase D: transición en vivo a la siguiente canción (ícono vector)
     juce::Array<double> preFadeVals;
     int fadeDir = 0;            // -1 bajando, +1 subiendo, 0 quieto
     bool fadedDown = false;

@@ -339,6 +339,37 @@ struct SkipStartButton : public juce::Button
     }
 };
 
+// Boton "siguiente / transicion" (triangulo a la derecha + barra), dibujado como
+// vector para verse IDENTICO en Mac y iPad/iPhone (iOS sustituye los glifos de texto).
+struct SkipNextButton : public juce::Button
+{
+    SkipNextButton() : juce::Button ("siguiente") {}
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        const float rad = juce::jmin (r.getHeight() * 0.5f, 12.0f);
+        juce::Colour bg (0xff1f1f1f);
+        if (down) bg = bg.brighter (0.06f); else if (over) bg = bg.brighter (0.10f);
+        g.setColour (bg); g.fillRoundedRectangle (r, rad);
+        g.setColour (juce::Colour (0xff2a2a2a)); g.drawRoundedRectangle (r, rad, 1.0f);
+
+        const auto c = r.getCentre();
+        const float s = juce::jmin (r.getHeight(), r.getWidth());
+        const float tw = s * 0.26f, th = s * 0.40f;
+        const float barW = s * 0.085f, gap = s * 0.06f;
+        const float groupW = tw + gap + barW;
+        const float leftX = c.x - groupW * 0.5f;
+        g.setColour (juce::Colours::white.withAlpha (isEnabled() ? 0.95f : 0.4f));
+        juce::Path tri;                                                  // triangulo apuntando a la derecha
+        tri.addTriangle (leftX,      c.y - th * 0.5f,
+                         leftX,      c.y + th * 0.5f,
+                         leftX + tw, c.y);
+        g.fillPath (tri);
+        const float barX = leftX + tw + gap;                            // barra "|" a la derecha
+        g.fillRoundedRectangle (barX, c.y - th * 0.5f, barW, th, barW * 0.4f);
+    }
+};
+
 // Boton de flecha triangular (navegacion por seccion del mapa), vector cross-platform.
 struct TriIconButton : public juce::Button
 {
