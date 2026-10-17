@@ -2238,7 +2238,7 @@ def admin_usuario_aprobar(user_id):
         flash("Usuario no encontrado", "error")
         return redirect(url_for("admin"))
     org_obj = usuarios.obtener_organizacion(org)
-    if (u.get("rol") == "musico" and org_obj
+    if (not _en_lanzamiento() and u.get("rol") == "musico" and org_obj
             and usuarios.contar_musicos_activos(org) >= int(org_obj.get("max_musicos") or 0)):
         flash("Alcanzaste el límite de asientos de tu paquete. Ampliá el plan o quitá un músico para aprobar a otro.", "error")
         return redirect(url_for("admin"))
@@ -2416,7 +2416,7 @@ def admin_invitar():
         flash("Ingresá un email", "error")
         return redirect(url_for("admin"))
     org_obj = usuarios.obtener_organizacion(org)
-    if org_obj and usuarios.contar_musicos_activos(org) >= int(org_obj.get("max_musicos") or 0):
+    if not _en_lanzamiento() and org_obj and usuarios.contar_musicos_activos(org) >= int(org_obj.get("max_musicos") or 0):
         flash("Alcanzaste el límite de asientos de tu paquete. Ampliá el plan para invitar a más músicos.", "error")
         return redirect(url_for("admin"))
     ok, res = usuarios.crear_invitacion(org, email)
@@ -2710,8 +2710,27 @@ LS_ADDONS = {
 }
 
 
+# ── Modo lanzamiento: acceso completo gratis para todos hasta una fecha ──
+# En enero: poné MODO_LANZAMIENTO = False y todo vuelve al cobro normal (una línea).
+MODO_LANZAMIENTO = True
+FIN_LANZAMIENTO  = "2026-12-31"   # inclusive (YYYY-MM-DD)
+
+def _en_lanzamiento():
+    """True mientras el lanzamiento gratis esté activo (hasta FIN_LANZAMIENTO)."""
+    if not MODO_LANZAMIENTO:
+        return False
+    try:
+        from datetime import date
+        return date.today().isoformat() <= FIN_LANZAMIENTO
+    except Exception:
+        return True
+
+
 def _features(paquete):
     """Flags de funciones que la app (NeuralPlay) debe respetar según el plan."""
+    plan_real = paquete
+    if _en_lanzamiento():
+        paquete = "ministerio"   # modo lanzamiento: capacidades del plan tope para todos
     p = PAQUETES.get(paquete, PAQUETES["basico"])
     full = bool(p.get("midi"))
     repro = p.get("tipo") == "reproductor"   # plan solo-reproductor
@@ -2730,8 +2749,8 @@ def _features(paquete):
         "salidas": p.get("salidas", 2),   # salidas de audio (2 estéreo en básico, 32 en Plus+)
         "asientos": p.get("asientos", 3),
         "gb": p.get("gb", 20),
-        "paquete": paquete,
-        "nombre": p.get("nombre", ""),
+        "paquete": plan_real,
+        "nombre": (PAQUETES.get(plan_real) or p).get("nombre", ""),
     }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
@@ -2993,6 +3012,8 @@ def admin_planes():
                            actual=_actual,
                            estado=(org or {}).get("estado_suscripcion"),
                            es_operador=(int(org_actual()) == OPERADOR_ORG_ID),
+                           modo_lanzamiento=_en_lanzamiento(),
+                           fin_lanzamiento=FIN_LANZAMIENTO,
                            tiene_sub_paga=_tiene_sub_paga,
                            ls_checkout=LS_CHECKOUT, ls_addons=LS_ADDONS, org_id=org_actual(),
                            portal_url=portal_url, extra_gb=_eg, extra_asientos=_es,
@@ -3929,7 +3950,7 @@ def admin_pistas_subir():
     # Enforcement de almacenamiento: no dejar exceder el cupo (GB) del plan.
     # (La organización del operador no tiene tope.)
     try:
-        if int(org) != OPERADOR_ORG_ID:
+        if not _en_lanzamiento() and int(org) != OPERADOR_ORG_ID:
             org_obj = usuarios.obtener_organizacion(org) or {}
             limite_gb = int(org_obj.get("almacen_gb") or 0)
             if limite_gb > 0:
