@@ -2764,47 +2764,49 @@ _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 # features del plan (_features) y dice si ese plan incluye la función.
 # ─────────────────────────────────────────────────────────────────────────────
 CATALOGO_FEATURES = [
-    ("General", "Creación de repertorios",                                  lambda f: True),
-    ("General", "Cargar pads",                                              lambda f: True),
-    ("General", "Cargar multitracks",                                       lambda f: True),
-    ("General", "Cargar tus propios cifrados",                              lambda f: f["charts"]),
-    ("General", "Almacenar notas MIDI",                                     lambda f: f["midi"]),
-    ("General", "Exportar lyrics para presentación",                        lambda f: f["export_pdf"]),
-    ("General", "Exportar charts en PDF",                                   lambda f: f["export_pdf"]),
+    # (sección, etiqueta, regla, clave_i18n)  — etiqueta y clave_i18n pueden ser función(f)
+    ("General", "Creación de repertorios",                                  lambda f: True,                           "f_repertorios"),
+    ("General", "Cargar pads",                                              lambda f: True,                           "f_pads"),
+    ("General", "Cargar multitracks",                                       lambda f: True,                           "f_multitracks"),
+    ("General", "Cargar tus propios cifrados",                              lambda f: f["charts"],                    "f_cifprop"),
+    ("General", "Almacenar notas MIDI",                                     lambda f: f["midi"],                      "f_notasmidi"),
+    ("General", "Exportar lyrics para presentación",                        lambda f: f["export_pdf"],                "f_exlyrics"),
+    ("General", "Exportar charts en PDF",                                   lambda f: f["export_pdf"],                "f_expdf"),
 
-    ("NeuralCharts", "Charts (cifrado + letras)",                           lambda f: f["charts"]),
-    ("NeuralCharts", "Sincroniza tus cifrados con NeuralPlay",              lambda f: f["charts"] and f["neuralplay"]),
-    ("NeuralCharts", "Reproductor de multitracks para ensayo (sincronizado con cifrados)", lambda f: f["charts"]),
-    ("NeuralCharts", "Disponible para iPhone, iPad y Android",              lambda f: f["charts"]),
+    ("NeuralCharts", "Charts (cifrado + letras)",                           lambda f: f["charts"],                    "f_charts"),
+    ("NeuralCharts", "Sincroniza tus cifrados con NeuralPlay",              lambda f: f["charts"] and f["neuralplay"],"f_synccif"),
+    ("NeuralCharts", "Reproductor de multitracks para ensayo (sincronizado con cifrados)", lambda f: f["charts"],     "f_reproens"),
+    ("NeuralCharts", "Disponible para iPhone, iPad y Android",              lambda f: f["charts"],                    "f_disp"),
 
-    ("NeuralPlay", "Reproductor de multitracks / stems",                    lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Cambio de tono/tempo fuera de línea a los 12 tonos",    lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Crea y guarda varios repertorios",                      lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Sincronización en vivo con NeuralCharts",               lambda f: f["neuralplay"] and f["charts"]),
-    ("NeuralPlay", "Salto de secciones en vivo",                            lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Edición de secciones del arreglo original",             lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Transiciones de canciones en vivo (Autolink y Crossfade)", lambda f: f["midi"]),
-    ("NeuralPlay", "Ajusta tiempo inicial y final",                         lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Reproduce pads ambientales con las canciones",          lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Interfaz avanzada de Pad Player",                       lambda f: f["neuralplay"]),
-    ("NeuralPlay", "NeuralPlay para Mac, iPad y iPhone",                    lambda f: f["neuralplay"]),
-    ("NeuralPlay", lambda f: ("Hasta 32 MultiOuts® con buses" if f["midi"] else "2 salidas de audio"), lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Añadir sección de clicks a las canciones al final",     lambda f: f["neuralplay"]),
-    ("NeuralPlay", "Repite secciones con Loop / Loop Infinito",             lambda f: f["midi"]),
-    ("NeuralPlay", "Asignación MIDI / teclado / controlador",               lambda f: f["midi"]),
-    ("NeuralPlay", "Reproductor de notas MIDI en sincronización",           lambda f: f["midi"]),
-    ("NeuralPlay", "Múltiples salidas MIDI para lyrics/luces y efectos",    lambda f: f["midi"]),
-    ("NeuralPlay", "MIDI Clock",                                            lambda f: f["midi"]),
-    ("NeuralPlay", "Gestión de almacenamiento en dispositivo",             lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Reproductor de multitracks / stems",                    lambda f: f["neuralplay"],                "f_reprostems"),
+    ("NeuralPlay", "Cambio de tono/tempo fuera de línea a los 12 tonos",    lambda f: f["neuralplay"],                "f_tonotempo"),
+    ("NeuralPlay", "Crea y guarda varios repertorios",                      lambda f: f["neuralplay"],                "f_variosrep"),
+    ("NeuralPlay", "Sincronización en vivo con NeuralCharts",               lambda f: f["neuralplay"] and f["charts"],"f_syncvivo"),
+    ("NeuralPlay", "Salto de secciones en vivo",                            lambda f: f["neuralplay"],                "f_salto"),
+    ("NeuralPlay", "Edición de secciones del arreglo original",             lambda f: f["neuralplay"],                "f_edicion"),
+    ("NeuralPlay", "Transiciones de canciones en vivo (Autolink y Crossfade)", lambda f: f["midi"],                   "f_transiciones"),
+    ("NeuralPlay", "Ajusta tiempo inicial y final",                         lambda f: f["neuralplay"],                "f_tiempo"),
+    ("NeuralPlay", "Reproduce pads ambientales con las canciones",          lambda f: f["neuralplay"],                "f_padsamb"),
+    ("NeuralPlay", "Interfaz avanzada de Pad Player",                       lambda f: f["neuralplay"],                "f_padadv"),
+    ("NeuralPlay", "NeuralPlay para Mac, iPad y iPhone",                    lambda f: f["neuralplay"],                "f_npmac"),
+    ("NeuralPlay", lambda f: ("Hasta 32 MultiOuts® con buses" if f["midi"] else "2 salidas de audio"), lambda f: f["neuralplay"], lambda f: ("f_out32" if f["midi"] else "f_out2")),
+    ("NeuralPlay", "Añadir sección de clicks a las canciones al final",     lambda f: f["neuralplay"],                "f_clicks"),
+    ("NeuralPlay", "Repite secciones con Loop / Loop Infinito",             lambda f: f["midi"],                      "f_loop"),
+    ("NeuralPlay", "Asignación MIDI / teclado / controlador",               lambda f: f["midi"],                      "f_midiasig"),
+    ("NeuralPlay", "Reproductor de notas MIDI en sincronización",           lambda f: f["midi"],                      "f_midisync"),
+    ("NeuralPlay", "Múltiples salidas MIDI para lyrics/luces y efectos",    lambda f: f["midi"],                      "f_midimulti"),
+    ("NeuralPlay", "MIDI Clock",                                            lambda f: f["midi"],                      "f_midiclock"),
+    ("NeuralPlay", "Gestión de almacenamiento en dispositivo",             lambda f: f["neuralplay"],                "f_gestalm"),
 ]
 
 def catalogo_features(f):
     """Dado un dict de features (_features), devuelve la lista del catálogo con
-    etiqueta resuelta e 'incluido' por función. Úsalo en admin (plan actual)."""
+    etiqueta resuelta, 'incluido' y clave i18n. Úsalo en admin/planes/landing."""
     out = []
-    for sec, etq, regla in CATALOGO_FEATURES:
+    for sec, etq, regla, i18n in CATALOGO_FEATURES:
         label = etq(f) if callable(etq) else etq
-        out.append({"seccion": sec, "label": label, "incluido": bool(regla(f))})
+        key = i18n(f) if callable(i18n) else i18n
+        out.append({"seccion": sec, "label": label, "incluido": bool(regla(f)), "i18n": key})
     return out
 
 def catalogo_plan(pk):
