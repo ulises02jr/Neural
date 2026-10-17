@@ -151,48 +151,22 @@
       {% set hasSync     = (pk == 'ministerio') %}   {# NeuralSync (puente DAW) solo en Premium #}
       {% set hasExport   = hasCharts and (hasMidi or hasSync) %}
 
-      {# General #}
+      {# General — desde el CATÁLOGO ÚNICO (servidor_vps.py); asientos/GB quedan dinámicos aquí #}
+      {% set _cat = catalogo_plan(pk) %}
       <ul class="flist" style="flex:0 0 auto;margin-bottom:0">
         {{ row(hasCharts, ('Asientos de Músicos ilimitados' if p.asientos >= 100000 else (p.asientos ~ ' Asientos de Músicos')) if hasCharts else '0 Asientos de Músicos') }}
         {{ row(true, p.gb ~ ' GB de Almacenamiento') }}
-        {{ row(true, 'Creación de Repertorios') }}
-        {{ row(true, 'Cargar Pads') }}
-        {{ row(true, 'Cargar Multitracks') }}
-        {{ row(hasCharts, 'Cargar tus propios cifrados') }}
-        {{ row(hasMidi,   'Almacenar Notas MIDI') }}
-        {{ row(hasExport, 'Exportar Lyrics para presentación') }}
-        {{ row(hasExport, 'Exportar Charts en PDF') }}
+        {% for ft in _cat if ft.seccion == 'General' %}{{ row(ft.incluido, ft.label) }}{% endfor %}
       </ul>
 
       <div class="psec charts">NeuralCharts</div>
       <ul class="flist" style="flex:0 0 auto;margin-bottom:0">
-        {{ row(hasCharts, 'Charts (cifrado + letras)') }}
-        {{ row(hasCharts and hasPlayAny, 'Sincroniza tus Cifrados con NeuralPlay') }}
-        {{ row(hasCharts, 'Reproductor de Multitracks para ensayo (sincronizado con Cifrados)') }}
-        {{ row(hasCharts, 'Disponible para iPhone, iPad y Android') }}
+        {% for ft in _cat if ft.seccion == 'NeuralCharts' %}{{ row(ft.incluido, ft.label) }}{% endfor %}
       </ul>
 
       <div class="psec play">NeuralPlay</div>
       <ul class="flist" style="flex:0 0 auto;margin-bottom:0">
-        {{ row(hasPlayAny,  'Reproductor de Multitracks/Stems') }}
-        {{ row(hasPlayAny,  'Cambio de Tono/Tempo fuera de línea a los 12 tonos') }}
-        {{ row(hasPlayAny,  'Crea y guarda varios repertorios') }}
-        {% if not es_repro %}{{ row(hasPlayAny,  'Sincronización en vivo en NeuralCharts') }}{% endif %}
-        {{ row(hasPlayAny,  'Ajusta tiempo inicial y final') }}
-        {{ row(hasPlayAny,  'Reproduce pads ambientales con canciones') }}
-        {{ row(hasPlayAny,  'Salto de secciones en vivo') }}
-        {{ row(hasPlayAny,  'Edición de secciones del arreglo original') }}
-        {{ row(hasPlayFull, 'Transiciones de canciones en vivo (Autolink y Crossfade)') }}
-        {{ row(hasPlayFull, 'Repite secciones con Loop/Loop Infinito') }}
-        {{ row(hasPlayFull, 'Asignación MIDI/Teclado/Controlador') }}
-        {{ row(hasPlayAny,  'NeuralPlay para Mac / iPad') }}
-        {{ row(hasPlayAny, 'Interfaz avanzada de Pad Player') }}
-        {{ row(hasPlayAny, 'Hasta 32 MultiOuts® con buses' if not (hasPlayAny and not hasPlayFull) else '2 salidas') }}
-        {{ row(hasPlayAny,  'Añadir sección de clicks a las canciones al final') }}
-        {{ row(hasPlayFull, 'Reproductor de Notas MIDI en Sincronización') }}
-        {{ row(hasPlayFull, 'Múltiples Salidas MIDI para Lyrics/Luces y Efectos') }}
-        {{ row(hasPlayFull, 'MIDI Clock') }}
-        {{ row(hasPlayAny,  'Gestión de almacenamiento en dispositivo') }}
+        {% for ft in _cat if ft.seccion == 'NeuralPlay' %}{{ row(ft.incluido, ft.label) }}{% endfor %}
       </ul>
 
       <div class="cta">

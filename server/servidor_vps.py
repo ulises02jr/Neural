@@ -2726,10 +2726,12 @@ def _en_lanzamiento():
         return True
 
 
-def _features(paquete):
-    """Flags de funciones que la app (NeuralPlay) debe respetar según el plan."""
+def _features(paquete, aplicar_lanzamiento=True):
+    """Flags de funciones que la app (NeuralPlay) debe respetar según el plan.
+    aplicar_lanzamiento=False devuelve las capacidades REALES del plan (para la
+    página de precios/comparación, que no debe inflarse con el modo lanzamiento)."""
     plan_real = paquete
-    if _en_lanzamiento():
+    if aplicar_lanzamiento and _en_lanzamiento():
         paquete = "ministerio"   # modo lanzamiento: capacidades del plan tope para todos
     p = PAQUETES.get(paquete, PAQUETES["basico"])
     full = bool(p.get("midi"))
@@ -2753,6 +2755,65 @@ def _features(paquete):
         "nombre": (PAQUETES.get(plan_real) or p).get("nombre", ""),
     }
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CATÁLOGO ÚNICO DE FUNCIONES — fuente de verdad de las descripciones de planes.
+# Se toca SOLO aquí y se actualiza en admin, página de planes y landing.
+# Cada entrada: (sección, etiqueta, regla). La etiqueta puede ser texto o una
+# función f->texto (para textos dinámicos como las salidas). La regla recibe las
+# features del plan (_features) y dice si ese plan incluye la función.
+# ─────────────────────────────────────────────────────────────────────────────
+CATALOGO_FEATURES = [
+    ("General", "Creación de repertorios",                                  lambda f: True),
+    ("General", "Cargar pads",                                              lambda f: True),
+    ("General", "Cargar multitracks",                                       lambda f: True),
+    ("General", "Cargar tus propios cifrados",                              lambda f: f["charts"]),
+    ("General", "Almacenar notas MIDI",                                     lambda f: f["midi"]),
+    ("General", "Exportar lyrics para presentación",                        lambda f: f["export_pdf"]),
+    ("General", "Exportar charts en PDF",                                   lambda f: f["export_pdf"]),
+
+    ("NeuralCharts", "Charts (cifrado + letras)",                           lambda f: f["charts"]),
+    ("NeuralCharts", "Sincroniza tus cifrados con NeuralPlay",              lambda f: f["charts"] and f["neuralplay"]),
+    ("NeuralCharts", "Reproductor de multitracks para ensayo (sincronizado con cifrados)", lambda f: f["charts"]),
+    ("NeuralCharts", "Disponible para iPhone, iPad y Android",              lambda f: f["charts"]),
+
+    ("NeuralPlay", "Reproductor de multitracks / stems",                    lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Cambio de tono/tempo fuera de línea a los 12 tonos",    lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Crea y guarda varios repertorios",                      lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Sincronización en vivo con NeuralCharts",               lambda f: f["neuralplay"] and f["charts"]),
+    ("NeuralPlay", "Salto de secciones en vivo",                            lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Edición de secciones del arreglo original",             lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Transiciones de canciones en vivo (Autolink y Crossfade)", lambda f: f["midi"]),
+    ("NeuralPlay", "Ajusta tiempo inicial y final",                         lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Reproduce pads ambientales con las canciones",          lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Interfaz avanzada de Pad Player",                       lambda f: f["neuralplay"]),
+    ("NeuralPlay", "NeuralPlay para Mac, iPad y iPhone",                    lambda f: f["neuralplay"]),
+    ("NeuralPlay", lambda f: ("Hasta 32 MultiOuts® con buses" if f["midi"] else "2 salidas de audio"), lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Añadir sección de clicks a las canciones al final",     lambda f: f["neuralplay"]),
+    ("NeuralPlay", "Repite secciones con Loop / Loop Infinito",             lambda f: f["midi"]),
+    ("NeuralPlay", "Asignación MIDI / teclado / controlador",               lambda f: f["midi"]),
+    ("NeuralPlay", "Reproductor de notas MIDI en sincronización",           lambda f: f["midi"]),
+    ("NeuralPlay", "Múltiples salidas MIDI para lyrics/luces y efectos",    lambda f: f["midi"]),
+    ("NeuralPlay", "MIDI Clock",                                            lambda f: f["midi"]),
+    ("NeuralPlay", "Gestión de almacenamiento en dispositivo",             lambda f: f["neuralplay"]),
+]
+
+def catalogo_features(f):
+    """Dado un dict de features (_features), devuelve la lista del catálogo con
+    etiqueta resuelta e 'incluido' por función. Úsalo en admin (plan actual)."""
+    out = []
+    for sec, etq, regla in CATALOGO_FEATURES:
+        label = etq(f) if callable(etq) else etq
+        out.append({"seccion": sec, "label": label, "incluido": bool(regla(f))})
+    return out
+
+def catalogo_plan(pk):
+    """Catálogo para un plan por su clave, con capacidades REALES (sin inflar por
+    el modo lanzamiento). Úsalo en la página de planes y la landing (comparación)."""
+    return catalogo_features(_features(pk, aplicar_lanzamiento=False))
+
+app.jinja_env.globals["catalogo_features"] = catalogo_features
+app.jinja_env.globals["catalogo_plan"] = catalogo_plan
 
 # La organización del operador (dueño del negocio): es propia, no se factura
 # ni entra en la contabilidad de ingresos, y su plan queda fijo en ministerio.

@@ -586,37 +586,15 @@
       {% if _ex_asientos > 0 or _ex_gb > 0 %}
       <div style="font-size:12px;color:var(--live);margin:6px 0 2px">✓ Ampliaciones contratadas: {% if _ex_gb > 0 %}+{{ _ex_gb }} GB{% endif %}{% if _ex_gb > 0 and _ex_asientos > 0 %} · {% endif %}{% if _ex_asientos > 0 %}+{{ _ex_asientos }} asiento(s){% endif %}</div>
       {% endif %}
-      {{ frow(true, 'Creación de Repertorios') }}
-      {{ frow(true, 'Cargar Pads') }}
-      {{ frow(true, 'Cargar Multitracks') }}
-      {{ frow(true, 'Cargar tus propios cifrados') }}
-      {{ frow(full, 'Almacenar Notas MIDI') }}
-      {{ frow(export, 'Exportar Lyrics para presentación') }}
-      {{ frow(export, 'Exportar Charts en PDF') }}
-
-      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:18px 0 4px">NeuralCharts</div>
-      {{ frow(true, 'Charts (cifrado + letras)') }}
-      {{ frow(true, 'Sincroniza tus Cifrados con NeuralPlay') }}
-      {{ frow(true, 'Reproductor de Multitracks para ensayo (sincronizado con Cifrados)') }}
-      {{ frow(true, 'Disponible para iPhone, iPad y Android') }}
-
-      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:18px 0 4px">NeuralPlay</div>
-      {{ frow(true, 'Reproductor de Multitracks/Stems') }}
-      {{ frow(true, 'Cambio de Tono/Tempo fuera de línea a los 12 tonos') }}
-      {{ frow(true, 'Crea y guarda varios repertorios') }}
-      {{ frow(true, 'Sincronización en vivo en NeuralCharts') }}
-      {{ frow(true, 'Ajusta tiempo inicial y final') }}
-      {{ frow(true, 'Reproduce pads ambientales con canciones') }}
-      {{ frow(full, 'Repite secciones con Loop/Loop Infinito') }}
-      {{ frow(full, 'Asignación MIDI/Teclado/Controlador') }}
-      {{ frow(true, 'NeuralPlay para Mac / iPad') }}
-      {{ frow(true, 'Interfaz avanzada de Pad Player') }}
-      {{ frow(true, ('Hasta 32 MultiOuts® con buses' if full else '2 salidas')) }}
-      {{ frow(true, 'Añadir sección de clicks a las canciones al final') }}
-      {{ frow(full, 'Reproductor de Notas MIDI en Sincronización') }}
-      {{ frow(full, 'Múltiples Salidas MIDI para Lyrics/Luces y Efectos') }}
-      {{ frow(full, 'MIDI Clock') }}
-      {{ frow(true, 'Gestión de almacenamiento en dispositivo') }}
+      {# ── Funciones desde el CATÁLOGO ÚNICO (servidor_vps.py). La sección General ya tiene su encabezado arriba. ── #}
+      {% set _sec = namespace(cur='General') %}
+      {% for ft in catalogo_features(features) %}
+        {% if ft.seccion != _sec.cur %}
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:18px 0 4px">{{ ft.seccion }}</div>
+          {% set _sec.cur = ft.seccion %}
+        {% endif %}
+      {{ frow(ft.incluido, ft.label) }}
+      {% endfor %}
     </div>
 
   </div>

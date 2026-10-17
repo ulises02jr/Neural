@@ -120,10 +120,10 @@
         <thead><tr><th>Concepto</th><th>Cant.</th><th>Mensual</th><th>Anual</th></tr></thead>
         <tbody>
           <tr class="grp"><td colspan="4">Suscripciones por plan</td></tr>
-          {% for pk in ['basico','premium','ministerio'] %}
+          {% for pk in ['basico','premium','ministerio','reproductor','sync'] %}
           {% set d = conta.planes.get(pk) %}
           <tr>
-            <td>{{ paquetes[pk].nombre }} <span class="mut">({% if paquetes[pk].precio == 0 %}Gratis{% else %}${{ '%.0f'|format(paquetes[pk].precio) }}/mes{% endif %} · {{ paquetes[pk].asientos | asientos_fmt }} asientos · {{ paquetes[pk].gb }} GB)</span></td>
+            <td>{{ paquetes[pk].nombre }} <span class="mut">({% if paquetes[pk].precio == 0 %}Gratis{% else %}${{ ('%.0f'|format(paquetes[pk].precio)) if (paquetes[pk].precio == paquetes[pk].precio|round(0)) else ('%.2f'|format(paquetes[pk].precio)) }}/mes{% endif %} · {{ paquetes[pk].asientos | asientos_fmt }} asientos · {{ paquetes[pk].gb }} GB)</span></td>
             <td>{{ d.n if d else 0 }}</td>
             <td>${{ '%.2f'|format(d.sub_mes if d else 0) }}</td>
             <td>${{ '%.0f'|format((d.sub_mes if d else 0)*12) }}</td>
