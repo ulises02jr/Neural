@@ -17,7 +17,7 @@ NOTA_A_INDICE = {
     'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'Cb': 11,
 }
 
-PATRON_ACORDE = re.compile(r'^([A-G][#b]?)([^/\s]*)(?:/([A-G][#b]?))?$')
+PATRON_ACORDE = re.compile(r'^([A-G][#b]?)([^\s]*?)(?:/([A-G][#b]?))?$')
 
 
 def usar_sostenidos(tono_destino):
