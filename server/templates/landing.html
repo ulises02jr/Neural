@@ -290,6 +290,11 @@
     <div class="sec-head">
       <h2 data-i18n="plans_h2">Selecciona tu plan</h2>
       <p data-i18n="plans_p">Un plan por iglesia. Empieza gratis y sube de plan cuando quieras.</p>
+      {% if modo_lanzamiento %}
+      <div style="max-width:720px;margin:18px auto 0;background:rgba(76,124,255,.12);border:1px solid rgba(76,124,255,.45);border-radius:14px;padding:16px 20px;color:#9db8ff;font-size:14.5px;line-height:1.55">
+        🎉 <b data-i18n="launch_b">Lanzamiento gratis:</b> <span data-i18n="launch_t">todas las funciones están desbloqueadas sin costo hasta el 31 de diciembre de 2026. Los planes de pago inician en enero 2027 — aprovechá para probarlo todo.</span>
+      </div>
+      {% endif %}
     </div>
     <div class="plans">
       {% macro rowf(on, key, txt) -%}
@@ -424,6 +429,7 @@
       step3_h:"Live sync", step3_p:"Your team opens the app, connects to the live service and everyone plays in time.",
       plans_h2:"Choose your plan",
       plans_p:"One plan per church. Start free and upgrade whenever you want.",
+      launch_b:"Free launch:", launch_t:"all features are unlocked at no cost until December 31, 2026. Paid plans begin January 2027 — make the most of it and try everything.",
       basico_name:"Basic", per_mo:" /mo", price_free:"Free",
       basico_desc:"To start with the essentials of rehearsal and live.",
       b_li1:"NeuralCharts (charts + rehearsal)", b_li2:"NeuralPlay (2 outputs, stereo)", b_li3:"Live sync", b_li4:"1 musician seat", b_li5:"5 GB storage for your tracks",

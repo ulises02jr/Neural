@@ -817,7 +817,7 @@ def home():
         if session.get("rol") == "admin":
             return redirect(url_for("admin"))
         return redirect(url_for("principal"))
-    return render_template("landing.html", paquetes=PAQUETES)
+    return render_template("landing.html", paquetes=PAQUETES, modo_lanzamiento=_en_lanzamiento())
 
 
 @app.route("/neuralcharts")
