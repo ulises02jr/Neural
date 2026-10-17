@@ -21,15 +21,25 @@ APP_PRINCIPAL = "https://neuralworship.com"
 # Planes que muestra la landing. Se replican aquí para que el Website no dependa
 # de la base de datos. Si cambian los precios en la app, actualizar también aquí.
 PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 1,      "gb": 5,   "midi": False},
-    "premium":    {"nombre": "Plus",    "precio": 10.0, "asientos": 5,      "gb": 50,  "midi": True},
-    "ministerio": {"nombre": "Premium", "precio": 20.0, "asientos": 100000, "gb": 100, "midi": True},
+    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 1,      "gb": 5,   "midi": False, "tipo": "iglesia"},
+    "premium":    {"nombre": "Plus",    "precio": 9.99, "asientos": 5,      "gb": 50,  "midi": True,  "tipo": "iglesia"},
+    "ministerio": {"nombre": "Premium", "precio": 19.99, "asientos": 100000, "gb": 100, "midi": True,  "tipo": "iglesia"},
+    # NeuralPlay: todas las funciones de NeuralPlay con 100 GB, SIN NeuralCharts/asientos/cifrados/export.
+    "reproductor": {"nombre": "NeuralPlay", "precio": 12.99, "asientos": 0, "gb": 100, "midi": True, "tipo": "reproductor"},
 }
+
+
+import datetime as _dt
+# Modo lanzamiento: muestra el banner "gratis" hasta la fecha; en enero poner False.
+MODO_LANZAMIENTO = True
+FIN_LANZAMIENTO  = "2026-12-31"   # inclusive (YYYY-MM-DD)
+def _en_lanzamiento():
+    return bool(MODO_LANZAMIENTO) and _dt.date.today().isoformat() <= FIN_LANZAMIENTO
 
 
 @app.route("/")
 def home():
-    return render_template("landing.html", paquetes=PAQUETES)
+    return render_template("landing.html", paquetes=PAQUETES, modo_lanzamiento=_en_lanzamiento())
 
 
 @app.route("/neuralplay")
