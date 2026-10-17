@@ -62,8 +62,8 @@
       <div class="hint">Dejalo vacío para conservar la portada actual.</div>
 
       <label>Reemplazar audio base (opcional)</label>
-      <input type="file" name="pad" accept=".wav,.mp3,.m4a,.ogg,.flac,.aif,.aiff">
-      <div class="hint">Solo si querés cambiar el sonido. Cambiar el audio o el tono base regenera los 12 tonos.</div>
+      <input type="file" name="pad" accept=".wav,.mp3,.flac">
+      <div class="hint">Solo WAV, MP3 o FLAC. Se guarda en FLAC (sin pérdida). Cambiar el audio o el tono base regenera los 12 tonos.</div>
 
       <button class="go" type="submit">Guardar cambios</button>
       <div id="padprog" style="display:none;margin-top:14px">
@@ -71,26 +71,18 @@
         <div class="upp" style="text-align:right;font-size:12px;color:var(--muted);margin-top:4px">0%</div>
       </div>
     </form>
+    <div style="display:flex;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);flex-wrap:wrap">
+      <form method="POST" action="{{ url_for('admin_pads_regenerar', pack_id=p.id) }}" style="margin:0">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button type="submit" style="background:none;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">↻ Regenerar 12 tonos</button>
+      </form>
+      <form method="POST" action="{{ url_for('admin_pads_eliminar', pack_id=p.id) }}" style="margin:0" onsubmit="return confirm('¿Eliminar el pad «{{ p.nombre }}»? Esto borra sus 12 tonos.');">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <button type="submit" style="background:none;border:1px solid #5a2a2a;color:#e08f8f;border-radius:999px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">Eliminar pad</button>
+      </form>
+    </div>
   </div>
-  <div class="card" style="margin-top:18px">
-    <h2 style="font-size:15px;margin:0 0 12px">🎧 Pre-escuchar</h2>
-    <label>Tono</label>
-    <select id="prevtono">
-      {% for r in roots %}<option value="{{ loop.index0 }}"{% if loop.index0 == p.base_idx %} selected{% endif %}>{{ r }}</option>{% endfor %}
-    </select>
-    <audio id="prevaudio" controls style="width:100%;margin-top:12px"></audio>
-    <div id="prevmsg" class="hint" style="margin-top:6px"></div>
-  </div>
-  <script>
-  (function(){
-    var sel=document.getElementById('prevtono'),au=document.getElementById('prevaudio'),msg=document.getElementById('prevmsg');
-    var base='{{ url_for("admin_pads") }}/{{ p.id }}/audio/';
-    function load(play){var idx=sel.value;msg.textContent='';au.src=base+idx+'?v='+Date.now();au.load();if(play){au.play().catch(function(){});}}
-    sel.addEventListener('change',function(){load(true);});
-    au.addEventListener('error',function(){msg.textContent='Ese tono aún se está generando. Probá en unos segundos.';});
-    load(false);
-  })();
-  </script>
+
 </div>
 <script>
 function subirPad(form){

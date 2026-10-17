@@ -124,8 +124,8 @@
   .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
 
   .launcher{min-height:calc(100vh - 130px);display:flex;align-items:center;justify-content:center}
-  .iconnav{display:grid;grid-template-columns:repeat(3,124px);justify-content:center;gap:18px}
-  @media(max-width:460px){.iconnav{grid-template-columns:repeat(2,124px)}}
+  .iconnav{display:grid;grid-template-columns:repeat(4,124px);justify-content:center;gap:18px}
+  @media(max-width:620px){.iconnav{grid-template-columns:repeat(2,124px)}}
   .navicon{display:flex;flex-direction:column;align-items:center;gap:11px;cursor:pointer;text-decoration:none;
     color:var(--txt2);width:124px;padding:10px 6px;border-radius:18px;transition:color .15s}
   .navicon:hover{color:var(--txt)}
@@ -214,7 +214,7 @@
     {% if false %}{# NeuralSync ya no se vende como app aparte; la tecnología de sincronía vive dentro de NeuralPlay #}<a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('live'){% else %}avisoPlan(){% endif %}"><span class="ni-ico" style="padding:0;overflow:hidden"><img src="/static/neuralworship.png" alt="NeuralSync" style="width:100%;height:100%;object-fit:cover;border-radius:21px"></span><span class="ni-lbl">NeuralSync</span></a>{% endif %}
     {# NeuralPlay se descarga desde el App Store: se quita el icono de descarga directa del admin #}
     {% if features.usuarios %}<a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('usuarios'){% else %}avisoPlan(){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="ni-lbl">Usuarios</span></a>{% endif %}
-    <a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('repertorios'){% else %}avisoPlan(){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span class="ni-lbl">Repertorios</span></a>
+    {# Repertorios retirado del admin: ahora solo se crean/gestionan desde NeuralPlay #}
     <a class="navicon {{ '' if plan_activo else 'locked' }}" href="javascript:void(0)" onclick="{% if plan_activo %}showSection('biblioteca'){% else %}avisoPlan(){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><span class="ni-lbl">Biblioteca</span></a>
     <a class="navicon {{ 'locked' if suspendida else '' }}" href="javascript:void(0)" onclick="{% if suspendida %}avisoPlan(){% else %}showSection('organizacion'){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span><span class="ni-lbl">Información de Organización</span></a>
     <a class="navicon {{ 'locked' if suspendida else '' }}" href="javascript:void(0)" onclick="{% if suspendida %}avisoPlan(){% else %}showSection('suscripcion'){% endif %}"><span class="ni-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span><span class="ni-lbl">Suscripción</span></a>
@@ -270,7 +270,7 @@
       </div>
       <div style="flex:1;min-width:150px;padding:14px 16px;background:var(--raised);border:1px solid var(--line);border-radius:10px">
         <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Asientos de músico</div>
-        <div style="font-size:24px;font-weight:800;color:var(--txt)">{{ musicos_activos_n }} <span style="font-size:14px;color:var(--txt2);font-weight:500">/ {{ org_info.max_musicos }}</span></div>
+        <div style="font-size:24px;font-weight:800;color:var(--txt)">{{ musicos_activos_n }} <span style="font-size:14px;color:var(--txt2);font-weight:500">/ {{ org_info.max_musicos | asientos_fmt }}</span></div>
         <div style="font-size:11px;color:var(--txt3);margin-top:6px">Paquete: {{ paquetes[org_info.paquete].nombre if (org_info and org_info.paquete in paquetes) else '—' }}</div>
       </div>
     </div>
@@ -545,8 +545,8 @@
     {% set full = p.midi %}
     {% set _asientos_tot = org_info.max_musicos if (org_info and org_info.max_musicos) else p.asientos %}
     {% set _gb_tot = org_info.almacen_gb if (org_info and org_info.almacen_gb) else p.gb %}
-    {% set _ex_asientos = _asientos_tot - p.asientos %}
-    {% set _ex_gb = _gb_tot - p.gb %}
+    {% set _ex_asientos = 0 if p.asientos >= 100000 else ([_asientos_tot - p.asientos, 0]|max) %}
+    {% set _ex_gb = [_gb_tot - p.gb, 0]|max %}
     {% set _costo_amp = (_ex_gb // 50) * 5 + _ex_asientos * 2 %}
     {% set _costo_total = (p.precio or 0) + _costo_amp %}
     <div style="margin-bottom:18px">
@@ -579,9 +579,9 @@
       <div style="font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--txt2);margin:16px 0 4px">General</div>
       {% set _asientos_tot = org_info.max_musicos if (org_info and org_info.max_musicos) else p.asientos %}
       {% set _gb_tot = org_info.almacen_gb if (org_info and org_info.almacen_gb) else p.gb %}
-      {% set _ex_asientos = _asientos_tot - p.asientos %}
-      {% set _ex_gb = _gb_tot - p.gb %}
-      {{ frow(true, (p.asientos ~ ' asientos de músicos') if _ex_asientos <= 0 else (p.asientos ~ ' + ' ~ _ex_asientos ~ ' extra  =  ' ~ _asientos_tot ~ ' asientos de músicos')) }}
+      {% set _ex_asientos = 0 if p.asientos >= 100000 else ([_asientos_tot - p.asientos, 0]|max) %}
+      {% set _ex_gb = [_gb_tot - p.gb, 0]|max %}
+      {{ frow(true, 'Asientos de músicos ilimitados' if p.asientos >= 100000 else ((p.asientos ~ ' asientos de músicos') if _ex_asientos <= 0 else (p.asientos ~ ' + ' ~ _ex_asientos ~ ' extra  =  ' ~ _asientos_tot ~ ' asientos de músicos'))) }}
       {{ frow(true, (p.gb ~ ' GB de almacenamiento para tus tracks') if _ex_gb <= 0 else (p.gb ~ ' GB + ' ~ _ex_gb ~ ' GB extra  =  ' ~ _gb_tot ~ ' GB de almacenamiento')) }}
       {% if _ex_asientos > 0 or _ex_gb > 0 %}
       <div style="font-size:12px;color:var(--live);margin:6px 0 2px">✓ Ampliaciones contratadas: {% if _ex_gb > 0 %}+{{ _ex_gb }} GB{% endif %}{% if _ex_gb > 0 and _ex_asientos > 0 %} · {% endif %}{% if _ex_asientos > 0 %}+{{ _ex_asientos }} asiento(s){% endif %}</div>

@@ -39,6 +39,10 @@
   .tab:hover{transform:translateY(-3px);box-shadow:0 5px 14px rgba(0,0,0,.28);}
   .tab:hover:not(.active){border-color:var(--gold);color:var(--gold);}
   .tab.active{background:var(--gold);color:#0a0a0a;border-color:var(--gold);}
+  .tab-soon{position:relative;flex-direction:column;gap:3px;opacity:.55;cursor:not-allowed;border-style:dashed;}
+  .tab-soon:hover{transform:none;box-shadow:none;border-color:var(--line);color:var(--muted);}
+  .soon-badge{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);
+    background:rgba(212,175,55,.12);border:1px solid rgba(212,175,55,.35);border-radius:8px;padding:1px 7px;}
   .mtabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;}
   .mtab{padding:7px 12px;border-radius:9px;background:var(--strip);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-size:12.5px;font-weight:600;font-family:inherit;}
   .mtab.active{background:var(--gold);color:#0a0a0a;border-color:var(--gold);}
@@ -110,6 +114,7 @@
 <div class="wrap">
   <a class="back" href="{{ url_for('admin') }}?sec=biblioteca">← Volver a la biblioteca</a>
   <h1 style="display:flex;align-items:center;gap:12px">{% if info.portada %}<img src="{{ url_for('static', filename=info.portada) }}{% if info.portada_ts %}?v={{ info.portada_ts }}{% endif %}" alt="" style="width:42px;height:42px;border-radius:9px;object-fit:cover;flex-shrink:0">{% endif %}<span>{{ titulo }}</span></h1>
+  {% if info.artista %}<div class="sub" style="color:var(--gold);font-weight:600;margin-top:2px">{{ info.artista }}</div>{% endif %}
   <div class="sub">Gestionar Canción</div>
 
   {% with mensajes = get_flashed_messages(with_categories=true) %}
@@ -124,6 +129,7 @@
     {% if features.midi %}<button class="tab" data-tab="midi" onclick="tab('midi')">MIDI</button>{% endif %}
     {% if features.export_pdf %}<button class="tab" data-tab="letras" onclick="tab('letras')">Lyrics</button>{% endif %}
     <button class="tab" data-tab="eliminar" onclick="tab('eliminar')">Eliminar Canción</button>
+    <button class="tab tab-soon" type="button" disabled title="Próximamente">NeuralPresenter<span class="soon-badge">Próximamente</span></button>
   </div>
 
   <!-- Stems -->
@@ -249,7 +255,7 @@
   <div class="panel" id="p-tiempos">
     <div class="card">
       <h2>Secciones</h2>
-      <div class="hint"><b>Motor Neural de Secciones</b> &mdash; analiza tu pista de <b>Click</b> por detección de onsets y reconstruye la grilla rítmica exacta: beats, acento del compás y mapa de tempo (detecta cambios de tempo en medleys). Reproduce las capas sincronizadas al mismo reloj de audio (<b>Click &middot; Guía &middot; Mezcla</b>), navega <b>beat por beat</b> con &#9664; &#9654; o las flechas del teclado, y fija cada sección con precisión de milisegundos alineada al beat. Al guardar, las secciones se propagan al <b>Cifrado</b> listas para los acordes.</div>
+      <div class="hint">Aquí marcás las <b>secciones</b> de la canción (Intro, Verso, Coro, Puente…). Reproducí la pista, movete al punto exacto con &#9664; &#9654; y tocá <b>+ Marcar sección</b>. Al guardar, las secciones quedan listas para el <b>Cifrado</b>.</div>
 
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0">
         <button type="button" id="sx-play" onclick="sxPlay()" style="background:#2E6BE6;color:#fff;border:none;border-radius:50%;width:42px;height:42px;font-size:15px;cursor:pointer">&#9654;</button>
@@ -259,8 +265,6 @@
           <button type="button" id="sx-t-mezcla" onclick="sxToggle('mezcla')" style="background:#2E6BE6;color:#fff;border:1px solid #2E6BE6;border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer">Mezcla</button>
         </div>
         <button type="button" id="sx-anbtn" onclick="sxAnalizar()" style="background:#0f0f0f;color:#cfe0ff;border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-size:13px;cursor:pointer">Analizar click</button>
-        <span style="font-size:12px;color:var(--muted)">Pulso</span>
-        <select id="sx-factor" onchange="sxFactor(this.value)" style="background:#0a0a0a;color:#fff;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px"><option value="auto">Auto</option><option value="1">&#215;1</option><option value="2">&#247;2</option><option value="3">&#247;3</option><option value="4">&#247;4</option></select>
         <span id="sx-time" style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--muted)">0:00 / 0:00</span>
         <span id="sx-info" style="font-size:12px;color:var(--muted)"></span>
       </div>
@@ -791,7 +795,7 @@ function autosaveTiempos(){
   var cv=document.getElementById('sx-wave'), g2=cv.getContext('2d');
   var DET=null, SX=[], ZOOM=16, DBPHASE=0, rafId=0, pendingPlay=false, FACTOR=1, FMODE='auto', cursorBeat=0;
   var AC=null;
-  var L={click:{on:true},guia:{on:true},mezcla:{on:true}};
+  var L={click:{on:true},guia:{on:true},mezcla:{on:false}};
   var playing=false, startT=0, startOff=0, pausedOff=0, DUR=0;
   var TIPOS={click:'Click',guia:'Guía',mezcla:'Mezcla'};
   function $(id){return document.getElementById(id);}
@@ -816,15 +820,21 @@ function autosaveTiempos(){
   function curT(){ return playing ? (AC.currentTime - startT + startOff) : pausedOff; }
   function ensureAC(){ if(!AC){ AC=new (window.AudioContext||window.webkitAudioContext)(); ['click','guia','mezcla'].forEach(function(k){ L[k].gain=AC.createGain(); L[k].gain.gain.value=L[k].on?1:0; L[k].gain.connect(AC.destination); }); } }
   function loadLayer(k, cb){
-    var la=L[k]; if(la.ready){ cb&&cb(); return; } if(la.loading){ return; } la.loading=true;
+    var la=L[k];
+    if(la.ready){ cb&&cb(); return; }
+    if(!la.cbs) la.cbs=[];
+    if(cb) la.cbs.push(cb);                 // encolamos: si ya está cargando, igual esperamos
+    if(la.loading){ return; }
+    la.loading=true;
+    function fireCbs(){ var cbs=la.cbs||[]; la.cbs=[]; cbs.forEach(function(f){ try{f();}catch(e){} }); }
     (function poll(){
       fetch('/admin/pistas/'+NUM+'/audio_prep/'+k,{method:'POST',headers:{'X-CSRFToken':CSRF}}).then(function(r){return r.json();}).then(function(d){
-        if(!d.ok){ la.loading=false; return; }
+        if(!d.ok){ la.loading=false; la.cbs=[]; return; }
         if(!d.ready){ setTimeout(poll,1500); return; }
         fetch('/admin/pistas/'+NUM+'/audio/'+k).then(function(r){return r.arrayBuffer();}).then(function(ab){
           ensureAC();
-          AC.decodeAudioData(ab, function(buf){ la.buf=buf; la.ready=true; la.loading=false; if(buf.duration>DUR)DUR=buf.duration; rellenarBeats(); draw(); updReady(); cb&&cb(); }, function(){ la.loading=false; });
-        }).catch(function(){ la.loading=false; });
+          AC.decodeAudioData(ab, function(buf){ la.buf=buf; la.ready=true; la.loading=false; if(buf.duration>DUR)DUR=buf.duration; rellenarBeats(); draw(); updReady(); fireCbs(); }, function(){ la.loading=false; la.cbs=[]; });
+        }).catch(function(){ la.loading=false; la.cbs=[]; });
       }).catch(function(){ la.loading=false; });
     })();
   }
@@ -833,7 +843,7 @@ function autosaveTiempos(){
   function stopAll(){ ['click','guia','mezcla'].forEach(function(k){ if(L[k].src){ try{L[k].src.stop();}catch(e){} L[k].src=null; } }); }
   function playBtn(p){ $('sx-play').innerHTML = p ? '&#10073;&#10073;' : '&#9654;'; }
   function anyReady(){ return ['click','guia','mezcla'].some(function(k){return L[k].ready;}); }
-  function updReady(){ var b=$('sx-play'); if(!b)return; var r=anyReady(); b.disabled=!r; b.style.opacity=r?'1':'0.45'; b.style.cursor=r?'pointer':'default'; if(!r&&!DET){ info('Cargando pistas\u2026'); } }
+  function updReady(){ var b=$('sx-play'); if(!b)return; b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer'; }
   window.sxPlay=function(){
     ensureAC(); if(AC.state==='suspended'){ AC.resume(); }
     if(playing){ pausedOff=curT(); stopAll(); playing=false; playBtn(false); draw(); return; }
@@ -841,7 +851,7 @@ function autosaveTiempos(){
     if(!act.length){ info('Activa al menos una pista (Click, Guia o Mezcla).'); return; }
     var notReady=act.filter(function(k){return !L[k].ready;});
     if(!notReady.length){ info(''); startAll(pausedOff); playBtn(true); return; }
-    info('Cargando pistas...'); pendingPlay=true;
+    info('Preparando audio…'); pendingPlay=true;
     notReady.forEach(function(k){ loadLayer(k, tryStart); });
   };
   function tryStart(){ if(!pendingPlay)return; var act=['click','guia','mezcla'].filter(function(k){return L[k].on;}); if(act.every(function(k){return L[k].ready;})){ pendingPlay=false; info(''); startAll(pausedOff); playBtn(true); } }
@@ -894,7 +904,7 @@ function autosaveTiempos(){
   ['click','guia','mezcla'].forEach(togBtn);
   updReady(); setTimeout(function(){ var b=$('sx-play'); if(b) b.disabled=false; b&&(b.style.opacity='1',b.style.cursor='pointer'); }, 25000);
   sxRender(); draw(); sxAnalizar();
-  ['click','guia','mezcla'].forEach(function(k){ loadLayer(k); });
+  loadLayer('click');   // solo precargamos el Click (liviano); Guía/Mezcla se cargan al usarlas
 })();
 </script>
 </body>

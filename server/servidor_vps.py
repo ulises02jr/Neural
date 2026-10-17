@@ -103,7 +103,22 @@ def archivo_config(org=1):
     return ARCHIVO_CONFIG
 
 
+def archivo_arreglos(org=None):
+    """arreglos.json por organización: lista de {id, name, seq} (arreglos de NeuralPlay)."""
+    base = _org_base(org if org is not None else org_actual())
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return base / "arreglos.json"
+
+
 # ── Audio en Spaces (delivery) con fallback local (interruptor spaces_activo) ──
+_AUDIO_CT = {".wav": "audio/wav", ".flac": "audio/flac", ".mp3": "audio/mpeg",
+             ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".aif": "audio/aiff",
+             ".aiff": "audio/aiff"}
+
+
 def _key_audio(local_path):
     """Key S3 = ruta lógica del archivo (pistas/... , pads/... , orgs/<id>/...).
     Robusto ante symlinks resueltos (el volumen se monta en otra ruta)."""
@@ -139,7 +154,8 @@ def _servir_audio(local_path, mimetype=None):
         if almacen.habilitado():
             key = _key_audio(local_path)
             if key and almacen.existe(key):
-                return redirect(almacen.url_firmada(key))
+                ct = mimetype or _AUDIO_CT.get(os.path.splitext(str(local_path))[1].lower())
+                return redirect(almacen.url_firmada(key, content_type=ct))
     except Exception as e:
         logging.error("servir audio Spaces %s: %s", local_path, e)
     return send_file(str(local_path), mimetype=mimetype, conditional=True) if mimetype else send_file(str(local_path))
@@ -1238,6 +1254,102 @@ def api_live_beatgrid(numero):
     except Exception as e:
         logging.error("beatgrid %s: %s", numero, e)
         return jsonify({"ok": False, "grid": [], "bpm": 0})
+
+
+@app.route("/api/live/arreglos", methods=["GET"])
+def api_live_arreglos_get():
+    """NeuralPlay: arreglos guardados de la organización. Token.
+    Devuelve lista de {id, name, seq} (id = número de canción)."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    data = []
+    try:
+        f = archivo_arreglos()
+        if f.exists():
+            data = json.loads(f.read_text(encoding="utf-8")) or []
+            if not isinstance(data, list):
+                data = []
+    except Exception as e:
+        logging.error("arreglos get: %s", e)
+        data = []
+    return jsonify({"ok": True, "arreglos": data})
+
+
+@app.route("/api/live/arreglos", methods=["POST"])
+def api_live_arreglos_save():
+    """NeuralPlay: guarda TODOS los arreglos de la organización (reemplaza el archivo). Token.
+    Body JSON {"arreglos":[{id,name,seq}, ...]} o form field 'arreglos' con ese JSON."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    try:
+        arr = None
+        body = request.get_json(force=True, silent=True)
+        if isinstance(body, dict):
+            arr = body.get("arreglos")
+        if not isinstance(arr, list):
+            raw = request.values.get("arreglos")
+            if raw:
+                arr = json.loads(raw)
+        if not isinstance(arr, list):
+            return jsonify({"ok": False, "error": "bad_payload"}), 400
+        # Sanitizar: id (int), name (str), seq (lista de int), last (bool = arreglo activo de esa canción)
+        limpio = []
+        for e in arr:
+            try:
+                sid = int(e.get("id"))
+                nom = str(e.get("name", "")).strip()
+                seq = [int(x) for x in (e.get("seq") or [])]
+                last = bool(e.get("last", False))
+                if sid > 0 and nom and seq:
+                    limpio.append({"id": sid, "name": nom, "seq": seq, "last": last})
+            except Exception:
+                continue
+        archivo_arreglos().write_text(json.dumps(limpio, ensure_ascii=False), encoding="utf-8")
+        return jsonify({"ok": True, "guardados": len(limpio)})
+    except Exception as e:
+        logging.error("arreglos save: %s", e)
+        return jsonify({"ok": False, "error": "server"}), 500
+
+
+# ── Guía dinámica: librería de clips de voz (universal, no por organización) ──
+# Un MP3 por nombre de sección (coro.mp3, verso_1.mp3, …). NeuralPlay los descarga
+# y cachea, y reproduce el de la próxima sección 1 compás antes del cambio.
+GUIA_CLIPS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "guia_clips")
+
+
+@app.route("/api/live/guia/list")
+def api_live_guia_list():
+    """NeuralPlay: lista de clips de guía disponibles (slug + tamaño + fecha). Token."""
+    if not _token_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 403
+    clips = []
+    try:
+        if os.path.isdir(GUIA_CLIPS_DIR):
+            for nombre in sorted(os.listdir(GUIA_CLIPS_DIR)):
+                if not nombre.lower().endswith(".mp3"):
+                    continue
+                ruta = os.path.join(GUIA_CLIPS_DIR, nombre)
+                try:
+                    st = os.stat(ruta)
+                    clips.append({"slug": nombre[:-4], "bytes": st.st_size, "mtime": int(st.st_mtime)})
+                except Exception:
+                    continue
+    except Exception as e:
+        logging.error("guia list: %s", e)
+    return jsonify({"ok": True, "clips": clips})
+
+
+@app.route("/api/live/guia/<slug>.mp3")
+def api_live_guia_clip(slug):
+    """NeuralPlay: descarga un clip de guía por slug. Token."""
+    if not _token_ok():
+        return abort(403)
+    if not re.fullmatch(r"[a-z0-9_\-]{1,40}", slug or ""):
+        return abort(404)
+    ruta = os.path.join(GUIA_CLIPS_DIR, slug + ".mp3")
+    if not os.path.isfile(ruta):
+        return abort(404)
+    return send_file(ruta, mimetype="audio/mpeg", conditional=True)
 
 
 @app.route("/api/live/render/<int:numero>/<t>", methods=["POST"])
@@ -2397,6 +2509,34 @@ def api_auth_logout():
     return jsonify({"ok": True})
 
 
+@app.route("/api/auth/eliminar_cuenta", methods=["POST"])
+def api_auth_eliminar_cuenta():
+    """Elimina DEFINITIVAMENTE la cuenta del músico logueado (requisito de App Store).
+    Se identifica por el X-Session-Token y se re-confirma con la contraseña.
+    Borra el usuario y todas sus sesiones. No toca los datos de la organización."""
+    data = request.get_json(silent=True) or request.form
+    stoken = request.headers.get("X-Session-Token", "") or (data.get("session") or "")
+    password = data.get("password") or ""
+    uid = usuarios.usuario_id_por_sesion(stoken)
+    if not uid:
+        return jsonify({"ok": False, "error": "no_session",
+                        "mensaje": "Iniciá sesión de nuevo para eliminar la cuenta."}), 401
+    u = usuarios.buscar_por_id(uid)
+    if not u:
+        return jsonify({"ok": False, "error": "no_user"}), 404
+    # Re-confirmar identidad con la contraseña (evita borrados accidentales o ajenos).
+    if not usuarios.autenticar(u.get("email", ""), password):
+        return jsonify({"ok": False, "error": "credenciales",
+                        "mensaje": "Contraseña incorrecta."}), 403
+    try:
+        usuarios.cerrar_sesiones_usuario(uid)
+        ok = usuarios.eliminar_usuario(uid)
+        return jsonify({"ok": bool(ok)})
+    except Exception as e:
+        logging.error("eliminar_cuenta: %s", e)
+        return jsonify({"ok": False, "error": "server"}), 500
+
+
 @app.route("/api/auth/ping")
 def api_auth_ping():
     """Latido de sesión. Está protegido por el guardia de sesión única: si el
@@ -2542,10 +2682,14 @@ def _uso_almacen_bytes(org_id):
 # Los asientos y el almacenamiento SIEMPRE se derivan del paquete (no se editan a mano).
 # nombre = etiqueta visible; la clave interna (basico/premium/ministerio) NO cambia
 # para no romper la base de datos. midi = habilita la sección MIDI y NeuralPlay completo.
+ASIENTOS_ILIM = 100000   # centinela: asientos "ilimitados" (nunca se alcanza en la práctica)
 PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 1,  "gb": 15,  "midi": False, "salidas": 2,  "tipo": "iglesia"},
-    "premium":    {"nombre": "Plus",    "precio": 10.0, "asientos": 5,  "gb": 50,  "midi": True,  "salidas": 32, "tipo": "iglesia"},
-    "ministerio": {"nombre": "Premium", "precio": 20.0, "asientos": 10, "gb": 100, "midi": True,  "salidas": 32, "tipo": "iglesia"},
+    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 1,             "gb": 5,   "midi": False, "salidas": 2,  "tipo": "iglesia"},
+    "premium":    {"nombre": "Plus",    "precio": 9.99, "asientos": 5,             "gb": 50,  "midi": True,  "salidas": 32, "tipo": "iglesia"},
+    "ministerio": {"nombre": "Premium", "precio": 19.99, "asientos": ASIENTOS_ILIM, "gb": 100, "midi": True,  "salidas": 32, "tipo": "iglesia"},
+    # Plan "reproductor" (NeuralPlay): todas las funciones de NeuralPlay con 100 GB,
+    # SIN NeuralCharts, sin asientos de músicos, sin cifrados ni exportar lyrics/PDF.
+    "reproductor": {"nombre": "NeuralPlay", "precio": 12.99, "asientos": 0, "gb": 100, "midi": True,  "salidas": 32, "tipo": "reproductor"},
     # Plan "sync" (para DAW): NeuralCharts (charts/musicos) + NeuralSync. Sin NeuralPlay.
     "sync":        {"nombre": "NeuralSync", "precio": 10.0, "asientos": 3, "gb": 25, "midi": False, "salidas": 2,  "tipo": "sync"},
 }
@@ -2555,6 +2699,8 @@ PAQUETES = {
 LS_CHECKOUT = {
     "premium":    "https://pagos.neuralworship.com/checkout/buy/92c4d338-a9e0-4248-aa8b-795b7f1bf75b",
     "ministerio": "https://pagos.neuralworship.com/checkout/buy/33ae6bf1-badd-4f2f-bdac-adb09a1fd980",
+    # NeuralPlay ($12.99) -> plan interno "reproductor".
+    "reproductor": "https://pagos.neuralworship.com/checkout/buy/e09c616a-aded-420b-97a8-28686ce2549e",
 }
 
 # Links de checkout de las AMPLIACIONES (add-ons). Se contratan aparte del plan.
@@ -2602,8 +2748,8 @@ COSTOS_INFRA = {
     "dominio_mes": 1.0,          # ~$12/año
     "email_mes": 0.0,            # Resend (plan gratis por ahora)
     "claude_pro_mes": 20.0,      # Claude Pro
-    "comision_pct": 0.029,       # comisión pasarela 2.9%
-    "comision_fija": 0.30,       # + $0.30 por transacción
+    "comision_pct": 0.05,        # comisión LemonSqueezy 5%
+    "comision_fija": 0.50,       # + $0.50 por transacción
     "alerta_almacen_pct": 80,    # aviso "ampliar" al llegar a este % de capacidad
     # Precios de venta de add-ons (amenidades extra)
     "addon_asiento_mes": 2.0,    # asiento (músico) extra sobre el plan
@@ -2657,7 +2803,7 @@ def _contabilidad(filas):
 
     # ───── EGRESOS ─────
     egresos_items = [
-        {"label": "Comisiones de pasarela", "mes": comisiones, "det": "2.9% + $0.30 por cobro"},
+        {"label": "Comisiones de pasarela", "mes": comisiones, "det": "LemonSqueezy 5% + $0.50 por cobro"},
         {"label": "Servidor (droplet 1 vCPU / 1 GB)", "mes": C["droplet_mes"], "det": "DigitalOcean"},
         {"label": "Spaces (audio)", "mes": costo_spaces,
          "det": "base %d GB + 1 TB%s" % (incluido, (" · +$%.2f extra" % spaces_extra) if spaces_extra > 0 else "")},
@@ -3188,7 +3334,67 @@ def _web_encolado(numero, n, org=None):
 CARPETA_PADS = BASE_DIR / "pads"
 CARPETA_PADS.mkdir(exist_ok=True)
 _PADS_INDEX = dir_pads(_cur_org()) / "packs.json"
-_EXT_AUDIO_PAD = (".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aif", ".aiff")
+_EXT_AUDIO_PAD = (".wav", ".mp3", ".flac")
+
+
+def _guardar_pad_base(archivo, carpeta):
+    """Guarda el pad base subido para NeuralPlay. WAV/MP3 -> FLAC (sin pérdida);
+    FLAC se guarda directo. El original solo vive en un temporal y se descarta.
+    Devuelve la extensión final almacenada ('.flac' salvo fallo de conversión).
+    No toca la generación de los 12 tonos (esa lógica queda igual)."""
+    ext = os.path.splitext(archivo.filename)[1].lower()
+    if ext == ".flac":
+        archivo.save(str(carpeta / "base.flac"))
+        _subir_audio(carpeta / "base.flac")
+        return ".flac"
+    tmp = carpeta / ("base.__subida" + ext)
+    salida = carpeta / "base.flac"
+    archivo.save(str(tmp))
+    ok = False
+    try:
+        subprocess.run(
+            ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(tmp),
+             "-c:a", "flac", "-compression_level", "8", str(salida)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+        ok = salida.exists() and salida.stat().st_size > 1000
+    except Exception as e:
+        logging.error("pad base WAV/MP3->FLAC: %s", e)
+    if ok:
+        try:
+            os.remove(str(tmp))
+        except Exception:
+            pass
+        _subir_audio(salida)
+        return ".flac"
+    # Fallback: si la conversión falla, conservamos el original para no perderlo.
+    try:
+        if salida.exists():
+            os.remove(str(salida))
+        os.replace(str(tmp), str(carpeta / ("base" + ext)))
+        _subir_audio(carpeta / ("base" + ext))
+        return ext
+    except Exception as e:
+        logging.error("fallback pad base: %s", e)
+        return ext
+
+
+def _borrar_bases_spaces(carpeta, excepto_ext=None):
+    """Borra en Spaces los base.<ext> viejos del pad (deja el de excepto_ext)."""
+    if not almacen.habilitado():
+        return
+    pref = _key_audio(carpeta)
+    if not pref:
+        return
+    pref = pref.rstrip("/")
+    for e in (".wav", ".mp3", ".flac", ".m4a", ".ogg", ".aif", ".aiff"):
+        if e == excepto_ext:
+            continue
+        try:
+            almacen.borrar(pref + "/base" + e)
+        except Exception:
+            pass
+
+
 PAD_ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 _pads_lock = threading.Lock()
 
@@ -3336,7 +3542,7 @@ def admin_pads_crear():
         return redirect(url_for("admin_pads"))
     ext = os.path.splitext(archivo.filename)[1].lower()
     if ext not in _EXT_AUDIO_PAD:
-        flash("Formato no válido (wav/mp3/m4a/ogg/flac/aiff)", "error")
+        flash("Formato no válido (solo WAV, MP3 o FLAC)", "error")
         return redirect(url_for("admin_pads"))
     with _pads_lock:
         lst = _pads_cargar()
@@ -3345,8 +3551,7 @@ def admin_pads_crear():
             pack_id = secrets.token_hex(4)
         d = dir_pads(_cur_org()) / pack_id
         d.mkdir(parents=True, exist_ok=True)
-        archivo.save(str(d / ("base" + ext)))
-        _subir_audio(d / ("base" + ext))
+        ext = _guardar_pad_base(archivo, d)   # WAV/MP3 -> FLAC; FLAC directo
         portada_rel = ""
         pf = request.files.get("portada")
         if pf and pf.filename:
@@ -3464,8 +3669,8 @@ def admin_pads_editar(pack_id):
                         except Exception:
                             pass
                     d.mkdir(parents=True, exist_ok=True)
-                    nuevo.save(str(d / ("base" + ext)))
-                    _subir_audio(d / ("base" + ext))
+                    ext = _guardar_pad_base(nuevo, d)   # WAV/MP3 -> FLAC; FLAC directo
+                    _borrar_bases_spaces(d, excepto_ext=ext)  # limpia base vieja en Spaces
                     it["ext"] = ext
                     regen = True
             pf = request.files.get("portada")
@@ -3514,12 +3719,23 @@ def admin_pads_editar(pack_id):
 @app.route("/admin/pads/<pack_id>/audio/<int:idx>")
 @login_required("admin")
 def admin_pads_audio(pack_id, idx):
-    """Pre-escucha en el admin: sirve el pad renderizado del tono idx (0-11)."""
+    """Pre-escucha en el admin: sirve el pad renderizado del tono idx (0-11).
+    Con ?j=1 devuelve la URL firmada directa (para el <audio> sin depender del
+    redirect 302, que en algunos navegadores falla)."""
     if idx < 0 or idx > 11 or not _pad_pack(pack_id):
         abort(404)
     f = dir_pads(_cur_org()) / pack_id / ("pad_%d.wav" % idx)
     if not _existe_audio(f):
         abort(404)
+    if request.args.get("j") == "1":
+        try:
+            if almacen.habilitado():
+                key = _key_audio(f)
+                if key and almacen.existe(key):
+                    return jsonify({"ok": True, "url": almacen.url_firmada(key, content_type="audio/wav")})
+        except Exception as e:
+            logging.error("pad audio url %s: %s", pack_id, e)
+        return jsonify({"ok": True, "url": url_for("admin_pads_audio", pack_id=pack_id, idx=idx)})
     return _servir_audio(f)
 
 
@@ -3972,7 +4188,13 @@ def admin_audio(numero, tipo):
     out = _admin_audio_dir(numero) / (tipo + ".mp3")
     if not _existe_audio(out):
         return ("no listo", 404)
-    return _servir_audio(out, mimetype="audio/mpeg")
+    # Servimos SIEMPRE por el mismo dominio (bajando de Spaces si hace falta) en
+    # vez de redirigir al CDN. El editor de secciones es solo del admin y así
+    # funciona en Safari sin depender del dominio cross-origin del CDN.
+    local = _asegurar_local(out)
+    if local is None:
+        return ("no listo", 404)
+    return send_file(str(local), mimetype="audio/mpeg", conditional=True)
 
 
 def _hallar_stem_click(numero):
@@ -4624,6 +4846,15 @@ def _acorde_html(ch):
 def _jinja_acorde(ch):
     from markupsafe import Markup
     return Markup(_acorde_html(ch))
+
+
+@app.template_filter("asientos_fmt")
+def _jinja_asientos(n):
+    """Muestra 'Ilimitados' si el nº de asientos es el centinela de ilimitado."""
+    try:
+        return "Ilimitados" if int(n) >= ASIENTOS_ILIM else str(int(n))
+    except Exception:
+        return str(n)
 
 @app.route("/admin/pistas/<int:numero>/pdf")
 @login_required("admin")

@@ -2075,6 +2075,21 @@ public:
             const int rightW = sepPad + btnColW + midGap + mColW + 6;
             auto fixed = lower.removeFromRight (rightW);
             auto stage = lower;
+            // En edición: fila compacta de botones (Mapeo / Guardar arreglo) arriba del escenario,
+            // reduciendo el mapa para que quepa (igual que Mac/iPad, pero a medida del iPhone).
+            if (editMode)
+            {
+                auto ebar = stage.removeFromTop (30); stage.removeFromTop (4);
+                editBarBounds = ebar;
+                auto b = ebar;
+                const int g2 = 6;
+                keyMapBtn.setBounds   (b.removeFromLeft (118)); b.removeFromLeft (g2);
+                midiMapBtn.setBounds  (b.removeFromLeft (104)); b.removeFromLeft (g2);
+                saveArrBtn.setBounds  (b.removeFromLeft (118)); b.removeFromLeft (g2);
+                saveAsNewBtn.setBounds (b.removeFromLeft (150));
+                keyMapBtn.toFront (false); midiMapBtn.toFront (false);
+                saveArrBtn.toFront (false); saveAsNewBtn.toFront (false);
+            }
             faderPanelBounds = stage;
             faderViewport.setBounds (stage);
             midiPanel.setBounds (stage);

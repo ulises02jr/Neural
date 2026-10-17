@@ -677,6 +677,17 @@ def sesion_valida(session_token):
     return row is not None
 
 
+def usuario_id_por_sesion(session_token):
+    """Devuelve el user_id dueño de ese session_token, o None."""
+    if not session_token:
+        return None
+    with _conexion() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM sesiones WHERE session_token = ?", (session_token,)
+        ).fetchone()
+    return row[0] if row else None
+
+
 def cerrar_sesion(session_token):
     """Cierra (borra) la sesión con ese token, si existe."""
     if not session_token:

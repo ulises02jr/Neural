@@ -167,11 +167,15 @@ def _s3_presign():
     return _presign_client
 
 
-def url_firmada(key, expira=3600):
+def url_firmada(key, expira=3600, content_type=None):
     """URL temporal (presigned). Si hay CDN configurado (spaces_cdn), la sirve por el edge
-    del CDN, que está más cerca del usuario => descarga mucho más rápida."""
+    del CDN, que está más cerca del usuario => descarga mucho más rápida.
+    content_type: si se pasa, fuerza el Content-Type de la respuesta (ej. 'audio/wav')."""
+    params = {"Bucket": _bucket(), "Key": key}
+    if content_type:
+        params["ResponseContentType"] = content_type
     u = _s3_presign().generate_presigned_url(
-        "get_object", Params={"Bucket": _bucket(), "Key": key}, ExpiresIn=expira)
+        "get_object", Params=params, ExpiresIn=expira)
     c = _load()
     cdn = c.get("spaces_cdn")
     if cdn:

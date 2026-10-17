@@ -391,9 +391,10 @@ struct SongCard : public juce::Component
         // En iPhone el cover ocupa menos alto para que el título (2 líneas) no se corte.
         return r.removeFromTop (r.getHeight() * (npEsIPhone() ? 0.62f : 0.76f)).reduced (1.0f);
     }
-    juce::Rectangle<float> removeBtnRect() const { auto c = coverRect(); return { c.getRight() - 34.0f, c.getY() + 8.0f, 26.0f, 26.0f }; }
-    juce::Rectangle<float> tonoBtnRect()   const { auto c = coverRect(); return { c.getCentreX() - 22.0f, c.getCentreY() - 18.0f, 44.0f, 36.0f }; }
-    juce::Rectangle<float> addBtnRect()    const { auto c = coverRect(); return { c.getRight() - 34.0f, c.getBottom() - 34.0f, 26.0f, 26.0f }; }
+    // En iPhone la tarjeta es chica: botones más pequeños para que no se encimen.
+    juce::Rectangle<float> removeBtnRect() const { auto c = coverRect(); const float s = npEsIPhone() ? 20.0f : 26.0f, m = npEsIPhone() ? 6.0f : 8.0f; return { c.getRight() - s - m, c.getY() + m, s, s }; }
+    juce::Rectangle<float> tonoBtnRect()   const { auto c = coverRect(); const float w = npEsIPhone() ? 34.0f : 44.0f, h = npEsIPhone() ? 28.0f : 36.0f; return { c.getCentreX() - w * 0.5f, c.getCentreY() - h * 0.5f, w, h }; }
+    juce::Rectangle<float> addBtnRect()    const { auto c = coverRect(); const float s = npEsIPhone() ? 20.0f : 26.0f, m = npEsIPhone() ? 6.0f : 8.0f; return { c.getRight() - s - m, c.getBottom() - s - m, s, s }; }
 
     void mouseDown (const juce::MouseEvent&) override
     {
@@ -466,18 +467,19 @@ struct SongCard : public juce::Component
             auto c = coverRect();
             { juce::Path clip; clip.addRoundedRectangle (c, 9.0f); g.saveState(); g.reduceClipRegion (clip);
               g.setColour (juce::Colour (0x66000000)); g.fillRect (c); g.restoreState(); }
+            const float glyph = npEsIPhone() ? 16.0f : 22.0f;
             auto rb = removeBtnRect();
             g.setColour (juce::Colour (0xffE5534B)); g.fillEllipse (rb);
-            g.setColour (juce::Colours::white); g.setFont (juce::Font (22.0f, juce::Font::bold));
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (glyph, juce::Font::bold));
             g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), rb, juce::Justification::centred);   // −
             auto tb = tonoBtnRect();
             g.setColour (juce::Colour (0xF0141414)); g.fillRoundedRectangle (tb, 8.0f);
             g.setColour (juce::Colour (0x44ffffff)); g.drawRoundedRectangle (tb, 8.0f, 1.2f);
-            g.setColour (juce::Colours::white); g.setFont (juce::Font (22.0f, juce::Font::bold));
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (glyph, juce::Font::bold));
             g.drawText (juce::String::fromUTF8 ("\xe2\x8b\xaf"), tb, juce::Justification::centred);   // ⋯
             auto ab = addBtnRect();   // + para agregar una canción después de esta
             g.setColour (juce::Colour (0xff3ED66E)); g.fillEllipse (ab);
-            g.setColour (juce::Colours::white); g.setFont (juce::Font (23.0f, juce::Font::bold));
+            g.setColour (juce::Colours::white); g.setFont (juce::Font (npEsIPhone() ? 17.0f : 23.0f, juce::Font::bold));
             g.drawText ("+", ab.translated (0.0f, -1.0f), juce::Justification::centred);
         }
 
@@ -1936,6 +1938,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     int bibScroll = 0;                 // desplazamiento vertical de la biblioteca
     int bibDragStartY = 0, bibScrollStart = 0;   // scroll táctil (arrastre con el dedo)
     bool bibDragging = false, bibMoved = false;
+    // Scroll vertical del diálogo de Tono (iPhone horizontal: el contenido no cabe de alto).
+    int tonoScroll = 0, tonoDragStartY = 0, tonoScrollStart = 0;
+    bool tonoDragging = false, tonoMoved = false;
     NPRoundEditLnF searchLnf;          // buscador con esquinas redondeadas
     juce::TextEditor searchBox;
 
@@ -2116,6 +2121,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
       arrNames = arrs; selArrIdx = juce::jlimit (0, arrs.size(), curArrIdx);   // 0 = Original
       guiaMode = (guiaSel == 1) ? 1 : 0;   // Tracks por defecto; Neural si venía elegido
       repTrack = repSel;                   // permitir repetir/∞ en Track
+      tonoScroll = 0; tonoDragging = false;   // abrir el diálogo desde arriba
       songArtist.clear(); for (auto& b : bibAll) if (b.id == id) { songArtist = b.artista; break; }   // artista para el subtítulo
       inOn = (inSec >= 0.0); outOn = (outSec >= 0.0);
       padIn = pIntro; padOut = pOutro;
@@ -2130,45 +2136,68 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     void showBiblioteca()   // volver del grid de tonos a la lista de canciones
     { mode = Biblioteca; searchBox.setVisible (true); refreshInOut(); renderingSem = 99; stopTimer(); resized(); repaint(); }
 
+    bool phLand() const { return npEsIPhone() && getWidth() > getHeight(); }   // iPhone horizontal (pantalla baja)
     juce::Rectangle<int> panelBounds() const
     {
+        if (phLand())   // horizontal: tarjeta compacta de 2 columnas, con margen alrededor
+        {
+            const int w = juce::jmin (720, getWidth() - 48);
+            const int h = juce::jmin (getHeight() - 18, (mode == Tono ? tonoContentH() + 48 : 420));
+            return getLocalBounds().withSizeKeepingCentre (w, h);
+        }
+        const int h = npEsIPhone() ? juce::jmin (636, getHeight() - 10) : 636;
+        return getLocalBounds().withSizeKeepingCentre (470, h);
+    }
+    // Base del contenido del diálogo de Tono, desplazada por el scroll (iPhone horizontal).
+    juce::Rectangle<int> tp() const { return panelBounds().reduced(22).translated (0, -tonoScroll); }
+    int tonoContentH() const   // alto total del contenido (tono+guía+cargar+inicio/fin+pad)
+    {
         const bool ph = npEsIPhone();
-        return getLocalBounds().withSizeKeepingCentre (ph ? 470 : 470,
-                                                       ph ? juce::jmin (636, getHeight() - 10) : 636);
+        if (phLand()) return rpTop() + topBlockH() + rpGapGrid() + 112;   // inicio/fin y Pad van en 2 columnas (misma altura)
+        return rpTop() + topBlockH() + rpGapGrid() + (ph ? 120 : 124) + (ph ? 16 : 14) + (ph ? 100 : 96);
+    }
+    int tonoMaxScroll() const
+    {
+        if (mode != Tono) return 0;
+        const int avail = panelBounds().getHeight() - 22 - 10;   // margen arriba/abajo de la tarjeta
+        const int ms = tonoContentH() - avail;
+        return ms > 10 ? ms : 0;   // desbordes mínimos (Mac/iPad/portrait) no activan scroll
     }
     // Offsets verticales compactos en iPhone para que todo el contenido quepa.
-    int rpTop()   const { return npEsIPhone() ? 44 : 58; }        // debajo del título
-    int rpCh()    const { return npEsIPhone() ? 36 : 46; }        // alto de cada botón de tono
+    int rpTop()   const { return npEsIPhone() ? 42 : 58; }        // debajo del título
+    int rpCh()    const { return npEsIPhone() ? 30 : 46; }        // alto de cada botón de tono (combos/pills más bajos en iPhone)
     int rpGap()   const { return npEsIPhone() ? 6  : 9;  }        // separación de la grilla
     int rpPitch() const { return rpCh() + rpGap(); }             // paso de fila
-    int rpGapGrid() const { return npEsIPhone() ? 10 : 20; }      // debajo de la grilla
+    int rpGapGrid() const { return npEsIPhone() ? 12 : 20; }      // debajo de la grilla
 
     juce::Rectangle<int> keyRect (int i) const
     {
-        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop());
+        auto p = tp(); p.removeFromTop (rpTop());
         const int cols = 4, gap = rpGap(), cw = (p.getWidth() - (cols - 1) * gap) / cols, ch = rpCh();
         return { p.getX() + (i % cols) * (cw + gap), p.getY() + (i / cols) * (ch + gap), cw, ch };
     }
-    int tonoLabelH() const { return npEsIPhone() ? 22 : 24; }   // "Tono" encima del dropdown
+    int tonoLabelH() const { return npEsIPhone() ? 18 : 24; }   // "Tono" encima del dropdown
     int tonoBlockH() const { return tonoLabelH() + rpCh(); }     // etiqueta + combo
-    int cargarGap() const { return npEsIPhone() ? 8 : 10; }
-    int cargarH()   const { return npEsIPhone() ? 40 : 46; }     // alto del botón "Cargar"
+    int cargarGap() const { return npEsIPhone() ? 10 : 10; }
+    int cargarH()   const { return npEsIPhone() ? 36 : 46; }     // alto del botón "Cargar"
     // ── Selector de Guía (Tracks / Neural), fila propia bajo tono/arreglo ──
     int guiaGapTop() const { return npEsIPhone() ? 10 : 14; }    // espacio sobre la fila de guía
     int guiaLabelH() const { return tonoLabelH(); }             // "GUÍA" encima de las pills
-    int guiaNoteH()  const { return npEsIPhone() ? 15 : 17; }    // aviso bajo las pills
-    int guiaRepGap() const { return npEsIPhone() ? 12 : 16; }    // aire entre el aviso y la casilla
-    int guiaRepH()   const { return npEsIPhone() ? 52 : 58; }    // casilla + título + advertencia (solo en Track)
-    int guiaBlockH() const { return guiaGapTop() + guiaLabelH() + rpCh() + guiaNoteH() + guiaRepGap() + guiaRepH(); }
+    int guiaNoteH()  const { return npEsIPhone() ? 14 : 17; }    // aviso bajo las pills
+    int guiaRepGap() const { return npEsIPhone() ? 8 : 16; }     // aire entre el aviso y la casilla
+    int guiaRepH()   const { return npEsIPhone() ? 42 : 58; }    // casilla + título + advertencia (solo en Track)
+    bool showRepCheck() const { return guiaEfectiva() == 0 && ! guiaForzadaNeural(); }   // casilla solo en modo Track
+    // La casilla "Repetir/∞" solo ocupa espacio en modo Track; en Neural no deja hueco.
+    int guiaBlockH() const { return guiaGapTop() + guiaLabelH() + rpCh() + guiaNoteH() + (showRepCheck() ? (guiaRepGap() + guiaRepH()) : 0); }
     juce::Rectangle<int> repTrackRect() const    // casilla "Permitir repetir/∞" (modo Track)
     {
-        auto p = panelBounds().reduced (22);
+        auto p = tp();
         p.removeFromTop (rpTop() + tonoBlockH() + guiaGapTop() + guiaLabelH() + rpCh() + guiaNoteH() + guiaRepGap());
         return p.removeFromTop (guiaRepH());
     }
     juce::Rectangle<int> guiaRowArea() const
     {
-        auto p = panelBounds().reduced (22);
+        auto p = tp();
         p.removeFromTop (rpTop() + tonoBlockH() + guiaGapTop() + guiaLabelH());
         return p.removeFromTop (rpCh());
     }
@@ -2181,7 +2210,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     int topBlockH() const { return tonoBlockH() + guiaBlockH() + cargarGap() + cargarH(); }   // caja + guía + botón
     juce::Rectangle<int> tonoRowArea() const
     {
-        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoLabelH());
+        auto p = tp(); p.removeFromTop (rpTop() + tonoLabelH());
         return p.removeFromTop (rpCh());
     }
     juce::Rectangle<int> tonoComboRect() const   // caja TONO (mitad izquierda)
@@ -2196,35 +2225,44 @@ struct RepEditPanel : public juce::Component, private juce::Timer
     }
     juce::Rectangle<int> cargarBtnRect() const   // botón "Cargar" debajo de la caja + guía
     {
-        auto p = panelBounds().reduced (22); p.removeFromTop (rpTop() + tonoBlockH() + guiaBlockH() + cargarGap());
+        auto p = tp(); p.removeFromTop (rpTop() + tonoBlockH() + guiaBlockH() + cargarGap());
         auto row = p.removeFromTop (cargarH());
         return row.withSizeKeepingCentre (juce::jmin (row.getWidth(), npEsIPhone() ? 200 : 240), cargarH());
     }
     juce::Rectangle<int> inOutArea() const   // #2 zona de inicio/fin, debajo del botón Cargar
     {
-        auto p = panelBounds().reduced (22);
+        auto p = tp();
         p.removeFromTop (rpTop() + topBlockH() + rpGapGrid());
-        return p.removeFromTop (npEsIPhone() ? 104 : 124);
+        auto row = p.removeFromTop (phLand() ? 112 : (npEsIPhone() ? 120 : 124));
+        if (phLand()) return row.removeFromLeft ((row.getWidth() - 24) / 2);   // horizontal: columna izquierda
+        return row;
     }
     juce::Rectangle<int> ioRow (int row) const   // row 0 = inicio, 1 = fin
     {
         auto a = inOutArea(); a.removeFromTop (44);       // debajo del título + espacio para "min:seg"
-        const int rh = 34, gap = 10;
+        const int rh = npEsIPhone() ? 30 : 34, gap = npEsIPhone() ? 8 : 10;
         a.removeFromTop (row * (rh + gap));
         return a.removeFromTop (rh);
     }
     juce::Rectangle<int> ioTglRect (int row)   const { return ioRow (row).removeFromLeft (30).withSizeKeepingCentre (28, 28); }
     juce::Rectangle<int> ioLabelRect (int row) const { auto r = ioRow (row); r.removeFromLeft (38); return r.removeFromLeft (96); }
     juce::Rectangle<int> ioEditRect (int row)  const { auto r = ioRow (row); r.removeFromLeft (38 + 96); return r.removeFromLeft (90).withSizeKeepingCentre (90, 30); }
-    juce::Rectangle<int> padArea() const   // Pad Player, debajo de inicio/fin
+    juce::Rectangle<int> padArea() const   // Pad Player, debajo de inicio/fin (o a la derecha en horizontal)
     {
-        auto p = panelBounds().reduced (22);
-        p.removeFromTop (rpTop() + topBlockH() + rpGapGrid() + (npEsIPhone() ? 104 : 124) + (npEsIPhone() ? 8 : 14));
-        return p.removeFromTop (npEsIPhone() ? 84 : 96);
+        if (phLand())   // horizontal: columna DERECHA, a la misma altura que inicio/fin
+        {
+            auto p = tp();
+            p.removeFromTop (rpTop() + topBlockH() + rpGapGrid());
+            auto row = p.removeFromTop (112);
+            return row.removeFromRight ((row.getWidth() - 24) / 2);
+        }
+        auto p = tp();
+        p.removeFromTop (rpTop() + topBlockH() + rpGapGrid() + (npEsIPhone() ? 120 : 124) + (npEsIPhone() ? 16 : 14));
+        return p.removeFromTop (npEsIPhone() ? 100 : 96);
     }
     juce::Rectangle<int> padRow (int row) const
     {
-        auto a = padArea(); a.removeFromTop (30);
+        auto a = padArea(); a.removeFromTop (phLand() ? 44 : 30);   // horizontal: alinear filas con la columna de inicio/fin
         const int rh = 30, gap = 8;
         a.removeFromTop (row * (rh + gap));
         return a.removeFromTop (rh);
@@ -2309,6 +2347,10 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         }
         else
         {
+            // Recorte SOLO arriba: al deslizar, el contenido no se monta sobre el título.
+            // Abajo queda libre (los campos y el Pad se ven completos y parejos con sus textos).
+            juce::Graphics::ScopedSaveState sssTono (g);
+            { auto cc = getLocalBounds(); cc.setTop (panelBounds().getY() + rpTop() - 8); g.reduceClipRegion (cc); }
             if (renderingSem == 99)
             {
                 // Etiqueta "TONO" + caja del selector (menú propio al tocarla).
@@ -2415,7 +2457,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
             else
             {
                 // Spinner limpio "Preparando tu tono…" — sin detalles técnicos.
-                auto pb = panelBounds().reduced (22); pb.removeFromTop (rpTop());
+                auto pb = tp(); pb.removeFromTop (rpTop());
                 auto area = pb.removeFromTop (tonoBlockH() + rpGapGrid() + (npEsIPhone() ? 104 : 124));
                 const int nd = prepFrame % 4;
                 juce::String dots = nd == 0 ? juce::String() : juce::String::repeatedString (".", nd);
@@ -2448,6 +2490,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
     void resized() override
     {
+        tonoScroll = juce::jlimit (0, tonoMaxScroll(), tonoScroll);   // acotar scroll del diálogo
         closeBtn.setBounds (panelBounds().getRight() - 46, panelBounds().getY() + 12, 34, 30);   // × siempre arriba-der
         backBtn.setVisible (mode == Tono && addFlow);   // ‹ Atrás solo si venís del flujo de AGREGAR, no al editar
         backBtn.setBounds (panelBounds().getX() + 14, panelBounds().getY() + 12, 96, 30);
@@ -2468,6 +2511,8 @@ struct RepEditPanel : public juce::Component, private juce::Timer
         if (! panelBounds().contains (e.getPosition())) { stopTimer(); renderingSem = 99; setVisible (false); return; }
         if (renderingSem != 99) return;   // ocupado renderizando
         bibDragging = false; bibMoved = false;
+        // Tono: armar posible arrastre de scroll (si el contenido no cabe de alto).
+        if (mode == Tono) { tonoDragStartY = e.y; tonoScrollStart = tonoScroll; tonoMoved = false; tonoDragging = (tonoMaxScroll() > 0); }
         if (mode == Biblioteca)
         {
             // Solo registrar el arranque; la selección se hace en mouseUp si NO hubo arrastre
@@ -2481,10 +2526,10 @@ struct RepEditPanel : public juce::Component, private juce::Timer
             showArrMenu();
         else if (guiaTracksRect().contains (e.getPosition()))
         {   // Tracks solo disponible en Original; con arreglo se queda en Neural
-            if (! guiaForzadaNeural()) { guiaMode = 0; repaint(); }
+            if (! guiaForzadaNeural()) { guiaMode = 0; resized(); repaint(); }   // resized: reubica campos al aparecer la casilla
         }
         else if (guiaNeuralRect().contains (e.getPosition()))
-        { guiaMode = 1; repaint(); }
+        { guiaMode = 1; resized(); repaint(); }
         else if (! guiaForzadaNeural() && guiaEfectiva() == 0 && repTrackRect().contains (e.getPosition()))
         { repTrack = ! repTrack; repaint(); }   // permitir repetir/∞ en modo Track
     }
@@ -2538,6 +2583,7 @@ struct RepEditPanel : public juce::Component, private juce::Timer
                     return;
                 }
                 sp->selArrIdx = r - 1;   // 1->0 (Original), 2->1, ...
+                sp->resized();           // un arreglo fuerza Neural → cambia si se muestra la casilla
                 sp->repaint();
             });
     }
@@ -2565,8 +2611,16 @@ struct RepEditPanel : public juce::Component, private juce::Timer
             });
     }
 
-    void mouseDrag (const juce::MouseEvent& e) override   // scroll táctil de la biblioteca
+    void mouseDrag (const juce::MouseEvent& e) override   // scroll táctil (biblioteca o diálogo de tono)
     {
+        if (tonoDragging)
+        {
+            const int dy = e.y - tonoDragStartY;
+            if (std::abs (dy) > 4) tonoMoved = true;
+            tonoScroll = juce::jlimit (0, tonoMaxScroll(), tonoScrollStart - dy);
+            resized(); repaint();
+            return;
+        }
         if (! bibDragging) return;
         const int dy = e.y - bibDragStartY;
         if (std::abs (dy) > 4) bibMoved = true;
@@ -2576,6 +2630,9 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
     void mouseUp (const juce::MouseEvent& e) override      // tap (sin arrastre) = elegir canción
     {
+        const bool eraTonoDrag = tonoDragging && tonoMoved;
+        tonoDragging = false;
+        if (eraTonoDrag) return;   // fue un desplazamiento del diálogo, no un tap
         if (renderingSem != 99) { bibDragging = false; return; }
         if (mode == Biblioteca && bibDragging && ! bibMoved && bibListArea().contains (e.getPosition()))
             for (int i = 0; i < bib.size(); ++i)
@@ -2585,9 +2642,15 @@ struct RepEditPanel : public juce::Component, private juce::Timer
 
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
-        if (mode != Biblioteca || ! bibListArea().contains (e.getPosition())) return;
         double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
         if (w.isReversed) d = -d;
+        if (mode == Tono && tonoMaxScroll() > 0)
+        {
+            tonoScroll = juce::jlimit (0, tonoMaxScroll(), tonoScroll - (int) (d * 300.0));
+            resized(); repaint();
+            return;
+        }
+        if (mode != Biblioteca || ! bibListArea().contains (e.getPosition())) return;
         bibScroll = juce::jlimit (0, bibMaxScroll(), bibScroll + (int) (d * 300.0));
         repaint();
     }

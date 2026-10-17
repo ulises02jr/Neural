@@ -21,9 +21,9 @@ APP_PRINCIPAL = "https://neuralworship.com"
 # Planes que muestra la landing. Se replican aquí para que el Website no dependa
 # de la base de datos. Si cambian los precios en la app, actualizar también aquí.
 PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 2,  "gb": 25,  "midi": False},
-    "premium":    {"nombre": "Plus",    "precio": 10.0, "asientos": 5,  "gb": 100, "midi": True},
-    "ministerio": {"nombre": "Premium", "precio": 20.0, "asientos": 10, "gb": 200, "midi": True},
+    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 1,      "gb": 5,   "midi": False},
+    "premium":    {"nombre": "Plus",    "precio": 10.0, "asientos": 5,      "gb": 50,  "midi": True},
+    "ministerio": {"nombre": "Premium", "precio": 20.0, "asientos": 100000, "gb": 100, "midi": True},
 }
 
 
