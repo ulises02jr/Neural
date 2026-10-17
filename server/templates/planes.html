@@ -109,6 +109,13 @@
   <h1>Elegí tu plan</h1>
   <p class="sub">Escogé el plan para tu iglesia. Podés cambiarlo cuando quieras.</p>
 
+  {% if modo_lanzamiento %}
+  <div style="max-width:720px;margin:4px auto 20px;background:rgba(76,124,255,.10);border:1px solid rgba(76,124,255,.42);border-radius:12px;padding:14px 18px;color:#9db8ff;font-size:14px;text-align:center;line-height:1.55">
+    🎉 <b>Lanzamiento gratis:</b> durante estos meses tenés <b>todas las funciones desbloqueadas sin costo</b> y sin tarjeta.
+    Los planes de pago inician en <b>enero 2027</b>. ¡Aprovechá para probar todo y contanos qué mejorar!
+  </div>
+  {% endif %}
+
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, msg in messages %}<div class="flash {{ category }}">{{ msg }}</div>{% endfor %}
   {% endwith %}
@@ -173,6 +180,9 @@
         {% if not es_repro %}{{ row(hasPlayAny,  'Sincronización en vivo en NeuralCharts') }}{% endif %}
         {{ row(hasPlayAny,  'Ajusta tiempo inicial y final') }}
         {{ row(hasPlayAny,  'Reproduce pads ambientales con canciones') }}
+        {{ row(hasPlayAny,  'Salto de secciones en vivo') }}
+        {{ row(hasPlayAny,  'Edición de secciones del arreglo original') }}
+        {{ row(hasPlayFull, 'Transiciones de canciones en vivo (Autolink y Crossfade)') }}
         {{ row(hasPlayFull, 'Repite secciones con Loop/Loop Infinito') }}
         {{ row(hasPlayFull, 'Asignación MIDI/Teclado/Controlador') }}
         {{ row(hasPlayAny,  'NeuralPlay para Mac / iPad') }}
@@ -186,7 +196,9 @@
       </ul>
 
       <div class="cta">
-        {% if es_actual %}
+        {% if modo_lanzamiento %}
+          <div class="isactive">🎉 Gratis en el lanzamiento</div>
+        {% elif es_actual %}
           <div class="isactive">✓ Plan activo</div>
         {% elif es_operador %}
           <div class="disabled">No disponible</div>
@@ -300,6 +312,9 @@
         {{ row(true, 'Sincronización en vivo en NeuralCharts') }}
         {{ row(true, 'Ajusta tiempo inicial y final') }}
         {{ row(true, 'Reproduce pads ambientales con canciones') }}
+        {{ row(true, 'Salto de secciones en vivo') }}
+        {{ row(true, 'Edición de secciones del arreglo original') }}
+        {{ row(true, 'Transiciones de canciones en vivo (Autolink y Crossfade)') }}
         {{ row(true, 'Repite secciones con Loop/Loop Infinito') }}
         {{ row(true, 'Asignación MIDI/Teclado/Controlador') }}
         {{ row(true, 'NeuralPlay para Mac / iPad') }}
