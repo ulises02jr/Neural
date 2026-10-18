@@ -11,22 +11,19 @@
 # app principal `charts_app`. Nginx enruta cada ruta al servicio correcto.
 # Este servicio corre en 127.0.0.1:5052 (gunicorn) detrás de nginx.
 # ─────────────────────────────────────────────────────────────
+import os, sys
 from flask import Flask, render_template, redirect
 
+# Fuente ÚNICA de planes y catálogo de funciones (compartida con charts_app).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "shared"))
+from planes_catalogo import PAQUETES, catalogo_features, catalogo_plan
+
 app = Flask(__name__)
+app.jinja_env.globals["catalogo_features"] = catalogo_features
+app.jinja_env.globals["catalogo_plan"] = catalogo_plan
 
 # URL de la app principal (para enlaces que viven en charts_app).
 APP_PRINCIPAL = "https://neuralworship.com"
-
-# Planes que muestra la landing. Se replican aquí para que el Website no dependa
-# de la base de datos. Si cambian los precios en la app, actualizar también aquí.
-PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 1,      "gb": 5,   "midi": False, "tipo": "iglesia"},
-    "premium":    {"nombre": "Plus",    "precio": 9.99, "asientos": 5,      "gb": 50,  "midi": True,  "tipo": "iglesia"},
-    "ministerio": {"nombre": "Premium", "precio": 19.99, "asientos": 100000, "gb": 100, "midi": True,  "tipo": "iglesia"},
-    # NeuralPlay: todas las funciones de NeuralPlay con 100 GB, SIN NeuralCharts/asientos/cifrados/export.
-    "reproductor": {"nombre": "NeuralPlay", "precio": 12.99, "asientos": 0, "gb": 100, "midi": True, "tipo": "reproductor"},
-}
 
 
 import datetime as _dt

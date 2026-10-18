@@ -52,6 +52,14 @@ import emails as emails_module
 import almacen
 import pagos
 
+# Fuente ÚNICA de planes y catálogo de funciones (compartida con la app Website).
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "shared"))
+from planes_catalogo import (
+    ASIENTOS_ILIM, PAQUETES, CATALOGO_FEATURES,
+    features_de_plan, catalogo_features, catalogo_plan,
+)
+
 
 # ───────────────────────── Configuración base ─────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
@@ -2678,21 +2686,8 @@ def _uso_almacen_bytes(org_id):
         return 0
 
 
-# Definición canónica de paquetes: precio mensual, asientos (músicos) y GB.
-# Los asientos y el almacenamiento SIEMPRE se derivan del paquete (no se editan a mano).
-# nombre = etiqueta visible; la clave interna (basico/premium/ministerio) NO cambia
-# para no romper la base de datos. midi = habilita la sección MIDI y NeuralPlay completo.
-ASIENTOS_ILIM = 100000   # centinela: asientos "ilimitados" (nunca se alcanza en la práctica)
-PAQUETES = {
-    "basico":     {"nombre": "Básico",  "precio": 0.0,  "asientos": 1,             "gb": 5,   "midi": False, "salidas": 2,  "tipo": "iglesia"},
-    "premium":    {"nombre": "Plus",    "precio": 9.99, "asientos": 5,             "gb": 50,  "midi": True,  "salidas": 32, "tipo": "iglesia"},
-    "ministerio": {"nombre": "Premium", "precio": 19.99, "asientos": ASIENTOS_ILIM, "gb": 100, "midi": True,  "salidas": 32, "tipo": "iglesia"},
-    # Plan "reproductor" (NeuralPlay): todas las funciones de NeuralPlay con 100 GB,
-    # SIN NeuralCharts, sin asientos de músicos, sin cifrados ni exportar lyrics/PDF.
-    "reproductor": {"nombre": "NeuralPlay", "precio": 12.99, "asientos": 0, "gb": 100, "midi": True,  "salidas": 32, "tipo": "reproductor"},
-    # Plan "sync" (para DAW): NeuralCharts (charts/musicos) + NeuralSync. Sin NeuralPlay.
-    "sync":        {"nombre": "NeuralSync", "precio": 10.0, "asientos": 3, "gb": 25, "midi": False, "salidas": 2,  "tipo": "sync"},
-}
+# PAQUETES y ASIENTOS_ILIM ahora viven en el módulo compartido planes_catalogo
+# (importado arriba). Es la fuente única para charts_app y la app Website.
 
 # Links de checkout de Lemon Squeezy por plan interno de iglesia.
 # Plus ($10)  -> plan interno "premium"    Premium ($20) -> plan interno "ministerio"
@@ -2727,92 +2722,21 @@ def _en_lanzamiento():
 
 
 def _features(paquete, aplicar_lanzamiento=True):
-    """Flags de funciones que la app (NeuralPlay) debe respetar según el plan.
-    aplicar_lanzamiento=False devuelve las capacidades REALES del plan (para la
-    página de precios/comparación, que no debe inflarse con el modo lanzamiento)."""
+    """Capacidades del plan para charts_app. Usa el catálogo compartido
+    (features_de_plan) y le aplica el MODO LANZAMIENTO: durante el lanzamiento
+    todos reciben las capacidades del plan tope, conservando su plan real.
+    aplicar_lanzamiento=False devuelve las capacidades REALES (para la comparación
+    de precios, que no debe inflarse con el lanzamiento)."""
     plan_real = paquete
-    if aplicar_lanzamiento and _en_lanzamiento():
-        paquete = "ministerio"   # modo lanzamiento: capacidades del plan tope para todos
-    p = PAQUETES.get(paquete, PAQUETES["basico"])
-    full = bool(p.get("midi"))
-    repro = p.get("tipo") == "reproductor"   # plan solo-reproductor
-    sync = p.get("tipo") == "sync"           # plan DAW: NeuralCharts + NeuralSync (sin NeuralPlay)
-    return {
-        "midi": full,               # sección MIDI (mapping / MIDI OUT / controlador externo)
-        "infinito": full,           # botón Reproductor Infinito (Plus+)
-        "neuralsync": False,   # NeuralSync ya no se vende como app aparte; la sincronía vive dentro de NeuralPlay
-        "export_pdf": (full and not repro) or sync,   # exportar charts a PDF (charts/sync)
-        "charts": (not repro),      # maneja charts: cifrado + letras (no en reproductor)
-        "usuarios": (not repro),    # gestión de músicos / Modo Músico (no en reproductor)
-        "stems_propios": repro,     # sube sus propios stems
-        "solo_reproductor": repro,
-        "neuralplay": (not sync),   # acceso a NeuralPlay (el plan sync usa su propio DAW)
-        "tipo": p.get("tipo", "iglesia"),
-        "salidas": p.get("salidas", 2),   # salidas de audio (2 estéreo en básico, 32 en Plus+)
-        "asientos": p.get("asientos", 3),
-        "gb": p.get("gb", 20),
-        "paquete": plan_real,
-        "nombre": (PAQUETES.get(plan_real) or p).get("nombre", ""),
-    }
+    pk = "ministerio" if (aplicar_lanzamiento and _en_lanzamiento()) else paquete
+    f = features_de_plan(pk)
+    f["paquete"] = plan_real
+    f["nombre"] = (PAQUETES.get(plan_real) or PAQUETES["basico"]).get("nombre", "")
+    return f
 _PRECIOS_MRR = {k: v["precio"] for k, v in PAQUETES.items()}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CATÁLOGO ÚNICO DE FUNCIONES — fuente de verdad de las descripciones de planes.
-# Se toca SOLO aquí y se actualiza en admin, página de planes y landing.
-# Cada entrada: (sección, etiqueta, regla). La etiqueta puede ser texto o una
-# función f->texto (para textos dinámicos como las salidas). La regla recibe las
-# features del plan (_features) y dice si ese plan incluye la función.
-# ─────────────────────────────────────────────────────────────────────────────
-CATALOGO_FEATURES = [
-    # (sección, etiqueta, regla, clave_i18n)  — etiqueta y clave_i18n pueden ser función(f)
-    ("General", "Creación de repertorios",                                  lambda f: True,                           "f_repertorios"),
-    ("General", "Cargar pads",                                              lambda f: True,                           "f_pads"),
-    ("General", "Cargar multitracks",                                       lambda f: True,                           "f_multitracks"),
-    ("General", "Cargar tus propios cifrados",                              lambda f: f["charts"],                    "f_cifprop"),
-    ("General", "Almacenar notas MIDI",                                     lambda f: f["midi"],                      "f_notasmidi"),
-    ("General", "Exportar lyrics para presentación",                        lambda f: f["export_pdf"],                "f_exlyrics"),
-    ("General", "Exportar charts en PDF",                                   lambda f: f["export_pdf"],                "f_expdf"),
-
-    ("NeuralCharts", "Charts (cifrado + letras)",                           lambda f: f["charts"],                    "f_charts"),
-    ("NeuralCharts", "Sincroniza tus cifrados con NeuralPlay",              lambda f: f["charts"] and f["neuralplay"],"f_synccif"),
-    ("NeuralCharts", "Reproductor de multitracks para ensayo (sincronizado con cifrados)", lambda f: f["charts"],     "f_reproens"),
-    ("NeuralCharts", "Disponible para iPhone, iPad y Android",              lambda f: f["charts"],                    "f_disp"),
-
-    ("NeuralPlay", "Reproductor de multitracks / stems",                    lambda f: f["neuralplay"],                "f_reprostems"),
-    ("NeuralPlay", "Cambio de tono/tempo fuera de línea a los 12 tonos",    lambda f: f["neuralplay"],                "f_tonotempo"),
-    ("NeuralPlay", "Crea y guarda varios repertorios",                      lambda f: f["neuralplay"],                "f_variosrep"),
-    ("NeuralPlay", "Sincronización en vivo con NeuralCharts",               lambda f: f["neuralplay"] and f["charts"],"f_syncvivo"),
-    ("NeuralPlay", "Salto de secciones en vivo",                            lambda f: f["neuralplay"],                "f_salto"),
-    ("NeuralPlay", "Edición de secciones del arreglo original",             lambda f: f["neuralplay"],                "f_edicion"),
-    ("NeuralPlay", "Transiciones de canciones en vivo (Autolink y Crossfade)", lambda f: f["midi"],                   "f_transiciones"),
-    ("NeuralPlay", "Ajusta tiempo inicial y final",                         lambda f: f["neuralplay"],                "f_tiempo"),
-    ("NeuralPlay", "Reproduce pads ambientales con las canciones",          lambda f: f["neuralplay"],                "f_padsamb"),
-    ("NeuralPlay", "Interfaz avanzada de Pad Player",                       lambda f: f["neuralplay"],                "f_padadv"),
-    ("NeuralPlay", "NeuralPlay para Mac, iPad y iPhone",                    lambda f: f["neuralplay"],                "f_npmac"),
-    ("NeuralPlay", lambda f: ("Hasta 32 MultiOuts® con buses" if f["midi"] else "2 salidas de audio"), lambda f: f["neuralplay"], lambda f: ("f_out32" if f["midi"] else "f_out2")),
-    ("NeuralPlay", "Añadir sección de clicks a las canciones al final",     lambda f: f["neuralplay"],                "f_clicks"),
-    ("NeuralPlay", "Repite secciones con Loop / Loop Infinito",             lambda f: f["midi"],                      "f_loop"),
-    ("NeuralPlay", "Asignación MIDI / teclado / controlador",               lambda f: f["midi"],                      "f_midiasig"),
-    ("NeuralPlay", "Reproductor de notas MIDI en sincronización",           lambda f: f["midi"],                      "f_midisync"),
-    ("NeuralPlay", "Múltiples salidas MIDI para lyrics/luces y efectos",    lambda f: f["midi"],                      "f_midimulti"),
-    ("NeuralPlay", "MIDI Clock",                                            lambda f: f["midi"],                      "f_midiclock"),
-    ("NeuralPlay", "Gestión de almacenamiento en dispositivo",             lambda f: f["neuralplay"],                "f_gestalm"),
-]
-
-def catalogo_features(f):
-    """Dado un dict de features (_features), devuelve la lista del catálogo con
-    etiqueta resuelta, 'incluido' y clave i18n. Úsalo en admin/planes/landing."""
-    out = []
-    for sec, etq, regla, i18n in CATALOGO_FEATURES:
-        label = etq(f) if callable(etq) else etq
-        key = i18n(f) if callable(i18n) else i18n
-        out.append({"seccion": sec, "label": label, "incluido": bool(regla(f)), "i18n": key})
-    return out
-
-def catalogo_plan(pk):
-    """Catálogo para un plan por su clave, con capacidades REALES (sin inflar por
-    el modo lanzamiento). Úsalo en la página de planes y la landing (comparación)."""
-    return catalogo_features(_features(pk, aplicar_lanzamiento=False))
+# El catálogo único de funciones y los helpers catalogo_features/catalogo_plan
+# viven en el módulo compartido planes_catalogo (importado arriba).
 
 app.jinja_env.globals["catalogo_features"] = catalogo_features
 app.jinja_env.globals["catalogo_plan"] = catalogo_plan
