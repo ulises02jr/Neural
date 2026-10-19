@@ -95,6 +95,7 @@ public:
         settingsPanel.onConfig  = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
         settingsPanel.onRefresh = [this] { settingsPanel.setVisible (false); reloadCurrent(); };
         settingsPanel.onStorage = [this] { settingsPanel.setVisible (false); openStorage(); };
+        settingsPanel.onReportar = [this] { settingsPanel.setVisible (false); reportarProblema(); };
         settingsPanel.onLogout  = [this] { settingsPanel.setVisible (false); cerrarSesion(); };
         settingsPanel.onCountIn = [this] (bool on) { countInEnabled = on; saveStorageCfg(); };
         settingsPanel.onMasterPS = [this] (bool on)
@@ -2519,6 +2520,66 @@ private:
         loginOverlay->setBounds (getLocalBounds());
         loginOverlay->setVisible (true);
         loginOverlay->toFront (true);
+    }
+
+    void reportarProblema()   // "Reportar un problema": manda el texto al servidor (/api/reporte)
+    {
+        if (serverUrl.isEmpty())
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                juce::String::fromUTF8 ("Sin sesi\xc3\xb3n"),
+                juce::String::fromUTF8 ("Inici\xc3\xa1 sesi\xc3\xb3n para poder enviar un reporte."));
+            return;
+        }
+        auto* w = new juce::AlertWindow (
+            juce::String::fromUTF8 ("Reportar un problema"),
+            juce::String::fromUTF8 ("Contanos qu\xc3\xa9 pas\xc3\xb3: qu\xc3\xa9 hac\xc3\xadas, qu\xc3\xa9 esperabas y qu\xc3\xa9 ocurri\xc3\xb3."),
+            juce::MessageBoxIconType::NoIcon);
+        w->addTextEditor ("msg", juce::String(), juce::String(), false);
+        if (auto* te = w->getTextEditor ("msg"))
+        {
+            te->setMultiLine (true, true);
+            te->setReturnKeyStartsNewLine (false);
+            te->setSize (360, 110);
+        }
+        w->addButton (juce::String::fromUTF8 ("Enviar"),   1, juce::KeyPress (juce::KeyPress::returnKey));
+        w->addButton (juce::String::fromUTF8 ("Cancelar"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+        const juce::String url = serverUrl, sess = serverSession;
+        juce::String ver = "";
+        if (auto* app = juce::JUCEApplication::getInstance()) ver = app->getApplicationVersion();
+        const juce::String device = juce::SystemStats::getOperatingSystemName()
+                                    + " / " + juce::SystemStats::getDeviceDescription();
+        w->enterModalState (true, juce::ModalCallbackFunction::create (
+            [w, url, sess, ver, device] (int res)
+            {
+                std::unique_ptr<juce::AlertWindow> holder (w);
+                if (res != 1) return;
+                const juce::String msg = w->getTextEditorContents ("msg").trim();
+                if (msg.isEmpty()) return;
+                juce::DynamicObject::Ptr o = new juce::DynamicObject();
+                o->setProperty ("mensaje", msg);
+                o->setProperty ("app", "neuralplay");
+                o->setProperty ("version", ver);
+                o->setProperty ("device", device);
+                o->setProperty ("session", sess);
+                const juce::String body = juce::JSON::toString (juce::var (o.get()));
+                const juce::String endpoint = url + "/api/reporte";
+                juce::Thread::launch ([endpoint, body]
+                {
+                    const juce::String resp = httpPostJson (endpoint, body);
+                    const bool ok = resp.contains ("\"ok\"") && resp.contains ("true");
+                    juce::MessageManager::callAsync ([ok]
+                    {
+                        juce::AlertWindow::showMessageBoxAsync (
+                            ok ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon,
+                            juce::String::fromUTF8 (ok ? "\xc2\xa1Gracias!" : "No se pudo enviar"),
+                            juce::String::fromUTF8 (ok
+                                ? "Recibimos tu reporte. Gracias por avisarnos."
+                                : "No se pudo enviar el reporte. Revis\xc3\xa1 tu conexi\xc3\xb3n e intent\xc3\xa1 de nuevo."));
+                    });
+                });
+            }), false);
     }
 
     void cerrarSesion()   // "Cambiar cuenta": olvida el token y pide login de nuevo

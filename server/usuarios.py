@@ -207,6 +207,20 @@ def _init_pg():
             PRIMARY KEY (user_id, app)
         )""",
         "CREATE INDEX IF NOT EXISTS idx_sesiones_token ON sesiones(session_token)",
+        """CREATE TABLE IF NOT EXISTS reportes (
+            id SERIAL PRIMARY KEY,
+            creado_en TEXT NOT NULL,
+            org_id INTEGER,
+            user_id INTEGER,
+            email TEXT,
+            nombre TEXT,
+            app TEXT,
+            version TEXT,
+            dispositivo TEXT,
+            mensaje TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'nuevo'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_reportes_estado ON reportes(estado)",
     ]
     with _conexion() as conn:
         for stmt in ddl:
@@ -285,6 +299,21 @@ def init_db():
                 PRIMARY KEY (user_id, app)
             );
             CREATE INDEX IF NOT EXISTS idx_sesiones_token ON sesiones(session_token);
+
+            CREATE TABLE IF NOT EXISTS reportes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                creado_en TEXT NOT NULL,
+                org_id INTEGER,
+                user_id INTEGER,
+                email TEXT,
+                nombre TEXT,
+                app TEXT,
+                version TEXT,
+                dispositivo TEXT,
+                mensaje TEXT NOT NULL,
+                estado TEXT NOT NULL DEFAULT 'nuevo'
+            );
+            CREATE INDEX IF NOT EXISTS idx_reportes_estado ON reportes(estado);
         """)
         # Migración: la sesión única ahora es por (usuario, app), no solo por usuario.
         # Si la tabla vieja no tiene la columna 'app', se recrea (las sesiones son
@@ -1055,3 +1084,62 @@ def eliminar_invitacion(inv_id, org_id):
 if __name__ == "__main__":
     init_db()
     print(f"✓ Base de datos inicializada en {ARCHIVO_DB}")
+
+
+# ---------------------------------------------------------------------------
+# Reportes de problemas (bug reports) enviados por los usuarios desde las apps
+# y el panel. Se revisan en el panel superadmin.
+# ---------------------------------------------------------------------------
+def crear_reporte(mensaje, *, org_id=None, user_id=None, email=None, nombre=None,
+                  app=None, version=None, dispositivo=None):
+    """Guarda un reporte de problema. Devuelve el id (o None)."""
+    mensaje = (mensaje or "").strip()
+    if not mensaje:
+        return None
+    with _conexion() as conn:
+        cur = conn.execute(
+            "INSERT INTO reportes (creado_en, org_id, user_id, email, nombre, app, "
+            "version, dispositivo, mensaje, estado) VALUES (?,?,?,?,?,?,?,?,?,'nuevo')",
+            (_ahora_iso(), org_id, user_id, (email or "")[:160], (nombre or "")[:120],
+             (app or "")[:40], (version or "")[:40], (dispositivo or "")[:200],
+             mensaje[:4000]),
+        )
+        try:
+            return cur.lastrowid
+        except Exception:
+            return None
+
+
+def listar_reportes(estado=None, limite=300):
+    """Lista reportes (opcionalmente filtrados por estado), más nuevos primero."""
+    with _conexion() as conn:
+        if estado:
+            rows = conn.execute(
+                "SELECT * FROM reportes WHERE estado=? ORDER BY id DESC LIMIT ?",
+                (estado, int(limite))).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM reportes ORDER BY id DESC LIMIT ?",
+                (int(limite),)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def contar_reportes_nuevos():
+    with _conexion() as conn:
+        r = conn.execute("SELECT COUNT(*) FROM reportes WHERE estado='nuevo'").fetchone()
+        return int(r[0]) if r else 0
+
+
+def actualizar_estado_reporte(rid, estado):
+    estado = (estado or "").strip().lower()
+    if estado not in ("nuevo", "visto", "resuelto"):
+        return False
+    with _conexion() as conn:
+        conn.execute("UPDATE reportes SET estado=? WHERE id=?", (estado, int(rid)))
+    return True
+
+
+def eliminar_reporte(rid):
+    with _conexion() as conn:
+        conn.execute("DELETE FROM reportes WHERE id=?", (int(rid),))
+    return True

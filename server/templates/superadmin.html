@@ -80,6 +80,7 @@
   <a href="{{ url_for('admin') }}" style="display:inline-block;margin-bottom:16px;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;color:var(--txt2);background:var(--raised);border:1px solid var(--line)">‹ Volver al panel</a>
   <div class="brand">NEURALWORSHIP</div>
   <h1>Estado de la Empresa</h1>
+  <a href="{{ url_for('superadmin_reportes') }}" style="display:inline-block;margin:8px 0 4px;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;color:#000;background:var(--gold)">🛠 Reportes de problemas{% if reportes_nuevos %} · {{ reportes_nuevos }} nuevo(s){% endif %}</a>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, msg in messages %}

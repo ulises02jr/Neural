@@ -825,7 +825,9 @@ def home():
         if session.get("rol") == "admin":
             return redirect(url_for("admin"))
         return redirect(url_for("principal"))
-    return render_template("landing.html", paquetes=PAQUETES, modo_lanzamiento=_en_lanzamiento())
+    # El landing publico lo sirve la app Website (nginx: location = / -> 5052).
+    # charts_app ya no mantiene su propia copia; redirigimos al landing oficial.
+    return redirect("/")
 
 
 @app.route("/neuralcharts")
@@ -2872,6 +2874,7 @@ def superadmin():
                       "gb": gb})
     return render_template("superadmin.html", orgs=filas, paquetes=PAQUETES,
                            conta=_contabilidad(filas),
+                           reportes_nuevos=usuarios.contar_reportes_nuevos(),
                            total_mrr=round(total_mrr, 2), total_orgs=len(orgs))
 
 
@@ -2977,6 +2980,79 @@ def superadmin_org_eliminar(org_id):
     else:
         flash("No se pudo eliminar: %s" % msg, "error")
     return redirect(url_for("superadmin"))
+
+
+@app.route("/api/reporte", methods=["POST"])
+def api_reporte():
+    # Recibe un reporte de problema desde NeuralPlay / NeuralCharts / panel web.
+    # No requiere CSRF (ruta /api/). Identifica al usuario por X-Session-Token
+    # (apps) o por la sesion web; si no, queda como anonimo.
+    data = request.get_json(silent=True) or request.form
+    mensaje = (data.get("mensaje") or data.get("message") or "").strip()
+    if not mensaje:
+        return jsonify({"ok": False, "error": "vacio",
+                        "mensaje": "Escribi el problema."}), 400
+    app_cli = (data.get("app") or "").strip().lower() or "app"
+    version = (data.get("version") or "").strip()
+    dispositivo = (data.get("device") or data.get("dispositivo")
+                   or request.headers.get("User-Agent") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    nombre = (data.get("nombre") or "").strip()
+    uid = None
+    oid = None
+    stoken = request.headers.get("X-Session-Token", "") or (data.get("session") or "")
+    if stoken:
+        try:
+            uid = usuarios.usuario_id_por_sesion(stoken)
+        except Exception:
+            uid = None
+    if not uid and session.get("user_id"):
+        uid = session.get("user_id")
+    if uid:
+        u = usuarios.buscar_por_id(uid) or {}
+        if not email:
+            email = u.get("email") or ""
+        if not nombre:
+            nombre = ((u.get("nombre") or "") + " " + (u.get("apellido") or "")).strip()
+        oid = u.get("org_id")
+    if not oid and session.get("org_id"):
+        oid = session.get("org_id")
+    try:
+        rid = usuarios.crear_reporte(mensaje, org_id=oid, user_id=uid, email=email,
+                                     nombre=nombre, app=app_cli, version=version,
+                                     dispositivo=dispositivo)
+    except Exception as e:
+        logging.error("crear_reporte: %s", e)
+        return jsonify({"ok": False, "error": "server"}), 500
+    return jsonify({"ok": True, "id": rid,
+                    "mensaje": "Gracias, recibimos tu reporte."})
+
+
+@app.route("/superadmin/reportes")
+@super_admin_required
+def superadmin_reportes():
+    estado = (request.args.get("estado") or "").strip().lower() or None
+    if estado not in ("nuevo", "visto", "resuelto"):
+        estado = None
+    reportes = usuarios.listar_reportes(estado=estado)
+    return render_template("superadmin_reportes.html", reportes=reportes,
+                           filtro=(estado or "todos"),
+                           nuevos=usuarios.contar_reportes_nuevos())
+
+
+@app.route("/superadmin/reporte/<int:rid>/estado", methods=["POST"])
+@super_admin_required
+def superadmin_reporte_estado(rid):
+    usuarios.actualizar_estado_reporte(rid, request.form.get("estado") or "visto")
+    return redirect(request.referrer or url_for("superadmin_reportes"))
+
+
+@app.route("/superadmin/reporte/<int:rid>/eliminar", methods=["POST"])
+@super_admin_required
+def superadmin_reporte_eliminar(rid):
+    usuarios.eliminar_reporte(rid)
+    flash("Reporte eliminado.", "success")
+    return redirect(request.referrer or url_for("superadmin_reportes"))
 
 
 @app.route("/admin/planes")

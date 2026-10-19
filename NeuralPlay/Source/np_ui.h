@@ -1537,7 +1537,7 @@ struct SwitchLNF : public juce::LookAndFeel_V4
 
 struct SettingsPanel : public juce::Component
 {
-    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn, logoutBtn;
+    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn, logoutBtn, reportBtn;
     SwitchLNF switchLnf;
     ~SettingsPanel() override
     {
@@ -1550,6 +1550,7 @@ struct SettingsPanel : public juce::Component
     std::function<void()> onConfig;
     std::function<void()> onRefresh;
     std::function<void()> onStorage;
+    std::function<void()> onReportar;
     std::function<void()> onLogout;
     std::function<void (bool)> onCountIn;
     std::function<void (bool)> onMasterPS;
@@ -1577,6 +1578,12 @@ struct SettingsPanel : public juce::Component
         storeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         storeBtn.onClick = [this] { if (onStorage) onStorage(); };
         addAndMakeVisible (storeBtn);
+
+        reportBtn.setButtonText (juce::String::fromUTF8 ("Reportar un problema"));
+        reportBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
+        reportBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+        reportBtn.onClick = [this] { if (onReportar) onReportar(); };
+        addAndMakeVisible (reportBtn);
 
         logoutBtn.setButtonText (juce::String::fromUTF8 ("Cerrar sesión"));
         logoutBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
@@ -1635,11 +1642,11 @@ struct SettingsPanel : public juce::Component
         if (ph)
         {
             // iPhone: la tarjeta se ajusta a la altura del contenido (sin hueco abajo).
-            // MISMAS medidas que resized(): pad 15, título 30, 8 filas de 33, gap 9, status 16.
-            const int h = juce::jmin (15 + 30 + 8 * 33 + 8 * 9 + 16 + 15, getHeight() - 12);
+            // MISMAS medidas que resized(): pad 15, título 30, 9 filas de 33, gap 9, status 16.
+            const int h = juce::jmin (15 + 30 + 9 * 33 + 9 * 9 + 16 + 15, getHeight() - 12);
             return getLocalBounds().withSizeKeepingCentre (360, h);
         }
-        return getLocalBounds().withSizeKeepingCentre (380, 548);
+        return getLocalBounds().withSizeKeepingCentre (380, 606);
     }
 
     void paint (juce::Graphics& g) override
@@ -1671,6 +1678,7 @@ struct SettingsPanel : public juce::Component
         cfgBtn.setBounds      (b.removeFromTop (bh)); b.removeFromTop (gap);
         storeBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
         refreshBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
+        reportBtn.setBounds   (b.removeFromTop (bh)); b.removeFromTop (gap);
         logoutBtn.setBounds   (b.removeFromTop (bh)); b.removeFromTop (gap);
         statusBounds = b.removeFromTop (22);
     }

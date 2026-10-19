@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reportes · NeuralWorship</title>
+<style>
+  :root{--bg:#0a0a0a;--surface:#141414;--raised:#1f1f1f;--line:#2a2a2a;
+    --txt:#ffffff;--txt2:#a3a3a3;--txt3:#666666;--gold:#9CA3AF;
+    --error:#dc6262;--success:#86B36A;--live:#86B36A}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,Roboto,sans-serif;padding:24px;max-width:1000px;margin:0 auto}
+  a.back{display:inline-block;margin-bottom:16px;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;color:var(--txt2);background:var(--raised);border:1px solid var(--line)}
+  .brand{font-size:15px;font-weight:700;letter-spacing:3px;color:var(--gold)}
+  h1{font-size:22px;font-weight:700;margin:6px 0 2px}
+  .sub{color:var(--txt2);font-size:13px;margin-bottom:18px}
+  .flash{padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:14px;border:1px solid}
+  .flash.success{background:rgba(134,179,106,0.1);color:var(--success);border-color:rgba(134,179,106,0.3)}
+  .flash.error{background:rgba(220,98,98,0.12);color:var(--error);border-color:rgba(220,98,98,0.25)}
+  .filtros{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+  .filtros a{text-decoration:none;background:var(--raised);color:var(--txt2);border:1px solid var(--line);border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700}
+  .filtros a.active{background:var(--gold);color:#000;border-color:var(--gold)}
+  .rep{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:15px 17px;margin-bottom:11px}
+  .rep.nuevo{border-color:rgba(134,179,106,0.4)}
+  .rep-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:9px}
+  .who{font-size:14px;font-weight:700}
+  .meta{font-size:11px;color:var(--txt2);margin-top:3px;line-height:1.6}
+  .tag{display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;background:var(--raised);color:var(--txt2);border:1px solid var(--line)}
+  .tag.neuralplay{color:#8fb3e0;border-color:rgba(143,179,224,.4)}
+  .tag.neuralcharts{color:#c79ad0;border-color:rgba(199,154,208,.4)}
+  .tag.web{color:var(--gold)}
+  .badge{padding:2px 9px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  .badge.nuevo{background:rgba(134,179,106,0.15);color:var(--live)}
+  .badge.visto{background:rgba(156,163,175,0.16);color:var(--gold)}
+  .badge.resuelto{background:rgba(156,163,175,0.1);color:var(--txt3)}
+  .msg{font-size:14px;line-height:1.55;color:var(--txt);white-space:pre-wrap;word-break:break-word;background:var(--raised);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin:8px 0 11px}
+  .acts{display:flex;gap:7px;flex-wrap:wrap}
+  .acts form{display:inline}
+  .acts button{padding:7px 14px;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:var(--raised);color:var(--txt2)}
+  .acts button.ok{background:var(--gold);color:#000;border-color:var(--gold)}
+  .acts button.del{color:var(--error);border-color:rgba(220,98,98,.3)}
+  .empty{text-align:center;color:var(--txt3);padding:48px 0;font-size:14px}
+</style>
+</head>
+<body>
+  <a class="back" href="{{ url_for('superadmin') }}">‹ Volver a Estado de la Empresa</a>
+  <div class="brand">NEURALWORSHIP</div>
+  <h1>Reportes de problemas</h1>
+  <div class="sub">Lo que reportan los usuarios desde las apps y el panel · {{ nuevos }} nuevo(s)</div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, msg in messages %}
+      <div class="flash {{ category }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="filtros">
+    <a href="{{ url_for('superadmin_reportes') }}" class="{{ 'active' if filtro=='todos' else '' }}">Todos</a>
+    <a href="{{ url_for('superadmin_reportes', estado='nuevo') }}" class="{{ 'active' if filtro=='nuevo' else '' }}">Nuevos</a>
+    <a href="{{ url_for('superadmin_reportes', estado='visto') }}" class="{{ 'active' if filtro=='visto' else '' }}">Vistos</a>
+    <a href="{{ url_for('superadmin_reportes', estado='resuelto') }}" class="{{ 'active' if filtro=='resuelto' else '' }}">Resueltos</a>
+  </div>
+
+  {% if not reportes %}
+    <div class="empty">No hay reportes {{ '' if filtro=='todos' else ('en “' ~ filtro ~ '”') }}. 🎉</div>
+  {% endif %}
+
+  {% for r in reportes %}
+    <div class="rep {{ r.estado }}">
+      <div class="rep-head">
+        <div>
+          <div class="who">{{ r.nombre or r.email or 'Anónimo' }}</div>
+          <div class="meta">
+            {{ r.email or 'sin correo' }}<br>
+            {{ r.creado_en[:16]|replace('T',' ') }}
+            {% if r.version %} · v{{ r.version }}{% endif %}
+            {% if r.dispositivo %} · {{ r.dispositivo[:80] }}{% endif %}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <span class="tag {{ r.app }}">{{ r.app or 'app' }}</span>
+          <span class="badge {{ r.estado }}">{{ r.estado }}</span>
+        </div>
+      </div>
+      <div class="msg">{{ r.mensaje }}</div>
+      <div class="acts">
+        {% if r.estado != 'visto' %}
+        <form method="post" action="{{ url_for('superadmin_reporte_estado', rid=r.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="estado" value="visto">
+          <button type="submit">Marcar visto</button>
+        </form>
+        {% endif %}
+        {% if r.estado != 'resuelto' %}
+        <form method="post" action="{{ url_for('superadmin_reporte_estado', rid=r.id) }}">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="estado" value="resuelto">
+          <button type="submit" class="ok">Resuelto</button>
+        </form>
+        {% endif %}
+        {% if r.email %}
+        <a class="acts" style="text-decoration:none"></a>
+        <form method="get" action="mailto:{{ r.email }}">
+          <button type="submit">Responder por correo</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('superadmin_reporte_eliminar', rid=r.id) }}" onsubmit="return confirm('¿Eliminar este reporte?')">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+          <button type="submit" class="del">Eliminar</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+</body>
+</html>

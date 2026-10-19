@@ -833,5 +833,60 @@ function backToMenu(){
   }, true);
 })();
 </script>
+<!-- Reportar un problema (footer discreto) -->
+<div style="text-align:center;margin:28px 0 10px">
+  <button type="button" id="mw-report-open"
+    style="background:none;border:none;color:var(--txt3);font-size:12px;cursor:pointer;text-decoration:underline;font-family:inherit">
+    ¿Algo no funciona? Reportar un problema
+  </button>
+</div>
+
+<div id="mw-report-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center;padding:18px">
+  <div style="background:var(--surface);border:1px solid var(--line);border-radius:14px;max-width:440px;width:100%;padding:20px">
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">Reportar un problema</div>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:12px">Contanos qué pasó. Entre más detalle, mejor lo podemos arreglar.</div>
+    <textarea id="mw-report-msg" rows="5" placeholder="Describí el problema: qué hacías, qué esperabas y qué pasó…"
+      style="width:100%;padding:10px 12px;font-size:14px;background:var(--raised);border:1px solid var(--line);border-radius:9px;color:var(--txt);font-family:inherit;resize:vertical"></textarea>
+    <div id="mw-report-estado" style="font-size:12px;margin-top:8px;min-height:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button type="button" id="mw-report-cancel"
+        style="padding:9px 16px;font-size:13px;font-weight:700;background:var(--raised);color:var(--txt2);border:1px solid var(--line);border-radius:8px;cursor:pointer">Cancelar</button>
+      <button type="button" id="mw-report-send"
+        style="padding:9px 18px;font-size:13px;font-weight:700;background:var(--gold);color:#000;border:none;border-radius:8px;cursor:pointer">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var ov=document.getElementById("mw-report-ov");
+  var open=document.getElementById("mw-report-open");
+  var cancel=document.getElementById("mw-report-cancel");
+  var send=document.getElementById("mw-report-send");
+  var msg=document.getElementById("mw-report-msg");
+  var est=document.getElementById("mw-report-estado");
+  if(!ov||!open) return;
+  function show(){est.textContent="";ov.style.display="flex";setTimeout(function(){msg.focus();},50);}
+  function hide(){ov.style.display="none";}
+  open.addEventListener("click",show);
+  cancel.addEventListener("click",hide);
+  ov.addEventListener("click",function(e){if(e.target===ov)hide();});
+  send.addEventListener("click",function(){
+    var t=(msg.value||"").trim();
+    if(!t){est.style.color="var(--danger)";est.textContent="Escribí el problema antes de enviar.";return;}
+    send.disabled=true;est.style.color="var(--txt2)";est.textContent="Enviando…";
+    fetch("/api/reporte",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({mensaje:t,app:"web",device:navigator.userAgent})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d&&d.ok){est.style.color="var(--live)";est.textContent="¡Gracias! Recibimos tu reporte.";msg.value="";setTimeout(hide,1400);}
+        else{est.style.color="var(--danger)";est.textContent=(d&&d.mensaje)||"No se pudo enviar. Intentá de nuevo.";}
+      })
+      .catch(function(){est.style.color="var(--danger)";est.textContent="Error de conexión. Intentá de nuevo.";})
+      .finally(function(){send.disabled=false;});
+  });
+})();
+</script>
+
 </body>
 </html>
