@@ -3279,6 +3279,22 @@ struct NPAlertLnF : public juce::LookAndFeel_V4
     int getAlertWindowButtonHeight() override { return 36; }
 };
 
+// Enlace pequeño "Enviar correo a soporte" (una sola línea, centrado) para el
+// diálogo de reportar un problema.
+struct NPSupportLink : public juce::Component
+{
+    std::function<void()> onClick;
+    NPSupportLink() { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (juce::Colour (0xff9aa0a6));
+        g.setFont (juce::Font (juce::FontOptions (12.5f)));
+        g.drawText (juce::String::fromUTF8 ("Enviar correo a soporte"),
+                    getLocalBounds(), juce::Justification::centred);
+    }
+    void mouseUp (const juce::MouseEvent&) override { if (onClick) onClick(); }
+};
+
 // ── Diálogo estilo app (campos redondeados + calendario) para crear / duplicar repertorios.
 //    Reemplaza al AlertWindow feo. Se usa solo en Mac por ahora. ──
 struct NPDatePrompt : public juce::Component

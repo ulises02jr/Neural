@@ -2542,14 +2542,15 @@ private:
         {
             te->setMultiLine (true, true);
             te->setReturnKeyStartsNewLine (false);
-            te->setSize (360, 110);
+            te->setSize (360, 68);
         }
-        auto* soporteLink = new juce::HyperlinkButton (
-            juce::String::fromUTF8 ("Enviar correo a soporte"),
-            juce::URL ("mailto:soporte@neuralworship.com?subject=Soporte%20NeuralPlay"));
-        soporteLink->setFont (juce::Font (juce::FontOptions (12.0f)), false, juce::Justification::centred);
-        soporteLink->setColour (juce::HyperlinkButton::textColourId, juce::Colour (0xff9aa0a6));
-        soporteLink->setSize (240, 20);
+        auto* soporteLink = new NPSupportLink();
+        soporteLink->onClick = []
+        {
+            juce::URL ("mailto:soporte@neuralworship.com?subject=Soporte%20NeuralPlay")
+                .launchInDefaultBrowser();
+        };
+        soporteLink->setSize (300, 24);
         w->addCustomComponent (soporteLink);
         w->addButton (juce::String::fromUTF8 ("Enviar"),   1, juce::KeyPress (juce::KeyPress::returnKey));
         w->addButton (juce::String::fromUTF8 ("Cancelar"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
@@ -2562,7 +2563,7 @@ private:
         w->enterModalState (true, juce::ModalCallbackFunction::create (
             [w, soporteLink, url, sess, ver, device] (int res)
             {
-                std::unique_ptr<juce::HyperlinkButton> holderLink (soporteLink);
+                std::unique_ptr<NPSupportLink> holderLink (soporteLink);
                 std::unique_ptr<juce::AlertWindow> holder (w);
                 w->setLookAndFeel (nullptr);
                 if (res != 1) return;
