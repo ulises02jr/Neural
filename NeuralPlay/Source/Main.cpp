@@ -2545,6 +2545,7 @@ private:
             te->setSize (360, 110);
         }
         w->addButton (juce::String::fromUTF8 ("Enviar"),   1, juce::KeyPress (juce::KeyPress::returnKey));
+        w->addButton (juce::String::fromUTF8 ("Correo a soporte"), 2);
         w->addButton (juce::String::fromUTF8 ("Cancelar"), 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
         const juce::String url = serverUrl, sess = serverSession;
@@ -2557,6 +2558,11 @@ private:
             {
                 std::unique_ptr<juce::AlertWindow> holder (w);
                 w->setLookAndFeel (nullptr);
+                if (res == 2) {
+                    juce::URL ("mailto:soporte@neuralworship.com?subject=Soporte%20NeuralPlay")
+                        .launchInDefaultBrowser();
+                    return;
+                }
                 if (res != 1) return;
                 const juce::String msg = w->getTextEditorContents ("msg").trim();
                 if (msg.isEmpty()) return;

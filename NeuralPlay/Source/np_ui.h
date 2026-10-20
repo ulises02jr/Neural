@@ -1535,9 +1535,45 @@ struct SwitchLNF : public juce::LookAndFeel_V4
     }
 };
 
+// Botón de "Reportar un problema" con una banderita dibujada a la par del texto.
+struct FlagReportButton : public juce::Button
+{
+    FlagReportButton() : juce::Button ("Reportar un problema") {}
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat();
+        g.setColour (juce::Colour (down ? 0xff2a2a2a : (over ? 0xff242424 : 0xff1f1f1f)));
+        g.fillRoundedRectangle (r, 8.0f);
+        const juce::String label ("Reportar un problema");
+        juce::Font f (juce::FontOptions (15.0f, juce::Font::bold));
+        g.setFont (f);
+        const float tw = juce::GlyphArrangement::getStringWidth (f, label);
+        const float iconW = 15.0f, gap = 9.0f;
+        float x = (getWidth() - (iconW + gap + tw)) * 0.5f;
+        const float cy = getHeight() * 0.5f;
+        const juce::Colour col (0xfff2f2f2);
+        // banderita (mástil + banderín)
+        const float top = cy - iconW * 0.5f, bot = cy + iconW * 0.5f;
+        const float poleX = x + iconW * 0.14f;
+        g.setColour (col);
+        g.drawLine (poleX, top, poleX, bot, iconW * 0.1f);
+        juce::Path p;
+        p.startNewSubPath (poleX, top);
+        p.lineTo (poleX + iconW * 0.72f, top + iconW * 0.17f);
+        p.lineTo (poleX, top + iconW * 0.36f);
+        p.closeSubPath();
+        g.fillPath (p);
+        // texto
+        g.setColour (col);
+        g.drawText (label, juce::Rectangle<float> (x + iconW + gap, 0.0f, tw + 6.0f, (float) getHeight()),
+                    juce::Justification::centredLeft);
+    }
+};
+
 struct SettingsPanel : public juce::Component
 {
-    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn, logoutBtn, reportBtn;
+    juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn, logoutBtn;
+    FlagReportButton reportBtn;
     SwitchLNF switchLnf;
     ~SettingsPanel() override
     {
@@ -1579,9 +1615,6 @@ struct SettingsPanel : public juce::Component
         storeBtn.onClick = [this] { if (onStorage) onStorage(); };
         addAndMakeVisible (storeBtn);
 
-        reportBtn.setButtonText (juce::String::fromUTF8 ("Reportar un problema"));
-        reportBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
-        reportBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         reportBtn.onClick = [this] { if (onReportar) onReportar(); };
         addAndMakeVisible (reportBtn);
 
@@ -1622,7 +1655,7 @@ struct SettingsPanel : public juce::Component
 
     void refresh()
     {
-        syncBtn.setButtonText ("NeuralSync");
+        syncBtn.setButtonText ("NeuralCharts");
         syncBtn.setToggleState (syncOn, juce::dontSendNotification);
 
         countInBtn.setButtonText (juce::String::fromUTF8 ("Pre-roll por secci\xc3\xb3n"));
