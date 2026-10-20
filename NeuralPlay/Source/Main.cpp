@@ -2535,6 +2535,8 @@ private:
             juce::String::fromUTF8 ("Reportar un problema"),
             juce::String::fromUTF8 ("Contanos qu\xc3\xa9 pas\xc3\xb3: qu\xc3\xa9 hac\xc3\xad""as, qu\xc3\xa9 esperabas y qu\xc3\xa9 ocurri\xc3\xb3."),
             juce::MessageBoxIconType::NoIcon);
+        static NPAlertLnF npAlertLnf;
+        w->setLookAndFeel (&npAlertLnf);
         w->addTextEditor ("msg", juce::String(), juce::String(), false);
         if (auto* te = w->getTextEditor ("msg"))
         {
@@ -2554,6 +2556,7 @@ private:
             [w, url, sess, ver, device] (int res)
             {
                 std::unique_ptr<juce::AlertWindow> holder (w);
+                w->setLookAndFeel (nullptr);
                 if (res != 1) return;
                 const juce::String msg = w->getTextEditorContents ("msg").trim();
                 if (msg.isEmpty()) return;

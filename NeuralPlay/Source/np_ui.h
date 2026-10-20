@@ -3223,6 +3223,29 @@ struct NPRoundFieldLnF : public juce::LookAndFeel_V4
     }
 };
 
+// ── Estilo fino y muy redondeado para el AlertWindow de "Reportar un problema". ──
+struct NPAlertLnF : public juce::LookAndFeel_V4
+{
+    void drawAlertBox (juce::Graphics& g, juce::AlertWindow& alert,
+                       const juce::Rectangle<int>& /*textArea*/, juce::TextLayout& textLayout) override
+    {
+        const float corner = 22.0f;
+        auto full = alert.getLocalBounds().toFloat().reduced (1.0f);
+
+        g.setColour (juce::Colour (0xff161616));                       // fondo oscuro de la app
+        g.fillRoundedRectangle (full, corner);
+        g.setColour (juce::Colour (0x1affffff));                       // borde muy fino y sutil
+        g.drawRoundedRectangle (full.reduced (0.5f), corner, 1.0f);
+
+        g.setColour (alert.findColour (juce::AlertWindow::textColourId));
+        juce::Rectangle<int> txt (alert.getLocalBounds().getX() + 24, 28,
+                                  alert.getLocalBounds().getWidth() - 48,
+                                  alert.getLocalBounds().getHeight() - getAlertWindowButtonHeight() - 20);
+        textLayout.draw (g, txt.toFloat());
+    }
+    int getAlertWindowButtonHeight() override { return 36; }
+};
+
 // ── Diálogo estilo app (campos redondeados + calendario) para crear / duplicar repertorios.
 //    Reemplaza al AlertWindow feo. Se usa solo en Mac por ahora. ──
 struct NPDatePrompt : public juce::Component
