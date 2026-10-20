@@ -1642,8 +1642,8 @@ struct SettingsPanel : public juce::Component
         if (ph)
         {
             // iPhone: la tarjeta se ajusta a la altura del contenido (sin hueco abajo).
-            // MISMAS medidas que resized(): pad 15, título 28, 9 filas de 28, gap 6, status 16.
-            const int h = juce::jmin (15 + 28 + 9 * 28 + 9 * 6 + 16 + 15, getHeight() - 12);
+            // MISMAS medidas que resized(): pad 15, título 44, 9 filas de 28, gap 6, status 16.
+            const int h = juce::jmin (15 + 44 + 9 * 28 + 9 * 6 + 16 + 15, getHeight() - 12);
             return getLocalBounds().withSizeKeepingCentre (360, h);
         }
         return getLocalBounds().withSizeKeepingCentre (380, 606);
@@ -1669,7 +1669,7 @@ struct SettingsPanel : public juce::Component
         auto p = panelBounds();
         closeBtn.setBounds (p.getRight() - 46, p.getY() + 12, 34, 30);
         const bool ph = npEsIPhone();
-        auto b = p.reduced (ph ? 15 : 24); b.removeFromTop (ph ? 28 : 44);
+        auto b = p.reduced (ph ? 15 : 24); b.removeFromTop (ph ? 44 : 44);
         const int bh = ph ? 28 : 46, gap = ph ? 6 : 12;
         syncBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
         countInBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
