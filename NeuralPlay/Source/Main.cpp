@@ -2533,7 +2533,7 @@ private:
         }
         auto* w = new juce::AlertWindow (
             juce::String::fromUTF8 ("Reportar un problema"),
-            juce::String::fromUTF8 ("Contanos qu\xc3\xa9 pas\xc3\xb3: qu\xc3\xa9 hac\xc3\xadas, qu\xc3\xa9 esperabas y qu\xc3\xa9 ocurri\xc3\xb3."),
+            juce::String::fromUTF8 ("Contanos qu\xc3\xa9 pas\xc3\xb3: qu\xc3\xa9 hac\xc3\xad""as, qu\xc3\xa9 esperabas y qu\xc3\xa9 ocurri\xc3\xb3."),
             juce::MessageBoxIconType::NoIcon);
         w->addTextEditor ("msg", juce::String(), juce::String(), false);
         if (auto* te = w->getTextEditor ("msg"))
