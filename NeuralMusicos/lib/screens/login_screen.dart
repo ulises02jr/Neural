@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme.dart';
 import '../api.dart';
+import '../widgets/brand.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
 import 'forgot_screen.dart';
@@ -76,19 +77,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo circular limpio (recorte a circulo, llena el area).
+                  // Logo vectorial local (idéntico en todos los dispositivos, sin red).
                   Center(
                     child: ClipOval(
                       child: Container(
                         width: 90,
                         height: 90,
                         color: NW.raised,
-                        child: Image.network(
-                          '${Api.baseUrl}/static/logo.png',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.graphic_eq, color: NW.chord, size: 40),
-                        ),
+                        alignment: Alignment.center,
+                        child: const NeuralChartsIcon(size: 52, color: NW.txt),
                       ),
                     ),
                   ),

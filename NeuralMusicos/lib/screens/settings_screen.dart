@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../api.dart';
+import '../app_channel.dart';
 import '../audio_engine.dart';
 import 'login_screen.dart';
 
@@ -221,6 +222,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _emailSoporte() {
+    final subject = Uri.encodeComponent('Soporte NeuralCharts');
+    final body = Uri.encodeComponent('\n\n—\nApp: NeuralCharts v${Api.appVersion}');
+    AppChannel.I.openUrl('mailto:soporte@neuralworship.com?subject=$subject&body=$body');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -278,18 +285,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 20),
           _seccion('SOPORTE'),
           _tarjeta(
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _reportarProblema,
-                icon: const Icon(Icons.flag_outlined, size: 18),
-                label: const Text('Reportar un problema'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: NW.txt,
-                  side: const BorderSide(color: NW.line),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _reportarProblema,
+                    icon: const Icon(Icons.flag_outlined, size: 18),
+                    label: const Text('Reportar un problema'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: NW.txt,
+                      side: const BorderSide(color: NW.line),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _emailSoporte,
+                    icon: const Icon(Icons.mail_outline, size: 18),
+                    label: const Text('Enviar Email a Soporte'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: NW.txt,
+                      side: const BorderSide(color: NW.line),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 30),
