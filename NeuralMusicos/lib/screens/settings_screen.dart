@@ -143,6 +143,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _reportarProblema() async {
+    final ctrl = TextEditingController();
+    bool enviando = false;
+    String? error;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: NW.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Reportar un problema', style: TextStyle(color: NW.txt, fontSize: 17)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Contanos qué pasó: qué hacías, qué esperabas y qué ocurrió.',
+                style: TextStyle(color: NW.txt2, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                minLines: 3,
+                maxLines: 6,
+                style: const TextStyle(color: NW.txt),
+                decoration: InputDecoration(
+                  hintText: 'Describí el problema…',
+                  hintStyle: const TextStyle(color: NW.txt3),
+                  errorText: error,
+                  enabledBorder: const OutlineInputBorder(borderSide: BorderSide(color: NW.line)),
+                  focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: NW.chord)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: enviando ? null : () => Navigator.of(ctx).pop(),
+              child: const Text('Cancelar', style: TextStyle(color: NW.txt2)),
+            ),
+            TextButton(
+              onPressed: enviando
+                  ? null
+                  : () async {
+                      if (ctrl.text.trim().isEmpty) {
+                        setLocal(() => error = 'Escribí el problema');
+                        return;
+                      }
+                      setLocal(() { enviando = true; error = null; });
+                      final res = await Api.I.reportarProblema(ctrl.text);
+                      if (res['ok'] == true) {
+                        if (ctx.mounted) Navigator.of(ctx).pop();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('¡Gracias! Recibimos tu reporte.')),
+                          );
+                        }
+                      } else {
+                        setLocal(() {
+                          enviando = false;
+                          error = (res['mensaje'] ?? 'No se pudo enviar').toString();
+                        });
+                      }
+                    },
+              child: enviando
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: NW.chord))
+                  : const Text('Enviar', style: TextStyle(color: NW.chord, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -195,6 +273,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          _seccion('SOPORTE'),
+          _tarjeta(
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _reportarProblema,
+                icon: const Icon(Icons.flag_outlined, size: 18),
+                label: const Text('Reportar un problema'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: NW.txt,
+                  side: const BorderSide(color: NW.line),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 30),

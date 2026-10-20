@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:http/http.dart' as http;
 import 'models.dart';
 import 'app_channel.dart';
@@ -151,6 +152,41 @@ class Api {
         return {'ok': true};
       }
       return {'ok': false, 'mensaje': (j['mensaje'] ?? 'No se pudo eliminar la cuenta.').toString()};
+    } catch (e) {
+      return {'ok': false, 'mensaje': 'Sin conexión. Intentá de nuevo.'};
+    }
+  }
+
+  /// Versión de la app (se actualiza al subir una versión nueva).
+  static const String appVersion = '0.1.0';
+
+  /// Envía un reporte de problema del usuario a /api/reporte.
+  /// Devuelve {ok:bool, mensaje:String?}.
+  Future<Map<String, dynamic>> reportarProblema(String mensaje) async {
+    final msg = mensaje.trim();
+    if (msg.isEmpty) return {'ok': false, 'mensaje': 'Escribí el problema.'};
+    String device = '';
+    try {
+      device = '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+    } catch (_) {}
+    try {
+      final r = await http
+          .post(Uri.parse('$baseUrl/api/reporte'),
+              headers: {
+                'Content-Type': 'application/json',
+                if (session != null && session!.isNotEmpty) 'X-Session-Token': session!,
+              },
+              body: jsonEncode({
+                'mensaje': msg,
+                'app': 'neuralcharts',
+                'version': appVersion,
+                'device': device,
+                if (session != null && session!.isNotEmpty) 'session': session,
+              }))
+          .timeout(const Duration(seconds: 12));
+      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      if (j['ok'] == true) return {'ok': true};
+      return {'ok': false, 'mensaje': (j['mensaje'] ?? 'No se pudo enviar.').toString()};
     } catch (e) {
       return {'ok': false, 'mensaje': 'Sin conexión. Intentá de nuevo.'};
     }
