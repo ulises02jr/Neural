@@ -95,8 +95,19 @@ public:
         settingsPanel.onConfig  = [this] { settingsPanel.setVisible (false); openAudioConfig(); };
         settingsPanel.onRefresh = [this] { settingsPanel.setVisible (false); reloadCurrent(); };
         settingsPanel.onStorage = [this] { settingsPanel.setVisible (false); openStorage(); };
-        settingsPanel.onReportar = [this] { settingsPanel.setVisible (false); reportarProblema(); };
+        settingsPanel.onMidi    = [this] { settingsPanel.setVisible (false); openMidiWindow(); };
+        settingsPanel.onReportar = [this] { settingsPanel.setVisible (false); openAboutWindow(); };   // "Acerca de"
         settingsPanel.onLogout  = [this] { settingsPanel.setVisible (false); cerrarSesion(); };
+
+        addAndMakeVisible (aboutPanel);
+        aboutPanel.setVisible (false);
+        aboutPanel.onSoporte = [this] { aboutPanel.setAlwaysOnTop (false); aboutPanel.setVisible (false); reportarProblema(); };   // abre el cuadro de reporte
+        aboutPanel.onEmail   = [this] { juce::URL ("mailto:soporte@neuralworship.com?subject=Soporte%20NeuralPlay").launchInDefaultBrowser(); };
+        aboutPanel.onManual  = [this] { };   // Manual de Usuario: aún sin enlace
+        aboutPanel.onWeb     = [this] { juce::URL ("https://neuralworship.com").launchInDefaultBrowser(); };
+        aboutPanel.onBack    = [this] { aboutPanel.setAlwaysOnTop (false); aboutPanel.setVisible (false);
+                                        settingsPanel.setVisible (true); settingsPanel.toFront (true); };   // ‹ Menú
+        aboutPanel.onClose   = [this] { aboutPanel.setAlwaysOnTop (false); aboutPanel.setVisible (false); };
         settingsPanel.onCountIn = [this] (bool on) { countInEnabled = on; saveStorageCfg(); };
         settingsPanel.onMasterPS = [this] (bool on)
         {
@@ -206,7 +217,7 @@ public:
         addChildComponent (midiMapBtn);
 
         saveArrBtn.setButtonText (juce::String::fromUTF8 ("Guardar arreglo"));   // Fase A: aplica el arreglo editado
-        saveArrBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff14301a));
+        saveArrBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));   // fondo neutro, solo texto verde (igual que "Guardar como nuevo")
         saveArrBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff8fe0a0));
         saveArrBtn.onClick = [this] { guardarArreglo(); };
         addChildComponent (saveArrBtn);   // se muestra solo en la barra de Editar
@@ -232,7 +243,7 @@ public:
 
 
         addCard.onClick = [this] { openBibliotecaForAdd(); };
-        addChildComponent (addCard);
+        cardHost.addChildComponent (addCard);
 
         repEdit.onPickSong = [this] (int songId)
         {
@@ -334,14 +345,16 @@ public:
         {
             const int at = autoTrans.load();
             juce::PopupMenu m;
-            m.addSectionHeader (juce::String::fromUTF8 ("Ahora (al instante)"));
-            m.addItem (1, juce::String::fromUTF8 ("Autolink (corte seco)"));
-            m.addItem (2, juce::String::fromUTF8 ("Sobreponer (crossfade 2 compases)"));
+            m.setLookAndFeel (&transMenuLnf);   // estilo compacto/oscuro
+            m.addSectionHeader (juce::String::fromUTF8 ("En Vivo"));
+            m.addItem (1, juce::String::fromUTF8 ("Autolink"));
+            m.addItem (2, juce::String::fromUTF8 ("Sobreponer"));
             m.addSeparator();
-            m.addSectionHeader (juce::String::fromUTF8 ("Al terminar la canci\xc3\xb3n (autom\xc3\xa1tico)"));
-            m.addItem (3, juce::String::fromUTF8 ("Autolink al terminar"), true, at == 1);
-            m.addItem (4, juce::String::fromUTF8 ("Sobreponer al terminar"), true, at == 2);
-            m.addItem (5, juce::String::fromUTF8 ("Desactivar autom\xc3\xa1tico"), at != 0, false);
+            m.addSectionHeader (juce::String::fromUTF8 ("Pasar a la siguiente canci\xc3\xb3n"));
+            m.addItem (3, juce::String::fromUTF8 ("Autolink"), true, at == 1);
+            m.addItem (4, juce::String::fromUTF8 ("Sobreponer"), true, at == 2);
+            m.addSeparator();
+            m.addItem (5, juce::String::fromUTF8 ("Sin transici\xc3\xb3n"), at != 0, false);
             juce::Component::SafePointer<MainComponent> sp (this);
             m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&transBtn),
                 [sp] (int r)
@@ -398,7 +411,7 @@ public:
             tb->setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
             addAndMakeVisible (tb);
         }
-        padPlayerBtn.onClick = [this] { if (clickOrArm (kaPadPlayer)) return; if (npEsIPhone()) phoneShowMap = false; setFaderView (3); };
+        padPlayerBtn.onClick = [this] {};   // Pad ahora está siempre visible (ya no es una vista)
         faderViewBtn.kind = 0; repeatBtn.kind = 1; infiniteBtn.kind = 2;
         faderViewBtn.active = true;
         addAndMakeVisible (faderViewBtn);
@@ -418,7 +431,7 @@ public:
             setFaderView (0);
         };
         busesBtn.onClick     = [this] { if (clickOrArm (kaBuses))     return; if (npEsIPhone()) phoneShowMap = false; setFaderView (1); };
-        muteMidiBtn.onClick  = [this] { if (! featMidi) { avisoPlanMidi(); return; } if (clickOrArm (kaMidi))      return; if (npEsIPhone()) phoneShowMap = false; setFaderView (2); };
+        muteMidiBtn.onClick  = [this] { openMidiWindow(); };
 
         repeatBtn.onClick   = [this] { if (clickOrArm (kaRepeat)) return; toggleRepeatOnce(); };
         infiniteBtn.onClick = [this] { if (clickOrArm (kaLoop))   return; toggleLoopInfinite(); };
@@ -430,16 +443,22 @@ public:
         faderViewport.setScrollBarsShown (false, true);
         faderViewport.setScrollBarThickness (10);
         addAndMakeVisible (faderViewport);
+        cardHost.setInterceptsMouseClicks (false, true);   // recorta a los hijos; deja pasar clicks a las portadas
+        addAndMakeVisible (cardHost);
         addAndMakeVisible (midiPanel);
         midiPanel.setVisible (false);
         midiPanel.loadCfg (npAppDir().getChildFile ("midi.json"));
         midiPanel.onChanged = [this] { rebuildMidiOuts(); repaint (mapBounds); };
+        midiPanel.onBack  = [this] { midiPanel.setAlwaysOnTop (false); midiPanel.setVisible (false);
+                                     settingsPanel.setVisible (true); settingsPanel.toFront (true); };   // ‹ Menú → regresa al menú
+        midiPanel.onClose = [this] { midiPanel.setAlwaysOnTop (false); midiPanel.setVisible (false); };  // × → cierra a principal
 
         addAndMakeVisible (padPanel);
         padPanel.setVisible (false);
         padPanel.fader.setLookAndFeel (&faderLnf);
         padPanel.onOpenMenu = [this] { showPadPackMenu(); };
         padPanel.onFaderArm = [this] { armPadFader(); };
+        padPanel.onPower    = [this] { if (clickOrArm (kaPad)) return; padManualToggle(); };   // misma acción que el viejo botón PAD del encabezado
         padPanel.onSel    = [this] (int t)
         {
             if (padAutoActive || padOutroLatched) padUserOverride = true;   // el usuario toma el control
@@ -1409,6 +1428,7 @@ public:
                 const double c1 = juce::jmin (t1, ve);
                 const float x0 = inner.getX() + (float) ((c0 - vs) / span) * inner.getWidth();
                 const float x1 = inner.getX() + (float) ((c1 - vs) / span) * inner.getWidth();
+                if (x1 - x0 < 3.0f) return;   // bloque recortado a casi-nada (p.ej. el anterior pegado al borde): no dibujar remanente
                 juce::Rectangle<float> blk (x0 + 0.5f, (float) inner.getY() + 2.0f,
                                             juce::jmax (10.0f, x1 - x0 - 1.0f), (float) inner.getHeight() - 4.0f);
                 // Onda del tramo real. Si el bloque está recortado por vs/ve, dibujar SOLO la porción
@@ -1474,6 +1494,7 @@ public:
                 {
                     const int r = 10;
                     juce::Rectangle<int> minus ((int) blk.getX() + 5, (int) blk.getBottom() - 2 * r - 5, 2 * r, 2 * r);
+                    g.setColour (juce::Colour (0x80000000)); g.fillEllipse (minus.toFloat().translated (0.0f, 1.8f).expanded (1.3f));   // sombra
                     g.setColour (juce::Colour (0xffE5534B)); g.fillEllipse (minus.toFloat());
                     g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
                     g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), minus, juce::Justification::centred);
@@ -1481,6 +1502,7 @@ public:
                     if (blk.getWidth() > 52.0f)   // + (azul) a la derecha: insertar sección después de este slot
                     {
                         juce::Rectangle<int> plus ((int) blk.getRight() - 2 * r - 5, (int) blk.getBottom() - 2 * r - 5, 2 * r, 2 * r);
+                        g.setColour (juce::Colour (0x80000000)); g.fillEllipse (plus.toFloat().translated (0.0f, 1.8f).expanded (1.3f));   // sombra
                         g.setColour (juce::Colour (0xff2E6BE6)); g.fillEllipse (plus.toFloat());
                         g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
                         g.drawText ("+", plus, juce::Justification::centred);
@@ -1522,7 +1544,7 @@ public:
                         const float gx = inner.getX() + (float) ((dt - vs) / span) * inner.getWidth();
                         float a = 0.035f; if (j % 2 == 0) a = 0.085f; if (j % perBar == 0) a = 0.17f;
                         g.setColour (juce::Colours::white.withAlpha (a));
-                        g.drawVerticalLine ((int) gx, (float) inner.getY(), (float) inner.getBottom());
+                        g.drawVerticalLine ((int) gx, (float) inner.getY() + 2.0f, (float) inner.getBottom() - 2.0f);   // dentro del área
                     }
                 }
                 disp += d;
@@ -1842,7 +1864,29 @@ public:
         const bool on = ! trackSolo[idx].load();
         trackSolo[idx].store (on);
         if (idx < soloDots.size()) { soloDots[idx]->on = on; soloDots[idx]->repaint(); }
+        updateSoloDim();
         markDirty();
+    }
+
+    // Opaca las barras de los canales NO solistas cuando hay al menos un solo activo.
+    void updateSoloDim()
+    {
+        bool anySolo = false;
+        for (int i = 0; i < trackSliders.size(); ++i) if (trackSolo[i].load()) { anySolo = true; break; }
+        for (int i = 0; i < trackSliders.size(); ++i)
+        {
+            const bool dim = anySolo && ! trackSolo[i].load();
+            trackSliders[i]->getProperties().set ("dim", dim);
+            trackSliders[i]->repaint();
+        }
+        for (int f = 0; f < busSliders.size(); ++f)
+        {
+            bool famSolo = false;
+            for (int i = 0; i < trackSliders.size(); ++i)
+                if (trackFamily[i] == f && trackSolo[i].load()) { famSolo = true; break; }
+            busSliders[f]->getProperties().set ("dim", anySolo && ! famSolo);
+            busSliders[f]->repaint();
+        }
     }
     int trackIndexForName (const juce::String& name) const
     {
@@ -1861,6 +1905,7 @@ public:
         trackLabels[idx]->repaint();
         trackSliders[idx]->getProperties().set ("muted", m);
         trackSliders[idx]->repaint();
+        if (idx < muteDots.size()) { muteDots[idx]->on = m; muteDots[idx]->repaint(); }
         markDirty();
         if (! mixPerSong && ! suppressGlobalSave && ! famLocked && idx < trackNames.size())   // canal suelto en la mezcla general
         {
@@ -1917,6 +1962,15 @@ public:
         // botones fijos (transporte + Pad/Buses/MIDI/Faders)
         for (int a = 0; a < kaCount; ++a)
         {
+            // El PAD se movió al panel de pads: su badge se dibuja sobre el botón de ahí
+            // (el padBtn del encabezado quedó invisible, así que hay que redirigir el badge).
+            if (a == kaPad)
+            {
+                if (! padPanel.isShowing()) continue;
+                const int code = midiMapMode ? actMidi[kaPad] : actKey[kaPad];
+                drawKeyBadge (g, getLocalArea (&padPanel, padPanel.rPower), code, armKind == 1 && armedAct == kaPad);
+                continue;
+            }
             auto* b = btnForAct (a);
             if (b == nullptr || ! b->isVisible()) continue;
             const int code = midiMapMode ? (a < 16 ? actMidi[a] : 0) : actKey[a];
@@ -1926,9 +1980,9 @@ public:
         {
             const auto clip = faderViewport.isVisible() ? getLocalArea (&faderViewport, faderViewport.getLocalBounds())
                                                         : juce::Rectangle<int>();
-            for (int i = 0; i < trackLabels.size() && i < trackNames.size(); ++i)
+            for (int i = 0; i < muteDots.size() && i < trackNames.size(); ++i)
             {
-                auto* l = trackLabels[i];
+                auto* l = muteDots[i];
                 if (l == nullptr || ! l->isShowing()) continue;
                 const auto nm = trackNames[i];
                 drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), codeOf (keyByTrack, midiTrackMute, nm), armKind == 2 && armTrack == nm, clip);
@@ -1950,9 +2004,9 @@ public:
                     drawKeyBadge (g, getLocalArea (s, s->getLocalBounds()), fc, armFader && armFaderIdx == i, clip);
                 }
             // buses (familias): mute, solo y fader
-            for (int f = 0; f < busLabels.size() && f < familyNames.size(); ++f)
+            for (int f = 0; f < busMuteDots.size() && f < familyNames.size(); ++f)
             {
-                auto* l = busLabels[f];
+                auto* l = busMuteDots[f];
                 if (l == nullptr || ! l->isShowing()) continue;
                 const auto nm = familyNames[f];
                 drawKeyBadge (g, getLocalArea (l, l->getLocalBounds()), codeOf (keyByBusMute, midiBusMute, nm), armKind == 5 && armTrack == nm, clip);
@@ -1977,6 +2031,9 @@ public:
         // master fader (solo MIDI)
         if (midiMapMode && masterSlider.isShowing())
             drawKeyBadge (g, getLocalArea (&masterSlider, masterSlider.getLocalBounds()), midiMasterFader, armFader && armFaderIdx == -1);
+        // fader del pad (solo MIDI): mismo marco azul que el resto
+        if (midiMapMode && padPanel.fader.isShowing())
+            drawKeyBadge (g, getLocalArea (&padPanel.fader, padPanel.fader.getLocalBounds()), midiPadFader, armFader && armFaderIdx == -3);
         // bloques de canción (tarjetas del repertorio)
         {
             const auto clip = getLocalArea (this, stripBounds);
@@ -1991,6 +2048,18 @@ public:
                 drawKeyBadge (g, host, code, armKind == 3 && armSong == sid, clip);
             }
         }
+    }
+
+    // Fila de botones centrada arriba de los faders — todos del MISMO tamaño.
+    // Orden: Faders · Buses · Repetir · Infinito · Pad · [MIDI temporal].
+    void layoutTopButtons (juce::Rectangle<int> row)
+    {
+        const int bh = juce::jmin (30, row.getHeight());
+        row = row.withSizeKeepingCentre (row.getWidth(), bh);
+        juce::Button* items[4] = { &faderViewBtn, &busesBtn, &repeatBtn, &infiniteBtn };
+        const int bw = 60, gap = 8;
+        int x = row.getX() + 10;   // esquina izquierda del panel de faders (antes centrados)
+        for (auto* b : items) { b->setBounds (x, row.getY(), bw, row.getHeight()); x += bw + gap; }
     }
 
     void resized() override
@@ -2025,7 +2094,9 @@ public:
             lx += boxW + boxG;
             compasBoxBounds = juce::Rectangle<int> (lx, gy, boxW, BH);
             lx += boxW + G;
-            padBtn.setBounds (lx, gy, BW, BH);
+            // El botón PAD se movió al panel de pads (lado derecho del strip superior).
+            // Se queda vivo pero oculto para que el MIDI-learn (kaPad -> triggerClick) siga funcionando.
+            padBtn.setVisible (false);
 
             // Derecha: Editar, repertorios, configuraciones (misma medida)
             auto rr = topbar;
@@ -2056,16 +2127,23 @@ public:
 
         // Tarjetas verticales grandes: portada arriba + nombre abajo (scroll horizontal)
         auto strip = area.removeFromTop (phone ? 104 : 180);
+        // 50/50: izquierda = portadas (scroll, recortadas por cardHost), derecha = Pads (siempre visibles).
+        auto padHalf = strip.removeFromRight (strip.getWidth() / 2);
+        strip.removeFromRight (phone ? 6 : 12);   // separación entre portadas y pads
         stripBounds = strip;
+        cardHost.setBounds (strip);
+        padPanel.setBounds (padHalf);
+        padPanel.setVisible (true);
+        refreshPadPanel();
         {
             const int cardW = phone ? 148 : 240, cardH = phone ? 100 : 178;
             const int step = phone ? 160 : 250;
             const int n = songCards.size() + (editMode ? 1 : 0);
             const int contentW = juce::jmax (0, n * step - 10);
             stripScroll = juce::jlimit (0, juce::jmax (0, contentW - strip.getWidth()), stripScroll);
-            int x = strip.getX() - stripScroll;
-            for (auto* c : songCards) { c->setBounds (x, strip.getY(), cardW, cardH); x += step; }
-            if (editMode) addCard.setBounds (x, strip.getY(), cardW, cardH);
+            int x = -stripScroll;   // coords RELATIVAS a cardHost
+            for (auto* c : songCards) { c->setBounds (x, 0, cardW, cardH); x += step; }
+            if (editMode) addCard.setBounds (x, 0, cardW, cardH);
         }
         area.removeFromTop (4);
 
@@ -2097,14 +2175,13 @@ public:
             }
             faderPanelBounds = stage;
             faderViewport.setBounds (stage);
-            midiPanel.setBounds (stage);
-            padPanel.setBounds (stage);
+            midiPanel.setBounds (getLocalBounds());
             if (phoneShowMap)
             {
                 mapBounds = stage.reduced (0, 2);
                 const int bw = 26, bh = 40, cy = mapBounds.getCentreY() - bh / 2;
-                barPrevBtn.setBounds (mapBounds.getX() + 4, cy, bw, bh);
-                barNextBtn.setBounds (mapBounds.getRight() - bw - 4, cy, bw, bh);
+                barPrevBtn.setBounds (mapBounds.getX() + 30, cy, bw, bh);        // despegadas de las orillas (antes 4)
+                barNextBtn.setBounds (mapBounds.getRight() - bw - 30, cy, bw, bh);
                 const bool showNav = (currentSong >= 0);
                 barPrevBtn.setVisible (showNav);
                 barNextBtn.setVisible (showNav);
@@ -2148,66 +2225,85 @@ public:
         mapBounds = area.removeFromTop (phone ? 80 : 188);
         {   // botones de navegación por compás, pegados a los bordes del mapa
             const int bw = 30, bh = 46, cy = mapBounds.getCentreY() - bh / 2;
-            barPrevBtn.setBounds (mapBounds.getX() + 6, cy, bw, bh);
-            barNextBtn.setBounds (mapBounds.getRight() - bw - 6, cy, bw, bh);
+            barPrevBtn.setBounds (mapBounds.getX() + 14, cy, bw, bh);        // despegadas de las orillas (antes 6)
+            barNextBtn.setBounds (mapBounds.getRight() - bw - 14, cy, bw, bh);
             const bool showNav = (currentSong >= 0);
             barPrevBtn.setVisible (showNav);
             barNextBtn.setVisible (showNav);
         }
-        // #4 barra de Editar en el espacio entre el mapa y los faders (solo en edición)
-        editBarBounds = {};
+        // Franja superior COMPARTIDA: en edición muestra los botones de edición;
+        // si no, los de vista (Faders/Buses/etc.). Ambos ocupan la MISMA franja,
+        // así entrar a edición ya no encoge más el área de faders.
+        // Franja superior SOLO en edición (botones de edición). En vista, los faders usan todo el alto.
+        juce::Rectangle<int> topBtnRow;
         if (editMode)
         {
-            area.removeFromTop (5);
-            auto bar = area.removeFromTop (34);
-            editBarBounds = juce::Rectangle<int> (bar.getX(), bar.getY(), 760, bar.getHeight());
-            auto b = editBarBounds;
-            keyMapBtn.setBounds (b.removeFromLeft (172)); b.removeFromLeft (6);
-            midiMapBtn.setBounds (b.removeFromLeft (128)); b.removeFromLeft (6);
-            saveArrBtn.setBounds (b.removeFromLeft (140)); b.removeFromLeft (6);
-            saveAsNewBtn.setBounds (b.removeFromLeft (180));
-            keyMapBtn.toFront (false); midiMapBtn.toFront (false); saveArrBtn.toFront (false); saveAsNewBtn.toFront (false);
-            area.removeFromTop (5);
+            area.removeFromTop (6);
+            topBtnRow = area.removeFromTop (40);
+            area.removeFromTop (6);
+            editBarBounds = topBtnRow;
         }
-        else area.removeFromTop (8);
+        else editBarBounds = juce::Rectangle<int>();
         faderPanelBounds = area;
 
-        // Region FIJA a la derecha: separador doble + 6 botones + Master (no se desplazan)
-        const int sepPad   = phone ? 32 : 20;   // separación entre las líneas y el riel de botones
-        const int btnColW  = phone ? 50 : 62;
-        const int midGap   = phone ? 8  : 10;
-        const int mColW    = phone ? 62 : 78;
-        const int rightW = sepPad + btnColW + midGap + mColW + 8;
+        muteMidiBtn.setVisible (false);     // MIDI vive en el Menú como ventana
+        padPlayerBtn.setVisible (false);    // Pad ahora está siempre visible arriba a la derecha
+        juce::Component* viewBtns[4] = { &faderViewBtn, &busesBtn, &repeatBtn, &infiniteBtn };
+        for (auto* b : viewBtns) b->setVisible (true);   // visibles también en edición (viven en la columna derecha)
+        if (editMode)
+        {
+            auto b = topBtnRow;
+            const int ew[4] = { 150, 120, 140, 170 };
+            int tot = 8 * 3; for (int w : ew) tot += w;
+            int x = b.getX() + (b.getWidth() - tot) / 2;
+            const int ey = b.getCentreY() - 15, eh = 30;
+            keyMapBtn.setBounds   (x, ey, ew[0], eh); x += ew[0] + 8;
+            midiMapBtn.setBounds  (x, ey, ew[1], eh); x += ew[1] + 8;
+            saveArrBtn.setBounds  (x, ey, ew[2], eh); x += ew[2] + 8;
+            saveAsNewBtn.setBounds (x, ey, ew[3], eh);
+            keyMapBtn.toFront (false); midiMapBtn.toFront (false); saveArrBtn.toFront (false); saveAsNewBtn.toFront (false);
+        }
+
+        // Region FIJA a la derecha: columna vertical de botones de vista + Master (como antes).
+        const int sepPad  = 30;   // separación desde la línea doble
+        const int btnColW = 56;   // ancho de los botones de vista
+        const int gapBM   = 12;   // separación botones ↔ Master
+        const int mColW   = 78;
+        const int rightW  = sepPad + btnColW + gapBM + mColW;
         auto fixed = area.removeFromRight (rightW);
 
         // Los tracks (solo esos) van en el viewport desplazable
         faderViewport.setBounds (area);
-        midiPanel.setBounds (area);
-        padPanel.setBounds (area);
+        midiPanel.setBounds (getLocalBounds());   // MIDI es ventana completa (se abre desde el Menú)
         layoutFaderStrip();
 
-        auto fx = fixed.reduced (0, phone ? 8 : 14);
-        masterSepX = fixed.getX() + (phone ? 7 : 10);   // doble linea (coords MainComponent)
-        fx.removeFromLeft (sepPad);
-        auto btnCol = fx.removeFromLeft (btnColW);
-        fx.removeFromLeft (midGap);
+        auto fx = fixed.reduced (0, 8);   // top alineado con los tracks (strip.reduced(22,8))
+        masterSepX = fixed.getX() + 10;   // doble linea (coords MainComponent)
+        juce::ignoreUnused (sepPad, gapBM);
+        // Master a la derecha.
         auto mcol = fx.removeFromRight (mColW);
+        // "Master" en la fila de abajo (sobre la línea de SOLO/MUTE del resto de faders);
+        // el fader llega más abajo (más largo) que los tracks.
+        masterLabel.setBounds (mcol.removeFromBottom (22));
+        auto mSlider = mcol.reduced (6, 0);
+        masterSlider.setBounds (mSlider);
+        // Botones de vista: centrados HORIZONTALMENTE entre la línea doble y el fader Master,
+        // y VERTICALMENTE respecto al Master (también en edición).
         {
-            juce::Button* btns[6] = { &faderViewBtn, &busesBtn, &padPlayerBtn, &muteMidiBtn, &repeatBtn, &infiniteBtn };
-            const int bgap = phone ? 4 : 6;
-            const int bh = (btnCol.getHeight() - bgap * 5) / 6;
-            for (int i = 0; i < 6; ++i)
-            {
-                btns[i]->setBounds (btnCol.removeFromTop (bh));
-                if (i < 5) btnCol.removeFromTop (bgap);
-            }
+            const int zoneL = masterSepX + 5;        // justo después de la línea doble (±4.5)
+            const int barW  = juce::jmin (mSlider.getWidth() - 6, 35);   // ancho real de la barra blanca
+            const int zoneR = mSlider.getCentreX() - barW / 2;           // borde VISIBLE del fader Master
+            const int bx = zoneL + juce::jmax (0, ((zoneR - zoneL) - btnColW) / 2);
+            const int bh = 34, gap = 10, n = 4;
+            const int total = bh * n + gap * (n - 1);
+            int y = mSlider.getY() + juce::jmax (0, (mSlider.getHeight() - total) / 2);
+            for (auto* b : viewBtns) { b->setBounds (bx, y, btnColW, bh); y += bh + gap; }
         }
-        masterLabel.setBounds (mcol.removeFromBottom (phone ? 18 : 22));
-        masterSlider.setBounds (mcol.reduced (phone ? 4 : 6, 0));
 
         splash.setBounds (getLocalBounds());
         repPicker.setBounds (getLocalBounds());
         settingsPanel.setBounds (getLocalBounds());
+        aboutPanel.setBounds (getLocalBounds());
         storagePanel.setBounds (getLocalBounds());
         audioCfg.setBounds (getLocalBounds());
         repEdit.setBounds (getLocalBounds());
@@ -2239,7 +2335,7 @@ public:
         const int stripH = juce::jmax (60, vpH - (scroll ? 12 : 0));
         faderStrip.setSize (stripW, stripH);
 
-        auto lay = juce::Rectangle<int> (0, 0, stripW, stripH).reduced (22, 14);
+        auto lay = juce::Rectangle<int> (0, 0, stripW, stripH).reduced (22, 8);
         const int startX = lay.getX() + juce::jmax (0, (lay.getWidth() - contentW) / 2);
         juce::Rectangle<int> cols (startX, lay.getY(), contentW, lay.getHeight());
 
@@ -2255,9 +2351,16 @@ public:
             firstCol = false;
             const int i = order[oi];
             auto col = cols.removeFromLeft (colW);
-            lb[i]->setBounds (col.removeFromBottom (22));
-            auto soloLane = col.removeFromLeft (16);
-            dd[i]->setBounds (soloLane.reduced (0, 2));
+            // Tracks y buses: fila [SOLO | MUTE] abajo, nombre encima, barra (fader) ocupa el resto.
+            auto& mm = tv ? muteDots : busMuteDots;
+            auto btnRow = col.removeFromBottom (22);
+            col.removeFromBottom (5);
+            lb[i]->setBounds (col.removeFromBottom (20));
+            col.removeFromBottom (2);
+            auto soloR = btnRow.removeFromLeft (btnRow.getWidth() / 2 - 1);
+            btnRow.removeFromLeft (2);
+            dd[i]->setBounds (soloR);
+            if (i < mm.size()) mm[i]->setBounds (btnRow);
             sl[i]->setBounds (col.reduced (6, 0));
         }
         faderStrip.repaint();
@@ -2821,7 +2924,9 @@ private:
                 if (! cached) label += "   (descargar)";
                 menu.addItem (i + 1, label, true, pk.id == padPackId);
             }
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&padPanel),
+        menu.showMenuAsync (juce::PopupMenu::Options()
+                                .withTargetScreenArea (padPanel.packBarScreenArea())
+                                .withMinimumWidth (padPanel.packBarScreenArea().getWidth()),
             [this] (int r)
             {
                 if (r > 0 && r <= padPacks.size())
@@ -3043,6 +3148,23 @@ private:
         auto it = routesByDevice.find (audioOutDevice);
         if (it == routesByDevice.end()) { for (int i = 0; i < kNumFam; ++i) audioCfg.setRoute (i, 2, 0); return; }
         for (int i = 0; i < kNumFam; ++i) audioCfg.setRoute (i, it->second[i].mode, it->second[i].ch);
+    }
+
+    void openMidiWindow()
+    {
+        if (! featMidi) { avisoPlanMidi(); return; }
+        midiPanel.refreshPorts();
+        midiPanel.setBounds (getLocalBounds());
+        midiPanel.setAlwaysOnTop (true);   // por encima de portadas, faders, etc.
+        midiPanel.setVisible (true);
+        midiPanel.toFront (true);
+    }
+    void openAboutWindow()
+    {
+        aboutPanel.setBounds (getLocalBounds());
+        aboutPanel.setAlwaysOnTop (true);
+        aboutPanel.setVisible (true);
+        aboutPanel.toFront (true);
     }
 
     void openAudioConfig()
@@ -3387,8 +3509,10 @@ private:
                 trackLabels[i]->setColour (juce::Label::textColourId, m ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
                 trackLabels[i]->repaint();
                 trackSliders[i]->getProperties().set ("muted", m); trackSliders[i]->repaint();
+                if (i < muteDots.size()) { muteDots[i]->on = m; muteDots[i]->repaint(); }
                 trackSolo[i].store (s); if (i < soloDots.size()) { soloDots[i]->on = s; soloDots[i]->repaint(); }
             }
+        updateSoloDim();
         if (auto* bu = mix.getProperty ("buses", juce::var()).getArray())
             for (auto& b : *bu)
             {
@@ -3432,6 +3556,7 @@ private:
             trackLabels[i]->setColour (juce::Label::textColourId, m ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
             trackLabels[i]->repaint();
             trackSliders[i]->getProperties().set ("muted", m); trackSliders[i]->repaint();
+            if (i < muteDots.size()) { muteDots[i]->on = m; muteDots[i]->repaint(); }
         }
         for (int f = 0; f < busSliders.size() && f < familyNames.size(); ++f)
         {
@@ -3983,7 +4108,7 @@ private:
         if (neural) { computeGuiaRoute(); if (! antes) fetchGuideClips(); }
         updateNeuralCtrls();
     }
-    bool repetirPermitido() const { return guideOn.load() || repetirEnTrack; }
+    bool repetirPermitido() const { return true; }   // Repetir/∞ siempre habilitados (en ambos modos)
     // Atenúa/deshabilita repetir y ∞ salvo en Neural (o si la canción habilitó repetir en Track).
     // Las flechas ‹ › quedan siempre activas: son navegación por sección en ambos modos.
     void updateNeuralCtrls()
@@ -4540,7 +4665,7 @@ private:
             c->onTono     = [this, sid, title] { openTonoFor (sid, title, false); };
             c->onAddAfter = [this, sid] { openBibliotecaForAddAfter (sid); };
             c->onReorder  = [this] (int from, int to) { reorderSong (from, to); };
-            addAndMakeVisible (c);
+            cardHost.addAndMakeVisible (c);
         }
         addCard.setVisible (editMode && ! lastSetlistId.isEmpty());
         highlightSongButton();
@@ -4732,6 +4857,7 @@ private:
         trackSliders.clear();
         trackLabels.clear();
         soloDots.clear();
+        muteDots.clear();
         for (int i = 0; i < numTracks && i < kMaxTracks; ++i)
         {
             trackGain[i].store (1.0f);
@@ -4756,20 +4882,30 @@ private:
             l->setJustificationType (juce::Justification::centred);
             l->setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
             l->setFont (juce::Font (13.0f, juce::Font::bold));
-            l->onClick = [this, idx]
-            {
-                if (idx < trackNames.size() && armTrackIfMapping (trackNames[idx])) return;   // #4 armar mute
-                toggleTrackMute (idx);
-            };
+            // El nombre ahora es SOLO una etiqueta (ya no mutea al tocarlo).
             faderStrip.addAndMakeVisible (l);
 
             auto* d = soloDots.add (new SoloDot());
+            d->buttonStyle = true;
+            d->label = juce::String::fromUTF8 ("SOLO");
+            d->onCol = juce::Colour (0xffE0A32E);
             d->onClick = [this, idx]
             {
                 if (idx < trackNames.size() && armSoloIfMapping (trackNames[idx])) return;   // #4 armar SOLO
                 toggleTrackSolo (idx);
             };
             faderStrip.addAndMakeVisible (d);
+
+            auto* md = muteDots.add (new SoloDot());
+            md->buttonStyle = true;
+            md->label = juce::String::fromUTF8 ("MUTE");
+            md->onCol = juce::Colour (0xffE0433E);
+            md->onClick = [this, idx]
+            {
+                if (idx < trackNames.size() && armTrackIfMapping (trackNames[idx])) return;   // #4 armar mute
+                toggleTrackMute (idx);
+            };
+            faderStrip.addAndMakeVisible (md);
         }
 
         // Orden de faders: Click y Guia primero, luego el resto
@@ -4796,7 +4932,7 @@ private:
     void buildBuses()
     {
         for (auto* s : busSliders) s->setLookAndFeel (nullptr);
-        busSliders.clear(); busLabels.clear(); busSoloDots.clear();
+        busSliders.clear(); busLabels.clear(); busSoloDots.clear(); busMuteDots.clear();
         familyNames.clear();
         for (int i = 0; i < trackSliders.size() && i < kMaxTracks; ++i)
         {
@@ -4835,12 +4971,22 @@ private:
             l->setJustificationType (juce::Justification::centred);
             l->setColour (juce::Label::textColourId, juce::Colour (0xfff2f2f2));
             l->setFont (juce::Font (12.0f, juce::Font::bold));
-            l->onClick = [this, bf] { if (bf < familyNames.size() && armBusMuteIfMapping (familyNames[bf])) return; toggleBusMute (bf); };
+            // El nombre del bus ahora es SOLO etiqueta (ya no mutea al tocarlo).
             faderStrip.addAndMakeVisible (l);
 
             auto* d = busSoloDots.add (new SoloDot());
+            d->buttonStyle = true;
+            d->label = juce::String::fromUTF8 ("SOLO");
+            d->onCol = juce::Colour (0xffE0A32E);
             d->onClick = [this, bf] { if (bf < familyNames.size() && armBusSoloIfMapping (familyNames[bf])) return; toggleBusSolo (bf); };
             faderStrip.addAndMakeVisible (d);
+
+            auto* md = busMuteDots.add (new SoloDot());
+            md->buttonStyle = true;
+            md->label = juce::String::fromUTF8 ("MUTE");
+            md->onCol = juce::Colour (0xffE0433E);
+            md->onClick = [this, bf] { if (bf < familyNames.size() && armBusMuteIfMapping (familyNames[bf])) return; toggleBusMute (bf); };
+            faderStrip.addAndMakeVisible (md);
         }
         refreshBusStates();
     }
@@ -4857,6 +5003,7 @@ private:
                 trackMuted[i].store (nu);
                 trackSliders[i]->getProperties().set ("muted", nu);
                 trackSliders[i]->repaint();
+                if (i < muteDots.size()) { muteDots[i]->on = nu; muteDots[i]->repaint(); }
                 trackLabels[i]->setColour (juce::Label::textColourId, nu ? juce::Colour (0xffe05555) : juce::Colour (0xfff2f2f2));
                 trackLabels[i]->repaint();
             }
@@ -4904,7 +5051,9 @@ private:
             busSliders[f]->getProperties().set ("muted", muted);
             busSliders[f]->repaint();
             busSoloDots[f]->on = soloed; busSoloDots[f]->repaint();
+            if (f < busMuteDots.size()) { busMuteDots[f]->on = muted; busMuteDots[f]->repaint(); }
         }
+        updateSoloDim();
     }
 
     void updateFaderVisibility()
@@ -4912,17 +5061,16 @@ private:
         const bool mapOnly = npEsIPhone() && phoneShowMap;   // iPhone en vista Mapa: ocultar todo lo demás
         const bool tracks = (faderView == 0) && ! mapOnly;
         const bool buses  = (faderView == 1) && ! mapOnly;
-        const bool midi   = (faderView == 2) && ! mapOnly;
-        const bool pad    = (faderView == 3) && ! mapOnly;
-        faderViewport.setVisible (! mapOnly && faderView != 2 && faderView != 3);
-        midiPanel.setVisible (midi);
-        padPanel.setVisible (pad);
+        faderViewport.setVisible (! mapOnly);
+        padPanel.setVisible (! mapOnly);   // Pad siempre visible (salvo vista Mapa en iPhone)
         for (auto* s : trackSliders) s->setVisible (tracks);
         for (auto* l : trackLabels)  l->setVisible (tracks);
         for (auto* d : soloDots)     d->setVisible (tracks);
+        for (auto* d : muteDots)     d->setVisible (tracks);
         for (auto* s : busSliders)   s->setVisible (buses);
         for (auto* l : busLabels)    l->setVisible (buses);
         for (auto* d : busSoloDots)  d->setVisible (buses);
+        for (auto* d : busMuteDots)  d->setVisible (buses);
     }
 
     void setFaderView (int v)
@@ -4931,12 +5079,8 @@ private:
         const bool mapOnly = npEsIPhone() && phoneShowMap;
         faderViewBtn.active   = (faderView == 0) && ! mapOnly;
         busesBtn.setColour     (juce::TextButton::buttonColourId, (faderView == 1 && ! mapOnly) ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
-        padPlayerBtn.setColour (juce::TextButton::buttonColourId, (faderView == 3 && ! mapOnly) ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
-        muteMidiBtn.setColour  (juce::TextButton::buttonColourId, (faderView == 2 && ! mapOnly) ? juce::Colour (0xff2E8BFF) : juce::Colour (0xff1f1f1f));
-        faderViewBtn.repaint(); busesBtn.repaint(); padPlayerBtn.repaint(); muteMidiBtn.repaint();
+        faderViewBtn.repaint(); busesBtn.repaint();
         if (faderView == 1) refreshBusStates();
-        if (faderView == 2) midiPanel.refreshPorts();
-        if (faderView == 3) refreshPadPanel();
         updateFaderVisibility();
         if (faderView == 0 || faderView == 1) layoutFaderStrip();
         if (npEsIPhone()) { resized(); repaint(); }   // re-acomoda el escenario único
@@ -5063,6 +5207,7 @@ private:
     }
     void seekSection (int dir)   // saltar al inicio de la sección anterior/siguiente (navegación: ambos modos)
     {
+        if (playing.load()) return;   // las flechas solo navegan con la reproducción detenida (evita saltos feos)
         cueAnnounceLanded.store (true); // en Neural anuncia la sección donde se cae (en Track se ignora)
         if (sectionTimes.isEmpty()) { seekBar (dir); return; }   // respaldo: por compás
         juce::Array<double> anchors;
@@ -5215,6 +5360,12 @@ private:
     }
     void timerCallback() override
     {
+        // Flechas del mapa: solo navegan con la reproducción detenida (se atenúan al reproducir).
+        {
+            const bool nav = ! playing.load();
+            if (barPrevBtn.isEnabled() != nav) { barPrevBtn.setEnabled (nav); barPrevBtn.repaint(); }
+            if (barNextBtn.isEnabled() != nav) { barNextBtn.setEnabled (nav); barNextBtn.repaint(); }
+        }
         if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 2000)
         {
             splashOn = false;
@@ -5749,7 +5900,7 @@ private:
     {
         keyMapBtn.setColour (juce::TextButton::buttonColourId, keyMapMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));
         keyMapBtn.setButtonText (keyMapMode ? juce::String::fromUTF8 ("Mapping de teclado \xe2\x9c\x93") : juce::String::fromUTF8 ("Mapping de teclado"));
-        midiMapBtn.setColour (juce::TextButton::buttonColourId, midiMapMode ? juce::Colour (0xffB84BE6) : juce::Colour (0xff1f1f1f));
+        midiMapBtn.setColour (juce::TextButton::buttonColourId, midiMapMode ? juce::Colour (0xff2E6BE6) : juce::Colour (0xff1f1f1f));   // azul (antes morado)
         midiMapBtn.setButtonText (midiMapMode ? juce::String::fromUTF8 ("MIDI Mapping \xe2\x9c\x93") : juce::String::fromUTF8 ("MIDI Mapping"));
         keyMapBtn.repaint(); midiMapBtn.repaint();
     }
@@ -6872,6 +7023,8 @@ private:
     RepertoirePicker repPicker;
     NPDatePrompt datePrompt;                 // diálogo con calendario (Mac) para crear/duplicar
     SettingsPanel settingsPanel;
+    AboutPanel aboutPanel;
+    NPTonoLnF transMenuLnf;   // estilo compacto/oscuro para el menú de transiciones
     StoragePanel storagePanel;
     bool cacheAutoClean = false;
     int  cacheCapGB = 0;
@@ -6922,13 +7075,16 @@ private:
         std::function<void()> tick;
         void hiResTimerCallback() override { if (tick) tick(); }
     } midiClock;
+    juce::Component cardHost;   // contenedor que RECORTA las portadas a su media-sección
     juce::OwnedArray<SongCard> songCards;
     juce::OwnedArray<juce::Slider> trackSliders;
     juce::OwnedArray<ClickLabel> trackLabels;
     juce::OwnedArray<SoloDot> soloDots;
+    juce::OwnedArray<SoloDot> muteDots;   // botón MUTE por track (abajo del fader)
     juce::OwnedArray<juce::Slider> busSliders;
     juce::OwnedArray<ClickLabel> busLabels;
     juce::OwnedArray<SoloDot> busSoloDots;
+    juce::OwnedArray<SoloDot> busMuteDots;   // botón MUTE por bus (abajo del fader)
     juce::StringArray familyNames;
     juce::Array<int> faderOrder;
     int numSpecialFaders = 0;
