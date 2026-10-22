@@ -1362,44 +1362,9 @@ def api_live_guia_clip(slug):
     return send_file(ruta, mimetype="audio/mpeg", conditional=True)
 
 
-@app.route("/api/live/render/<int:numero>/<t>", methods=["POST"])
-def api_live_render(numero, t):
-    """NeuralPlay: dispara el render de un tono (semitonos). Token."""
-    if not _token_ok():
-        return jsonify({"ok": False, "error": "unauthorized"}), 403
-    try:
-        n = int(t)
-    except ValueError:
-        return jsonify({"listo": False, "error": "tono invalido"}), 400
-    if _tono_listo(numero, n):
-        return jsonify({"listo": True})
-    if not _stems_originales(numero):
-        return jsonify({"listo": False, "error": "sin pistas"})
-    d = _carpeta_tono(numero, n)
-    if not (d.exists() and (d / ".lock").exists()):
-        threading.Thread(target=_render_encolado, args=(numero, n, org_actual()), daemon=True).start()
-    return jsonify({"listo": False, "estado": "procesando"})
-
-
-@app.route("/api/live/render/<int:numero>/<t>/estado")
-def api_live_render_estado(numero, t):
-    """NeuralPlay: progreso del render de un tono. Token."""
-    if not _token_ok():
-        return jsonify({"ok": False, "error": "unauthorized"}), 403
-    try:
-        n = int(t)
-    except ValueError:
-        return jsonify({"listo": False})
-    if _tono_listo(numero, n):
-        return jsonify({"listo": True})
-    prog = ""
-    lock = _carpeta_tono(numero, n) / ".lock"
-    if lock.exists():
-        try:
-            prog = lock.read_text().strip()
-        except Exception:
-            prog = ""
-    return jsonify({"listo": False, "progreso": prog})
+# NeuralPlay: render/transposición de tonos RETIRADO (arquitectura nueva: las apps solo
+# descargan; la transposición se hará en el dispositivo). El tono original (FLAC + proxys MP3)
+# ya queda listo al subir la canción, así que no hay nada que "pedir" al servidor.
 
 
 @app.route("/api/live/setlist/crear", methods=["POST"])
@@ -3888,45 +3853,9 @@ def api_pistas(numero):
                     "stems": stems, "secciones": _leer_secciones(numero)})
 
 
-@app.route("/api/pistas/<int:numero>/render/<n>", methods=["POST"])
-@login_required("musico")
-def api_render(numero, n):
-    try:
-        n = int(n)
-    except ValueError:
-        return jsonify({"error": "tono invalido"}), 400
-    if _web_listo(numero, n):
-        return jsonify({"listo": True})
-    if not _stems_originales(numero):
-        return jsonify({"listo": False, "error": "sin pistas"})
-    if _tono_listo(numero, n):
-        web = _carpeta_tono(numero, n) / "web"
-        if not (web.exists() and (web / ".lock").exists()):
-            threading.Thread(target=_web_encolado, args=(numero, n, org_actual()), daemon=True).start()
-    else:
-        d = _carpeta_tono(numero, n)
-        if not (d.exists() and (d / ".lock").exists()):
-            threading.Thread(target=_render_encolado, args=(numero, n, org_actual()), daemon=True).start()
-    return jsonify({"listo": False, "estado": "procesando"})
-
-
-@app.route("/api/pistas/<int:numero>/render/<n>/estado")
-@login_required("musico")
-def api_render_estado(numero, n):
-    try:
-        n = int(n)
-    except ValueError:
-        return jsonify({"listo": False})
-    if _web_listo(numero, n):
-        return jsonify({"listo": True})
-    prog = ""
-    for lock in (_carpeta_tono(numero, n) / ".lock", _carpeta_tono(numero, n) / "web" / ".lock"):
-        if lock.exists():
-            try:
-                prog = lock.read_text().strip()
-            except Exception:
-                prog = ""
-    return jsonify({"listo": False, "progreso": prog})
+# NeuralCharts: render/transposición de tonos RETIRADO (arquitectura nueva: las apps solo
+# descargan; la transposición se hará dentro de la app). Los proxys MP3 del tono original se
+# siguen generando al subir la canción (admin_pistas_subir -> _web_encolado(numero, 0)).
 
 
 @app.route("/pista/<int:numero>/<path:archivo>")
