@@ -363,40 +363,75 @@ struct SongCard : public juce::Component
     juce::String titulo, tono;
     juce::String arrNombre;   // arreglo activo (vacío = Original): se muestra como chip en la portada
     bool active = false;
+    bool pending = false;   // encolada: seleccionada pero aún descargando (aro ámbar); se carga sola al terminar
     bool editMode = false;
     int index = 0;
     int songId = 0;   // #4 id de la canción (para mapping de teclado)
     std::function<void()> onClick, onRemove, onTono, onAddAfter;
     std::function<void (int fromIndex, int toIndex)> onReorder;   // arrastrar para reordenar
-    float dlProgress = -1.0f;   // -1 = sin barra; 0..1 = descargando
+    float dlProgress = -1.0f;   // -1 = sin barra; 0..1 = progreso
+    int   dlKind = 2;           // 1 = Transponiendo (render en servidor), 2 = Descargando
 
-    int homeX = 0; bool dragging = false;
+    int homeX = 0, homeY = 0; bool dragging = false;
 
-    juce::Rectangle<float> coverRect() const
+    // Versión aclarada de la portada (realce de brillo para que las carátulas oscuras se lean bien).
+    juce::Image coverBrightCache;
+    juce::ImagePixelData* coverBrightSrc = nullptr;
+    const juce::Image& brightCover()
+    {
+        if (! cover.isValid()) return cover;
+        if (coverBrightCache.isValid() && coverBrightSrc == cover.getPixelData().get())
+            return coverBrightCache;
+        // En macOS la copia nativa (CoreGraphics) no deja escribir píxeles con BitmapData:
+        // forzamos un respaldo SOFTWARE para que el realce de brillo sí se aplique.
+        coverBrightCache = juce::SoftwareImageType().convert (cover);
+        juce::Image::BitmapData bd (coverBrightCache, juce::Image::BitmapData::readWrite);
+        auto lift = [] (juce::uint8 v) { return (juce::uint8) juce::jlimit (0, 255, (int) std::lround (28.0 + 255.0 * std::pow (v / 255.0, 0.5))); };
+        for (int y = 0; y < bd.height; ++y)
+            for (int x = 0; x < bd.width; ++x)
+            {
+                auto c = bd.getPixelColour (x, y);
+                bd.setPixelColour (x, y, juce::Colour (lift (c.getRed()), lift (c.getGreen()), lift (c.getBlue())));
+            }
+        coverBrightSrc = cover.getPixelData().get();
+        return coverBrightCache;
+    }
+
+    // ── Fila de lista: miniatura cuadrada a la izquierda, título a la derecha, botones de edición a la derecha ──
+    float rowBtn() const { return npEsIPhone() ? 20.0f : 23.0f; }
+    juce::Rectangle<float> coverRect() const   // miniatura cuadrada (izquierda)
+    {
+        auto r = getLocalBounds().toFloat().reduced (0.0f, 4.0f);
+        const float s = juce::jmax (10.0f, r.getHeight());
+        return { r.getX() + 7.0f, r.getY(), s, s };
+    }
+    // Botones de edición alineados a la derecha de la fila: [⋯ tono] [− quitar] [+ agregar].
+    juce::Rectangle<float> addBtnRect() const
     {
         auto r = getLocalBounds().toFloat();
-        r.removeFromTop (6.0f);
-        // En iPhone el cover ocupa menos alto para que el título (2 líneas) no se corte.
-        return r.removeFromTop (r.getHeight() * (npEsIPhone() ? 0.62f : 0.76f)).reduced (1.0f);
+        const float bs = rowBtn(), m = npEsIPhone() ? 8.0f : 12.0f;
+        return { r.getRight() - bs - m, r.getCentreY() - bs * 0.5f, bs, bs };
     }
-    // En iPhone la tarjeta es chica: botones más pequeños para que no se encimen.
-    juce::Rectangle<float> removeBtnRect() const { auto c = coverRect(); const float s = npEsIPhone() ? 20.0f : 26.0f, m = npEsIPhone() ? 6.0f : 8.0f; return { c.getRight() - s - m, c.getY() + m, s, s }; }
-    juce::Rectangle<float> tonoBtnRect()   const { auto c = coverRect(); const float w = npEsIPhone() ? 34.0f : 44.0f, h = npEsIPhone() ? 28.0f : 36.0f; return { c.getCentreX() - w * 0.5f, c.getCentreY() - h * 0.5f, w, h }; }
-    juce::Rectangle<float> addBtnRect()    const { auto c = coverRect(); const float s = npEsIPhone() ? 20.0f : 26.0f, m = npEsIPhone() ? 6.0f : 8.0f; return { c.getRight() - s - m, c.getBottom() - s - m, s, s }; }
+    juce::Rectangle<float> removeBtnRect() const { auto a = addBtnRect(); const float gp = npEsIPhone() ? 8.0f : 10.0f; return a.translated (-(a.getWidth() + gp), 0.0f); }
+    juce::Rectangle<float> tonoBtnRect()   const { auto a = addBtnRect(); const float gp = npEsIPhone() ? 8.0f : 10.0f; return a.translated (-2.0f * (a.getWidth() + gp), 0.0f); }
 
     void mouseDown (const juce::MouseEvent&) override
     {
-        homeX = getX(); dragging = false;
+        homeX = getX(); homeY = getY(); dragging = false;
     }
+    // Resaltado al pasar el mouse por los botones de edición.
+    void mouseMove  (const juce::MouseEvent&) override { if (editMode) repaint(); }
+    void mouseEnter (const juce::MouseEvent&) override { if (editMode) repaint(); }
+    void mouseExit  (const juce::MouseEvent&) override { if (editMode) repaint(); }
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (! editMode) return;
-        const int dx = e.getDistanceFromDragStartX();
-        if (dragging || std::abs (dx) > 5)
+        const int dy = e.getDistanceFromDragStartY();   // reordenar VERTICAL (lista)
+        if (dragging || std::abs (dy) > 5)
         {
             dragging = true;
             toFront (false);
-            setTopLeftPosition (homeX + dx, getY());
+            setTopLeftPosition (getX(), homeY + dy);
         }
     }
     void mouseUp (const juce::MouseEvent& e) override
@@ -404,8 +439,8 @@ struct SongCard : public juce::Component
         if (editMode && dragging)
         {
             dragging = false;
-            const int step  = juce::jmax (1, getWidth() + 10);
-            const int steps = juce::roundToInt ((float) e.getDistanceFromDragStartX() / (float) step);
+            const int step  = juce::jmax (1, getHeight() + 6);
+            const int steps = juce::roundToInt ((float) e.getDistanceFromDragStartY() / (float) step);
             if (onReorder) onReorder (index, index + steps);   // el contenedor re-acomoda y snap
             return;
         }
@@ -420,81 +455,107 @@ struct SongCard : public juce::Component
     }
     void paint (juce::Graphics& g) override
     {
-        auto r = getLocalBounds().toFloat();
-        r.removeFromTop (6.0f);
-        // En iPhone el cover ocupa menos alto → el título tiene espacio para sus 2 líneas.
-        auto cov = r.removeFromTop (r.getHeight() * (npEsIPhone() ? 0.62f : 0.76f)).reduced (1.0f);
+        auto full = getLocalBounds().toFloat();
+        auto rowBg = full.reduced (2.0f, 2.0f);
+        // Mismo fondo para todas (no se oscurecen las no seleccionadas); marco BLANCO en la activa.
+        g.setColour (juce::Colour (0x12ffffff));
+        g.fillRoundedRectangle (rowBg, 8.0f);
+        if (active)       { g.setColour (juce::Colours::white);          g.drawRoundedRectangle (rowBg, 8.0f, 2.0f); }
+        else if (pending) { g.setColour (juce::Colour (0xffE0A43A));     g.drawRoundedRectangle (rowBg, 8.0f, 1.6f); }  // ámbar: encolada/descargando
+        else              { g.setColour (juce::Colour (0x1affffff));     g.drawRoundedRectangle (rowBg, 8.0f, 1.0f); }
+
+        // Miniatura (portada chica) a la izquierda.
+        auto cov = coverRect();
         {
-            juce::Path clip; clip.addRoundedRectangle (cov, 9.0f);
+            juce::Path clip; clip.addRoundedRectangle (cov, 6.0f);
             g.saveState(); g.reduceClipRegion (clip);
-            if (cover.isValid()) g.drawImage (cover, cov, juce::RectanglePlacement::fillDestination);
+            g.setOpacity (1.0f);   // IMPORTANTE: drawImage usa la opacidad del contexto; el borde de la fila
+                                   // no activa dejaba alpha ~0.1 y oscurecía la portada. Forzamos 100%.
+            if (cover.isValid()) g.drawImage (cover, cov, juce::RectanglePlacement::fillDestination);  // portada original (sin realce)
             else { g.setColour (juce::Colour (0xff1f1f1f)); g.fillRect (cov); }
             g.restoreState();
         }
-        g.setColour (active ? juce::Colour (0xffffffff) : juce::Colour (0xff2a2a2a));
-        g.drawRoundedRectangle (cov, 9.0f, active ? 2.5f : 1.0f);
-        r.removeFromTop (5.0f);   // aire entre la portada y el titulo
-        auto txt = r.reduced (3.0f, 0.0f);
+        g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (cov, 6.0f, 1.0f);
+
+        // Título a la derecha de la portada. Si la canción usa un arreglo propio,
+        // el nombre sube un poco y el chip del arreglo va DEBAJO del nombre (ya no sobre la portada).
+        const bool  dlActive = (dlProgress >= 0.0f && dlProgress < 1.0f);
+        const float dlLabelW = (! editMode && dlActive) ? (npEsIPhone() ? 118.0f : 150.0f) : 0.0f;  // espacio para "Descargando 72%"
+        const float titR  = editMode ? tonoBtnRect().getX() - 10.0f : full.getRight() - 12.0f - dlLabelW;
+        const float textX = cov.getRight() + 12.0f;
+        const bool  hasArr = arrNombre.isNotEmpty();
         juce::String linea = titulo;
         if (tono.isNotEmpty()) linea << "  (" << tono << ")";
-        // Tamaño FIJO grande (todos parejos). Si el título no cabe, se muestra lo que
-        // entre y se recorta (clip) en vez de encogerse. Se envuelve a 2 líneas.
+        g.setColour (active ? juce::Colours::white : juce::Colour (0xfff2f2f2));
+        g.setFont (juce::Font (npEsIPhone() ? 13.0f : 16.0f, juce::Font::bold));
+        if (hasArr)
         {
-            juce::AttributedString as;
-            as.append (linea, juce::Font (npEsIPhone() ? 11.5f : 16.0f, juce::Font::bold),
-                       active ? juce::Colour (0xffffffff) : juce::Colour (0xfff2f2f2));
-            as.setJustification (juce::Justification::topLeft);
-            juce::TextLayout tl; tl.createLayout (as, (float) txt.getWidth());
-            juce::Graphics::ScopedSaveState ss (g);
-            g.reduceClipRegion (txt.toNearestInt());
-            tl.draw (g, txt);
+            juce::Rectangle<float> txt (textX, full.getY() + 4.0f,
+                                        juce::jmax (10.0f, titR - textX), full.getHeight() * 0.52f);
+            g.drawText (linea, txt, juce::Justification::bottomLeft, true);
+
+            juce::Font cf (npEsIPhone() ? 8.5f : 9.5f, juce::Font::bold);
+            g.setFont (cf);
+            const float cw = juce::jmin (titR - textX, juce::GlyphArrangement::getStringWidth (cf, arrNombre) + 14.0f);
+            juce::Rectangle<float> chip (textX, txt.getBottom() + 2.0f, cw, npEsIPhone() ? 13.0f : 15.0f);
+            g.setColour (juce::Colour (0xE6143018)); g.fillRoundedRectangle (chip, 5.0f);
+            g.setColour (juce::Colour (0xff8fe0a0));
+            g.drawText (arrNombre, chip.reduced (6.0f, 0.0f), juce::Justification::centredLeft, true);
+        }
+        else
+        {
+            juce::Rectangle<float> txt (textX, full.getY(),
+                                        juce::jmax (10.0f, titR - textX), full.getHeight());
+            g.drawText (linea, txt, juce::Justification::centredLeft, true);
         }
 
+        // Barra de descarga sobre la miniatura — SIN oscurecer la portada (solo la barrita).
+        if (dlProgress >= 0.0f && dlProgress < 1.0f)
+        {
+            juce::Path clip; clip.addRoundedRectangle (cov, 6.0f); g.saveState(); g.reduceClipRegion (clip);
+            auto bar = juce::Rectangle<float> (cov.getX() + 5.0f, cov.getBottom() - 8.0f, cov.getWidth() - 10.0f, 4.0f);
+            g.setColour (juce::Colour (0x66000000)); g.fillRoundedRectangle (bar, 2.0f);
+            g.setColour (dlKind == 1 ? juce::Colour (0xffE0A43A) : juce::Colour (0xff2E6BE6));  // ámbar=transponiendo, azul=descargando
+            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, dlProgress)), 2.0f);
+            g.restoreState();
+
+            // Estado + porcentaje al EXTREMO DERECHO de la fila (solo fuera de edición):
+            // "Transponiendo 45%" mientras el servidor rinde el tono; "Descargando 72%" al bajar el audio.
+            if (! editMode)
+            {
+                const int pct = (int) std::lround (juce::jlimit (0.0f, 1.0f, dlProgress) * 100.0f);
+                juce::String txt = (dlKind == 1 ? juce::String ("Transponiendo ") : juce::String ("Descargando ")) + juce::String (pct) + "%";
+                g.setColour (dlKind == 1 ? juce::Colour (0xffE0A43A) : juce::Colour (0xff7FB0FF));
+                g.setFont (juce::Font (npEsIPhone() ? 10.0f : 12.0f, juce::Font::bold));
+                juce::Rectangle<float> lab (full.getRight() - 10.0f - dlLabelW, full.getY(), dlLabelW, full.getHeight());
+                g.drawText (txt, lab, juce::Justification::centredRight, true);
+            }
+        }
+
+        // Botones de edición a la derecha de la fila: − (quitar), ⋯ (tono), + (agregar después).
+        // Estilo fino y monocromo (aro claro), sin rojo/azul.
         if (editMode)
         {
-            auto c = coverRect();
-            { juce::Path clip; clip.addRoundedRectangle (c, 9.0f); g.saveState(); g.reduceClipRegion (clip);
-              g.setColour (juce::Colour (0x66000000)); g.fillRect (c); g.restoreState(); }
-            const float glyph = npEsIPhone() ? 16.0f : 22.0f;
-            auto rb = removeBtnRect();
-            g.setColour (juce::Colour (0x80000000)); g.fillEllipse (rb.translated (0.0f, 1.8f).expanded (1.3f));   // sombra
-            g.setColour (juce::Colour (0xffE5534B)); g.fillEllipse (rb);
-            g.setColour (juce::Colours::white); g.setFont (juce::Font (glyph, juce::Font::bold));
-            g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), rb, juce::Justification::centred);   // −
-            auto tb = tonoBtnRect();
-            g.setColour (juce::Colour (0xF0141414)); g.fillRoundedRectangle (tb, 8.0f);
-            g.setColour (juce::Colour (0x44ffffff)); g.drawRoundedRectangle (tb, 8.0f, 1.2f);
-            g.setColour (juce::Colours::white); g.setFont (juce::Font (glyph, juce::Font::bold));
-            g.drawText (juce::String::fromUTF8 ("\xe2\x8b\xaf"), tb, juce::Justification::centred);   // ⋯
-            auto ab = addBtnRect();   // + para agregar una canción después de esta
-            g.setColour (juce::Colour (0x80000000)); g.fillEllipse (ab.translated (0.0f, 1.8f).expanded (1.3f));   // sombra
-            g.setColour (juce::Colour (0xff2E8BFF)); g.fillEllipse (ab);   // azul (antes verde)
-            g.setColour (juce::Colours::white); g.setFont (juce::Font (npEsIPhone() ? 17.0f : 23.0f, juce::Font::bold));
-            g.drawText ("+", ab.translated (0.0f, -1.0f), juce::Justification::centred);
-        }
-
-        if (dlProgress >= 0.0f && dlProgress < 1.0f)   // barra de descarga sobre la portada
-        {
-            auto c = coverRect();
-            { juce::Path clip; clip.addRoundedRectangle (c, 9.0f); g.saveState(); g.reduceClipRegion (clip);
-              g.setColour (juce::Colour (0x99000000)); g.fillRect (c); g.restoreState(); }
-            auto bar = juce::Rectangle<float> (c.getX() + 18.0f, c.getCentreY() - 4.0f, c.getWidth() - 36.0f, 8.0f);
-            g.setColour (juce::Colour (0x33ffffff)); g.fillRoundedRectangle (bar, 4.0f);
-            g.setColour (juce::Colour (0xff2E6BE6));
-            g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * juce::jlimit (0.0f, 1.0f, dlProgress)), 4.0f);
-        }
-
-        // Chip del arreglo activo (abajo-izquierda de la portada). Vacío = Original → no se muestra.
-        if (arrNombre.isNotEmpty())
-        {
-            auto c = coverRect();
-            juce::Font f (npEsIPhone() ? 9.5f : 11.0f, juce::Font::bold);
-            const float tw = juce::jmin (c.getWidth() - 16.0f, arrNombre.length() * (f.getHeight() * 0.6f) + 20.0f);
-            juce::Rectangle<float> chip (c.getX() + 7.0f, c.getBottom() - 24.0f, juce::jmax (22.0f, tw), 18.0f);
-            g.setColour (juce::Colour (0xE6143018)); g.fillRoundedRectangle (chip, 9.0f);   // verde oscuro
-            g.setColour (juce::Colour (0x553ED66E)); g.drawRoundedRectangle (chip, 9.0f, 1.0f);
-            g.setColour (juce::Colour (0xff8fe0a0)); g.setFont (f);
-            g.drawText (arrNombre, chip.reduced (8.0f, 0.0f), juce::Justification::centredLeft, true);
+            const float glyph = npEsIPhone() ? 14.0f : 16.0f;
+            const bool over = isMouseOverOrDragging();
+            auto mp = getMouseXYRelative().toFloat();
+            auto hov = [&] (juce::Rectangle<float> b) { return over && b.contains (mp); };
+            auto ring = [&] (juce::Rectangle<float> b, const juce::String& sym)
+            {
+                const bool h = hov (b);
+                g.setColour (juce::Colour (h ? 0x66000000 : 0x44000000)); g.fillEllipse (b);   // disco (más oscuro al hover)
+                g.setColour (juce::Colour (h ? 0xffffffff : 0xcceaeaea)); g.drawEllipse (b.reduced (0.7f), h ? 1.6f : 1.3f);
+                g.setColour (juce::Colour (0xffffffff)); g.setFont (juce::Font (glyph, juce::Font::bold));
+                g.drawText (sym, b, juce::Justification::centred);
+            };
+            ring (removeBtnRect(), juce::String::fromUTF8 ("\xe2\x88\x92"));   // −
+            ring (addBtnRect(),    juce::String ("+"));                        // +
+            auto tb = tonoBtnRect();                                           // ⋯ (tono)
+            const bool ht = hov (tb);
+            g.setColour (juce::Colour (ht ? 0x66000000 : 0x44000000)); g.fillRoundedRectangle (tb, 6.0f);
+            g.setColour (juce::Colour (ht ? 0x99ffffff : 0x55ffffff)); g.drawRoundedRectangle (tb.reduced (0.7f), 6.0f, ht ? 1.4f : 1.2f);
+            g.setColour (juce::Colour (0xffffffff)); g.setFont (juce::Font (glyph + 2.0f, juce::Font::bold));
+            g.drawText (juce::String::fromUTF8 ("\xe2\x8b\xaf"), tb, juce::Justification::centred);
         }
     }
 };
@@ -505,17 +566,20 @@ struct AddCard : public juce::Component
     void mouseUp (const juce::MouseEvent& e) override { if (onClick && e.mouseWasClicked()) onClick(); }
     void paint (juce::Graphics& g) override
     {
-        auto r = getLocalBounds().toFloat();
-        r.removeFromTop (6.0f);
-        auto cov = r.removeFromTop (r.getHeight() * 0.76f).reduced (1.0f);
-        g.setColour (juce::Colour (0xff121212)); g.fillRoundedRectangle (cov, 9.0f);
-        g.setColour (juce::Colour (0x55ffffff)); g.drawRoundedRectangle (cov, 9.0f, 1.4f);
-        g.setColour (juce::Colour (0xff7Cc6ff)); g.setFont (juce::Font (46.0f, juce::Font::bold));
+        auto full = getLocalBounds().toFloat();
+        auto rowBg = full.reduced (2.0f, 2.0f);
+        g.setColour (juce::Colour (0xff121212)); g.fillRoundedRectangle (rowBg, 8.0f);
+        g.setColour (juce::Colour (0x55ffffff)); g.drawRoundedRectangle (rowBg, 8.0f, 1.2f);
+        // Cuadro "+" a la izquierda (como la miniatura).
+        auto r2 = full.reduced (0.0f, 4.0f);
+        const float s = juce::jmax (10.0f, r2.getHeight());
+        juce::Rectangle<float> cov (r2.getX() + 7.0f, r2.getY(), s, s);
+        g.setColour (juce::Colour (0xff7Cc6ff)); g.setFont (juce::Font (s * 0.6f, juce::Font::bold));
         g.drawText ("+", cov, juce::Justification::centred);
-        r.removeFromTop (5.0f);
-        g.setColour (juce::Colour (0xffa3a3a3)); g.setFont (juce::Font (15.0f, juce::Font::bold));
-        g.drawFittedText (juce::String::fromUTF8 ("Agregar canci\xc3\xb3n"), r.reduced (3.0f, 0.0f).toNearestInt(),
-                          juce::Justification::topLeft, 2);
+        // Texto a la derecha.
+        juce::Rectangle<float> txt (cov.getRight() + 12.0f, full.getY(), full.getRight() - (cov.getRight() + 12.0f) - 10.0f, full.getHeight());
+        g.setColour (juce::Colour (0xffb8c6d8)); g.setFont (juce::Font (npEsIPhone() ? 13.0f : 15.0f, juce::Font::bold));
+        g.drawText (juce::String::fromUTF8 ("Agregar canci\xc3\xb3n"), txt, juce::Justification::centredLeft, true);
     }
 };
 
@@ -655,13 +719,16 @@ struct IconButton : public juce::Button
         auto b = getLocalBounds().toFloat();
         auto r = b.reduced (1.0f);
         const float rad = juce::jmin (r.getHeight() * 0.5f, 12.0f);   // pill, igual que el botón Pad
-        g.setColour (active ? juce::Colour (0xff2E8BFF)
-                            : (down ? juce::Colour (0xff2a2a2a) : (over ? juce::Colour (0xff262626) : juce::Colour (0xff1f1f1f))));
+        const bool dis = ! isEnabled();                               // deshabilitado (ej. Menú en vivo): se atenúa
+        g.setColour (dis ? juce::Colour (0xff151515)
+                         : (active ? juce::Colour (0xff2E8BFF)
+                            : (down ? juce::Colour (0xff2a2a2a) : (over ? juce::Colour (0xff262626) : juce::Colour (0xff1f1f1f)))));
         g.fillRoundedRectangle (r, rad);
-        g.setColour (juce::Colour (0x22ffffff));
+        g.setColour (dis ? juce::Colour (0x12ffffff) : juce::Colour (0x22ffffff));
         g.drawRoundedRectangle (r, rad, 1.0f);
 
-        const juce::Colour ic = active ? juce::Colours::white : juce::Colour (0xffe6e6e6);
+        const juce::Colour ic = dis ? juce::Colour (0xff565656)
+                                    : (active ? juce::Colours::white : juce::Colour (0xffe6e6e6));
         if (kind == 0)
         {
             // faders: 3 mini deslizadores

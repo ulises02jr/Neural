@@ -86,6 +86,7 @@ public:
 
         settingsBtn.onClick = [this]
         {
+            if (playing.load()) return;   // EN VIVO: no abrir Menú mientras se reproduce (evita cambios de config en vivo)
             settingsPanel.setState (syncEnabled, syncLinked.load());
             settingsPanel.setBounds (getLocalBounds());
             settingsPanel.setVisible (true);
@@ -1492,20 +1493,25 @@ public:
                 // ── Editor (modo Editar): − quita este slot / + inserta una sección después ──
                 if (editMode && idx >= 0)
                 {
-                    const int r = 10;
+                    // Botones finos y monocromos (aro claro con disco tenue), sin rojo/azul; resaltan al hover.
+                    const auto mpMap = getMouseXYRelative().toFloat();
+                    auto ringBtn = [&] (juce::Rectangle<int> bi, const juce::String& sym)
+                    {
+                        auto b = bi.toFloat();
+                        const bool h = b.contains (mpMap);
+                        g.setColour (juce::Colour (h ? 0x88000000 : 0x66000000)); g.fillEllipse (b);
+                        g.setColour (juce::Colour (h ? 0xffffffff : 0xcceaeaea)); g.drawEllipse (b.reduced (0.7f), h ? 1.6f : 1.3f);
+                        g.setColour (juce::Colour (0xffffffff)); g.setFont (juce::Font (13.0f, juce::Font::bold));
+                        g.drawText (sym, bi, juce::Justification::centred);
+                    };
+                    const int r = 9;
                     juce::Rectangle<int> minus ((int) blk.getX() + 5, (int) blk.getBottom() - 2 * r - 5, 2 * r, 2 * r);
-                    g.setColour (juce::Colour (0x80000000)); g.fillEllipse (minus.toFloat().translated (0.0f, 1.8f).expanded (1.3f));   // sombra
-                    g.setColour (juce::Colour (0xffE5534B)); g.fillEllipse (minus.toFloat());
-                    g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
-                    g.drawText (juce::String::fromUTF8 ("\xe2\x88\x92"), minus, juce::Justification::centred);
+                    ringBtn (minus, juce::String::fromUTF8 ("\xe2\x88\x92"));
                     slotMinusRect[idx] = minus;
-                    if (blk.getWidth() > 52.0f)   // + (azul) a la derecha: insertar sección después de este slot
+                    if (blk.getWidth() > 52.0f)   // + a la derecha: insertar sección después de este slot
                     {
                         juce::Rectangle<int> plus ((int) blk.getRight() - 2 * r - 5, (int) blk.getBottom() - 2 * r - 5, 2 * r, 2 * r);
-                        g.setColour (juce::Colour (0x80000000)); g.fillEllipse (plus.toFloat().translated (0.0f, 1.8f).expanded (1.3f));   // sombra
-                        g.setColour (juce::Colour (0xff2E6BE6)); g.fillEllipse (plus.toFloat());
-                        g.setColour (juce::Colours::white); g.setFont (juce::Font (14.0f, juce::Font::bold));
-                        g.drawText ("+", plus, juce::Justification::centred);
+                        ringBtn (plus, juce::String ("+"));
                         slotPlusRect[idx] = plus;
                     }
                 }
@@ -1673,6 +1679,10 @@ public:
         }
     }
 
+    void mouseMove (const juce::MouseEvent& e) override
+    {   // en edición, repintar el mapa al mover el mouse para el resaltado (hover) de los botones ±
+        if (editMode && ! mapBounds.isEmpty() && mapBounds.contains (e.getPosition())) repaint (mapBounds);
+    }
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (midiMapMode && masterSlider.getBounds().contains (e.getPosition()))   // armar el master (MIDI)
@@ -1780,11 +1790,10 @@ public:
     }
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
-        if (stripBounds.contains (e.getPosition()))   // scroll horizontal de las tarjetas de canciones
+        if (stripBounds.contains (e.getPosition()))   // scroll vertical de la lista de canciones
         {
-            double d = std::abs (w.deltaX) > std::abs (w.deltaY) ? w.deltaX : w.deltaY;
-            if (w.isReversed) d = -d;
-            stripScroll = juce::jmax (0, stripScroll + (int) (d * 600.0));
+            double d = w.deltaY; if (w.isReversed) d = -d;
+            stripScroll = juce::jmax (0, stripScroll + (int) (d * 420.0));   // invertido
             resized();
             return;
         }
@@ -1797,11 +1806,11 @@ public:
         {
             if (! browsing) browseCenter = seqDisplayNow();
             browsing = true;
-            browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), browseCenter + d * 14.0);
+            browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), browseCenter + d * 22.0);
             lastInteractionMs = juce::Time::getMillisecondCounter();
             repaint (mapBounds);
         }
-        else seekToDisplay (seqDisplayNow() + d * 14.0);
+        else seekToDisplay (seqDisplayNow() + d * 22.0);
     }
 
     // #4 teclas: en modo mapping asigna/desasigna; en modo normal dispara lo mapeado
@@ -1915,8 +1924,13 @@ public:
     }
     void selectSongById (int songId)
     {
+        if (playing.load()) return;   // EN VIVO: no cambiar de canción por tecla/MIDI mapeada mientras se reproduce
         for (int i = 0; i < repertoire.size(); ++i)
-            if (repertoire.getReference (i).id == songId) { if (i < songReady.size() && ! songReady[i]) return; loadSong (i); return; }
+            if (repertoire.getReference (i).id == songId)
+            {
+                if (i < songReady.size() && ! songReady[i]) { pendingLoadId = songId; highlightSongButton(); return; }  // aún descargando: encolar
+                loadSong (i); return;
+            }
     }
 
     void drawKeyBadge (juce::Graphics& g, juce::Rectangle<int> host, int code, bool armd,
@@ -2044,8 +2058,7 @@ public:
                 const int code = midiMapMode ? (midiSong.count (sid) ? midiSong[sid] : 0)
                                              : (keyBySong.count (sid) ? keyBySong[sid] : 0);
                 auto full = getLocalArea (c, c->getLocalBounds());
-                auto host = full.withTrimmedTop (6).withHeight ((int) ((full.getHeight() - 6) * 0.76));   // encierra la portada
-                drawKeyBadge (g, host, code, armKind == 3 && armSong == sid, clip);
+                drawKeyBadge (g, full.reduced (2), code, armKind == 3 && armSong == sid, clip);   // badge sobre la fila
             }
         }
     }
@@ -2125,25 +2138,26 @@ public:
         if (currentSetlistName.isNotEmpty()) { setlistBandBounds = area.removeFromTop (22); area.removeFromTop (phone ? 1 : 3); }
         else                                   setlistBandBounds = {};
 
-        // Tarjetas verticales grandes: portada arriba + nombre abajo (scroll horizontal)
+        // Canciones en LISTA vertical (fila: miniatura + nombre), con scroll vertical.
         auto strip = area.removeFromTop (phone ? 104 : 180);
-        // 50/50: izquierda = portadas (scroll, recortadas por cardHost), derecha = Pads (siempre visibles).
+        // 50/50: izquierda = lista de canciones (scroll, recortada por cardHost), derecha = Pads (siempre visibles).
         auto padHalf = strip.removeFromRight (strip.getWidth() / 2);
-        strip.removeFromRight (phone ? 6 : 12);   // separación entre portadas y pads
+        strip.removeFromRight (phone ? 6 : 12);   // separación entre lista y pads
         stripBounds = strip;
         cardHost.setBounds (strip);
         padPanel.setBounds (padHalf);
         padPanel.setVisible (true);
         refreshPadPanel();
         {
-            const int cardW = phone ? 148 : 240, cardH = phone ? 100 : 178;
-            const int step = phone ? 160 : 250;
+            const int rowH = phone ? 44 : 54, rowGap = 6;
+            const int rowStep = rowH + rowGap;
             const int n = songCards.size() + (editMode ? 1 : 0);
-            const int contentW = juce::jmax (0, n * step - 10);
-            stripScroll = juce::jlimit (0, juce::jmax (0, contentW - strip.getWidth()), stripScroll);
-            int x = -stripScroll;   // coords RELATIVAS a cardHost
-            for (auto* c : songCards) { c->setBounds (x, 0, cardW, cardH); x += step; }
-            if (editMode) addCard.setBounds (x, 0, cardW, cardH);
+            const int contentH = juce::jmax (0, n * rowStep - rowGap);
+            stripScroll = juce::jlimit (0, juce::jmax (0, contentH - strip.getHeight()), stripScroll);
+            const int w = strip.getWidth();
+            int y = -stripScroll;   // coords RELATIVAS a cardHost
+            for (auto* c : songCards) { c->setBounds (0, y, w, rowH); y += rowStep; }
+            if (editMode) addCard.setBounds (0, y, w, rowH);
         }
         area.removeFromTop (4);
 
@@ -4514,6 +4528,7 @@ private:
         if (idx >= 0 && idx < songCards.size())
         {
             songCards[idx]->dlProgress = (f >= 1.0) ? -1.0f : (float) f;
+            songCards[idx]->dlKind = 2;   // Descargando audio
             songCards[idx]->repaint();
         }
         // Actualizar el % del placeholder central mientras aun no hay cancion cargada,
@@ -4526,8 +4541,8 @@ private:
         if (f >= 1.0 && idx >= 0 && idx < songReady.size())
         {
             songReady.set (idx, true);
-            if (pendingLoadId >= 0 && id == pendingLoadId && currentSong < 0)
-            { pendingLoadId = -1; loadSong (idx); }          // auto-cargar la canción cuyo tono se acaba de preparar
+            if (pendingLoadId >= 0 && id == pendingLoadId && ! playing.load())
+            { pendingLoadId = -1; loadSong (idx); }          // auto-cargar la canción encolada apenas termina de bajar (si no se está reproduciendo)
             else if (idx == 0 && currentSong < 0) loadSong (0);   // apenas esté la 1a, cargarla
         }
     }
@@ -4651,16 +4666,24 @@ private:
             {   // barra ligada al id: primero el render de tono ("preparando"), luego la descarga
                 auto rit = renderById.find (s.id);
                 if (rit != renderById.end())
-                    c->dlProgress = rit->second;
+                    { c->dlProgress = rit->second; c->dlKind = 1; }   // Transponiendo (render en servidor)
                 else
                 {
                     auto it = dlById.find (s.id);
                     if (it != dlById.end() && cacheReady (s)) { dlById.erase (it); it = dlById.end(); }
-                    c->dlProgress = (it != dlById.end()) ? it->second : -1.0f;
+                    c->dlProgress = (it != dlById.end()) ? it->second : -1.0f; c->dlKind = 2;   // Descargando
                 }
             }
             const int idx = i; const int sid = s.id; const juce::String title = s.titulo;
-            c->onClick    = [this, idx, sid] { if (armSongIfMapping (sid)) return; loadSong (idx); };
+            c->onClick    = [this, idx, sid]
+            {
+                if (armSongIfMapping (sid)) return;
+                if (playing.load()) return;                                   // EN VIVO: no cambiar de canción mientras se reproduce
+                if (idx < songReady.size() && ! songReady[idx])              // aún descargando: encolar y mostrar progreso, se carga sola al terminar
+                { pendingLoadId = sid; highlightSongButton(); return; }
+                pendingLoadId = -1;                                           // selección directa: cancela cualquier encolada
+                loadSong (idx);
+            };
             c->onRemove   = [this, sid] { removeSong (sid); };
             c->onTono     = [this, sid, title] { openTonoFor (sid, title, false); };
             c->onAddAfter = [this, sid] { openBibliotecaForAddAfter (sid); };
@@ -4676,7 +4699,8 @@ private:
     {
         for (int i = 0; i < songCards.size(); ++i)
         {
-            songCards[i]->active = (i == currentSong);
+            songCards[i]->active  = (i == currentSong);
+            songCards[i]->pending = (pendingLoadId >= 0 && songCards[i]->songId == pendingLoadId && i != currentSong);  // encolada/descargando
             songCards[i]->repaint();
         }
     }
@@ -5365,6 +5389,7 @@ private:
             const bool nav = ! playing.load();
             if (barPrevBtn.isEnabled() != nav) { barPrevBtn.setEnabled (nav); barPrevBtn.repaint(); }
             if (barNextBtn.isEnabled() != nav) { barNextBtn.setEnabled (nav); barNextBtn.repaint(); }
+            if (settingsBtn.isEnabled() != nav) { settingsBtn.setEnabled (nav); settingsBtn.repaint(); }  // Menú bloqueado en vivo
         }
         if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 2000)
         {
