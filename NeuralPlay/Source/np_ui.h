@@ -1766,7 +1766,7 @@ struct SettingsPanel : public juce::Component
         storeBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
         storeBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
         storeBtn.onClick = [this] { if (onStorage) onStorage(); };
-        addAndMakeVisible (storeBtn);
+        addChildComponent (storeBtn);   // OCULTO: quitamos el control de almacenamiento (el borrado ahora es automático al eliminar canción/repertorio)
 
         midiBtn.setButtonText (juce::String::fromUTF8 ("MIDI"));
         midiBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
@@ -1835,10 +1835,10 @@ struct SettingsPanel : public juce::Component
         {
             // iPhone: la tarjeta se ajusta a la altura del contenido (sin hueco abajo).
             // MISMAS medidas que resized(): pad 15, título 44, 9 filas de 28, gap 6, status 16.
-            const int h = juce::jmin (15 + 44 + 10 * 28 + 10 * 6 + 16 + 15, getHeight() - 12);
+            const int h = juce::jmin (15 + 44 + 9 * 28 + 9 * 6 + 16 + 15, getHeight() - 12);
             return getLocalBounds().withSizeKeepingCentre (360, h);
         }
-        return getLocalBounds().withSizeKeepingCentre (380, 664);
+        return getLocalBounds().withSizeKeepingCentre (380, 606);
     }
 
     void paint (juce::Graphics& g) override
@@ -1869,7 +1869,6 @@ struct SettingsPanel : public juce::Component
         mixPSBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
         cfgBtn.setBounds      (b.removeFromTop (bh)); b.removeFromTop (gap);
         midiBtn.setBounds     (b.removeFromTop (bh)); b.removeFromTop (gap);
-        storeBtn.setBounds    (b.removeFromTop (bh)); b.removeFromTop (gap);
         refreshBtn.setBounds  (b.removeFromTop (bh)); b.removeFromTop (gap);
         reportBtn.setBounds   (b.removeFromTop (bh)); b.removeFromTop (gap);
         logoutBtn.setBounds   (b.removeFromTop (bh)); b.removeFromTop (gap);

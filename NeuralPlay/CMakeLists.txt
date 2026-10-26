@@ -56,7 +56,10 @@ juce_add_binary_data(NeuralPlayData SOURCES
 
 juce_generate_juce_header(NeuralPlaySpike)
 
-target_sources(NeuralPlaySpike PRIVATE Source/Main.cpp Source/np_keychain.cpp)
+target_sources(NeuralPlaySpike PRIVATE Source/Main.cpp Source/np_keychain.cpp Source/np_pitch.cpp)
+
+# Motor de transposición en el dispositivo (Signalsmith Stretch, MIT) — vendorizado.
+target_include_directories(NeuralPlaySpike SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith")
 
 target_compile_definitions(NeuralPlaySpike PRIVATE
     JUCE_WEB_BROWSER=0

@@ -14,6 +14,7 @@ server/venv/
 NeuralPlay/JUCE/
 NeuralPlay/build/
 NeuralPlay/stems/
+NeuralPlay/proto_transpose/   # prototipo de transposición (repos clonados + binarios); el motor vendorizado va en NeuralPlay/third_party/
 
 # ───── NeuralMusicos / NeuralCharts (Flutter) ─────
 NeuralMusicos/build/

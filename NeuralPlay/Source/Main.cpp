@@ -3368,6 +3368,7 @@ private:
             }
         }
         dlById.erase (realId); dlById.erase (-realId);   // corta el indicador de "Descargando stems…"
+        deleteSongCache (realId);                         // borra del dispositivo lo descargado + todos los tonos de esta canción
         if (repertoire.isEmpty()) clearSong();           // sin canciones → mapping totalmente vacío
         rebuildRepertoireStrip();
         // SIEMPRE se quita por el id REAL (positivo), así el servidor lo borra aunque hayamos
@@ -3734,23 +3735,53 @@ private:
     void doDeleteSetlist (juce::String id)
     {
         if (serverUrl.isEmpty()) return;
-        const auto base = serverUrl + "/api/live/setlist/" + id + "/eliminar";
+        const bool borrandoElCargado = (lastSetlistId == id);
+        // Canciones del repertorio EN USO: protegidas (NO se borra su caché aunque estén
+        // también en el repertorio que se elimina).
+        std::set<int> enUso;
+        if (! borrandoElCargado)
+            for (auto& e : repertoire) enUso.insert (e.id < 0 ? -e.id : e.id);
+        const auto base    = serverUrl + "/api/live/setlist/" + id + "/eliminar";
+        const auto listUrl = serverUrl + "/api/live/setlists";
         const auto tok = serverToken;
         juce::Component::SafePointer<MainComponent> sp (this);
-        juce::Thread::launch ([sp, base, tok, id]
+        juce::Thread::launch ([sp, base, listUrl, tok, id, enUso, borrandoElCargado]
         {
-            httpPostForm (base, {}, tok);
-            juce::MessageManager::callAsync ([sp, id]
+            // Si NO es el repertorio cargado, su lista de canciones no está en memoria:
+            // la pedimos al servidor para saber qué caché borrar.
+            juce::Array<int> delSongs;
+            if (! borrandoElCargado)
+            {
+                auto v = juce::JSON::parse (httpGet (listUrl, tok));
+                if (auto* sls = v.getProperty ("setlists", juce::var()).getArray())
+                    for (auto& s : *sls)
+                        if (s.getProperty ("id", "").toString() == id)
+                            if (auto* cs = s.getProperty ("canciones", juce::var()).getArray())
+                                for (auto& c : *cs)
+                                {
+                                    const int sid = (int) c.getProperty ("id", 0);
+                                    if (sid != 0) delSongs.add (sid);
+                                }
+            }
+            httpPostForm (base, {}, tok);   // borrar en el servidor
+            juce::MessageManager::callAsync ([sp, id, delSongs, enUso, borrandoElCargado]
             {
                 if (sp == nullptr) return;
-                if (sp->lastSetlistId == id)   // borramos el que estaba cargado: limpiar
+                if (borrandoElCargado)   // era el cargado: borrar su caché completa y limpiar la vista
                 {
+                    for (auto& e : sp->repertoire) sp->deleteSongCache (e.id);
                     sp->lastSetlistId.clear();
                     sp->currentSetlistName.clear();
                     sp->repertoire.clearQuick();
                     sp->rebuildRepertoireStrip();
                     sp->clearSong();
                     sp->refreshEditAvailability();
+                }
+                else   // otro repertorio: borrar solo las canciones que NO están en el que está en uso
+                {
+                    for (int sid : delSongs)
+                        if (enUso.find (sid) == enUso.end())
+                            sp->deleteSongCache (sid);
                 }
                 if (sp->repPicker.isVisible()) sp->openRepertoirePicker();   // refrescar la lista
             });
@@ -4240,6 +4271,15 @@ private:
         for (auto& f : npCacheDir().findChildFiles (juce::File::findDirectories, false))
             if (f.getFileName().startsWith ("song_")) out.add (f);
         return out;
+    }
+    // Borra del dispositivo TODO lo cacheado de una canción: el tono original descargado
+    // y cualquier tono renderizado. Las carpetas se llaman "song_<id>_t<tono>".
+    void deleteSongCache (int songId)
+    {
+        const int realId = (songId < 0 ? -songId : songId);
+        const juce::String pref = "song_" + juce::String (realId) + "_t";   // _t evita que song_1 borre a song_14
+        for (auto& f : cacheFolders())
+            if (f.getFileName().startsWith (pref)) f.deleteRecursively();
     }
     juce::StringArray activeCacheNames() const
     {
