@@ -17,6 +17,7 @@
 #include "np_net.h"
 
 #include "np_ui.h"
+#include "np_pitch.h"   // transposición en el dispositivo (motor intercambiable)
 
 class MainComponent : public juce::AudioAppComponent,
                       private juce::Timer,
@@ -558,11 +559,13 @@ public:
         deviceSampleRate = sampleRate;
         currentBlockSize = spb;
         temp.setSize (2, juce::jmax (spb, 2048) + 8);
+        tempShift.setSize (2, juce::jmax (spb, 2048) + 8);   // scratch del pitch-shift
         for (int i = 0; i < resamplers.size(); ++i)
         {
             resamplers[i]->setResamplingRatio (fileRates[i] / sampleRate);
             resamplers[i]->prepareToPlay (spb, sampleRate);
         }
+        reapplyTranspose();   // si la canción está transpuesta, re-preparar los shifters a este sr/bloque
         {
             const juce::ScopedLock pl (padLock);
             padTemp.setSize (2, juce::jmax (spb, 2048) + 8);
@@ -927,6 +930,22 @@ public:
             temp.clear();
             juce::AudioSourceChannelInfo ti (&temp, 0, nn);
             resamplers.getUnchecked (t)->getNextAudioBlock (ti);
+            // Transposición en el dispositivo: si el tono NO es el original, los stems
+            // transponibles pasan por el pitch-shifter; los fijos (click/guía/batería/
+            // percusión/loops) se retrasan la misma latencia para quedar en sincronía.
+            if (curSemitones != 0 && t < (int) trackShifter.size())
+            {
+                if (trackShifter[(size_t) t] != nullptr)
+                {
+                    const int nch = temp.getNumChannels();
+                    const float* in[2]  = { temp.getReadPointer (0), temp.getReadPointer (nch > 1 ? 1 : 0) };
+                    float*       out[2] = { tempShift.getWritePointer (0), tempShift.getWritePointer (nch > 1 ? 1 : 0) };
+                    trackShifter[(size_t) t]->process (in, out, nn);
+                    for (int c = 0; c < nch; ++c) temp.copyFrom (c, 0, tempShift, c, 0, nn);
+                }
+                else if (t < (int) trackDelay.size())
+                    trackDelay[(size_t) t].process (temp, nn);
+            }
             // Con guía Neural activa, la pista "Guía" del usuario se silencia (solo suena la voz).
             const bool guiaSilenciada = guideOn.load() && t < kMaxTracks && trackIsGuia[t];
             const bool audible = ! guiaSilenciada && ! trackMuted[t].load() && (! anySolo || trackSolo[t].load());
@@ -3826,75 +3845,30 @@ private:
     // la barra de "preparando" en la PORTADA de la canción (no en una ventana).
     void prepararTono (int sem, juce::String nombre, bool yaListo)
     {
+        juce::ignoreUnused (yaListo);
         const int sid = repEdit.songId; const bool add = repEdit.addFlow;
-        // Tono ya listo (o el original): aplicar de una y listo.
-        if (yaListo || sem == 0)
+        renderById.erase (sid);
+        if (preparandoSongId == sid) preparandoSongId = -1;
+
+        if (add)
         {
-            renderById.erase (sid);
-            if (preparandoSongId == sid) preparandoSongId = -1;
-            if (add) addSong (sid, nombre);
-            else     setSongTono (sid, nombre);
+            // Agregar la canción con su tono elegido. Baja el ORIGINAL; el tono se aplicará
+            // en el dispositivo cuando se cargue (persistencia por canción: próximo paso).
+            addSong (sid, nombre);
             rebuildRepertoireStrip(); repaint();
             return;
         }
-        // Aún NO está renderizado: mostrar barra en la portada y NO aplicar todavía
-        // (así no se arrastra ni suena el tono viejo). Si es la canción cargada,
-        // detenerla y marcar "Preparando" en el mapa; el tono se aplica al terminar.
-        renderById[sid] = 0.02f;
-        preparandoSongId = sid;
+
+        // Cambio de tono: transposición EN VIVO en el dispositivo (Signalsmith). Sin render, sin recarga.
         const bool esActual = (currentSong >= 0 && currentSong < repertoire.size()
                                && repertoire.getReference (currentSong).id == sid);
-        if (esActual) clearSong();   // detiene, descarga el audio viejo y limpia el mapa (mostrará "Preparando")
-        rebuildRepertoireStrip(); repaint();
-        const auto url = serverUrl, tok = serverToken;
-        juce::Thread::launch ([url, tok, sid, sem]     // dispara el render (idempotente por .lock)
-        { httpPostForm (url + "/api/live/render/" + juce::String (sid) + "/" + juce::String (sem), {}, tok); });
-        juce::Component::SafePointer<MainComponent> sp (this);
-        juce::Thread::launch ([sp, url, tok, sid, sem, add, nombre]
+        if (esActual)
         {
-            for (int it = 0; it < 900; ++it)          // ~10 min de tope
-            {
-                juce::Thread::sleep (700);
-                auto est = juce::JSON::parse (httpGet (
-                    url + "/api/live/render/" + juce::String (sid) + "/" + juce::String (sem) + "/estado", tok));
-                const bool listo = (bool) est.getProperty ("listo", false);
-                const auto prog = est.getProperty ("progreso", "").toString();
-                float frac = 0.05f;
-                if (prog.containsChar ('/'))
-                {
-                    const int h = prog.upToFirstOccurrenceOf ("/", false, false).getIntValue();
-                    const int t = prog.fromFirstOccurrenceOf ("/", false, false).getIntValue();
-                    if (t > 0) frac = juce::jlimit (0.05f, 0.99f, (float) h / (float) t);
-                }
-                if (listo)
-                {
-                    juce::MessageManager::callAsync ([sp, sid, add, nombre]
-                    {
-                        if (sp == nullptr) return;
-                        sp->renderById.erase (sid);
-                        if (sp->preparandoSongId == sid) sp->preparandoSongId = -1;
-                        sp->pendingLoadId = sid;                  // auto-cargar esta canción cuando baje el tono nuevo
-                        if (add) sp->addSong (sid, nombre);
-                        else     sp->setSongTono (sid, nombre);   // recarga el setlist con el tono ya listo
-                        sp->rebuildRepertoireStrip(); sp->repaint();
-                    });
-                    return;
-                }
-                juce::MessageManager::callAsync ([sp, sid, frac]
-                {
-                    if (sp == nullptr) return;
-                    sp->renderById[sid] = frac;
-                    sp->rebuildRepertoireStrip(); sp->repaint();
-                });
-            }
-            juce::MessageManager::callAsync ([sp, sid]
-            {
-                if (sp == nullptr) return;
-                sp->renderById.erase (sid);
-                if (sp->preparandoSongId == sid) sp->preparandoSongId = -1;
-                sp->rebuildRepertoireStrip(); sp->repaint();
-            });
-        });
+            applyTranspose (sem);                                        // instantáneo (sem 0 = vuelve al original)
+            repertoire.getReference (currentSong).tonoNombre = nombre;   // reflejar el tono en la tarjeta (en memoria)
+        }
+        // TODO (próximo paso): persistir el tono elegido por canción y re-aplicarlo al cargar y en las no-actuales.
+        rebuildRepertoireStrip(); repaint();
     }
 
     void openTonoFor (int songId, juce::String title, bool addFlow)
@@ -4776,6 +4750,54 @@ private:
         computeTrackRouteFam();   // familia canónica por track (para enrutar salidas)
     }
 
+    // ¿Este stem NO se transpone? Regla: Click, Guía, Batería, Percusión y Loops quedan al tono original.
+    bool isFixedFamily (int t) const
+    {
+        juce::String fam = (t >= 0 && t < trackServerFam.size()) ? trackServerFam[t].toLowerCase() : juce::String();
+        if (fam.isNotEmpty())
+            return fam.startsWith ("click") || fam.startsWith ("gu")     // "guía"
+                || fam.startsWith ("bater") || fam.startsWith ("perc") || fam.startsWith ("loop");
+        // Sin familia del servidor: deducir por el nombre del archivo.
+        juce::String nm = (t >= 0 && t < trackNames.size()) ? trackNames[t].toLowerCase() : juce::String();
+        return nm.contains ("click") || nm.contains ("metr")
+            || nm.contains ("guide") || nm.contains ("guia")
+            || nm.contains ("bater") || nm.contains ("drum")
+            || nm.contains ("perc") || nm.contains ("loop");
+    }
+
+    // Aplica la transposición a la canción cargada. semis==0 → bypass total (idéntico al original).
+    // Debe llamarse desde el hilo de UI; toma graphLock para no chocar con el audio.
+    void applyTranspose (int semis)
+    {
+        const juce::ScopedLock sl (graphLock);
+        curSemitones = semis;
+        trackShifter.clear();
+        trackDelay.clear();
+        shifterLatency = 0;
+        if (semis == 0 || numTracks <= 0) return;   // tono original: nada que procesar
+
+        trackShifter.resize ((size_t) numTracks);
+        // 1) crear un pitch-shifter por cada stem transponible y medir la latencia.
+        int lat = 0;
+        for (int t = 0; t < numTracks; ++t)
+        {
+            if (isFixedFamily (t)) continue;
+            auto ps = PitchShifter::createDefault();
+            ps->prepare (2, deviceSampleRate, juce::jmax (256, currentBlockSize));
+            ps->setSemitones ((float) semis);
+            lat = juce::jmax (lat, ps->latencySamples());
+            trackShifter[(size_t) t] = std::move (ps);
+        }
+        shifterLatency = lat;
+        // 2) retrasar los stems FIJOS esa misma latencia para que queden en sincronía.
+        trackDelay.resize ((size_t) numTracks);
+        for (int t = 0; t < numTracks; ++t)
+            if (isFixedFamily (t))
+                trackDelay[(size_t) t].prepare (2, shifterLatency);
+    }
+
+    void reapplyTranspose() { if (curSemitones != 0) applyTranspose (curSemitones); }   // tras cambiar sample-rate/bloque o recargar
+
     void loadSong (int index)
     {
         if (index < 0 || index >= repertoire.size()) return;
@@ -4802,6 +4824,10 @@ private:
             trackNames.clear();
             trackServerFam.clear();
             stemFiles.clear();
+            trackShifter.clear();        // los shifters apuntaban al grafo viejo
+            trackDelay.clear();
+            curSemitones = 0;            // cada canción arranca en su tono original (bypass)
+            shifterLatency = 0;
             lengthSamples = 0;
             numTracks = 0;
             // RESET del arreglo al cambiar de canción (si no, se queda el de la canción anterior → se atora)
@@ -6875,6 +6901,35 @@ private:
     int beatsPerBar = 4;
     juce::String songCompas = "4/4";
     juce::AudioBuffer<float> temp;
+
+    // ── Transposición en el dispositivo (pitch-shift por stem) ──
+    // Línea de retardo simple para sincronizar los stems FIJOS (que no se transponen)
+    // con la latencia que introduce el motor de pitch en los stems transpuestos.
+    struct StemDelay
+    {
+        juce::AudioBuffer<float> buf; int pos = 0, len = 0;
+        void prepare (int ch, int delaySamples)
+        {
+            len = juce::jmax (0, delaySamples); pos = 0;
+            buf.setSize (juce::jmax (1, ch), juce::jmax (1, len)); buf.clear();
+        }
+        void process (juce::AudioBuffer<float>& io, int nn)
+        {
+            if (len <= 0) return;
+            const int ch = juce::jmin (io.getNumChannels(), buf.getNumChannels());
+            for (int c = 0; c < ch; ++c)
+            {
+                float* d = io.getWritePointer (c); float* b = buf.getWritePointer (c); int p = pos;
+                for (int i = 0; i < nn; ++i) { const float in = d[i]; d[i] = b[p]; b[p] = in; if (++p >= len) p = 0; }
+            }
+            pos = (pos + nn) % len;
+        }
+    };
+    juce::AudioBuffer<float> tempShift;                        // scratch de salida del pitch (in/out no pueden ser el mismo)
+    int curSemitones = 0;                                      // transposición de la canción cargada (0 = original → bypass total)
+    int shifterLatency = 0;                                    // latencia del motor (para el delay de los fijos)
+    std::vector<std::unique_ptr<PitchShifter>> trackShifter;   // por track; nullptr = no se transpone (familia fija)
+    std::vector<StemDelay> trackDelay;                         // por track; usado en los fijos cuando curSemitones != 0
     juce::Rectangle<int> mapBounds;
     juce::Rectangle<int> stripBounds;   // franja de tarjetas de canciones
     int stripScroll = 0;                // desplazamiento horizontal del strip
