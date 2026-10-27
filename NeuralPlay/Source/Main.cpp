@@ -913,12 +913,6 @@ public:
         {
             for (auto* b : bufferingSources) b->setNextReadPosition (sk);
             for (auto* r : resamplers)       r->flushBuffers();
-            if (curSemitones != 0)   // transponiendo: limpiar el estado del pitch-shifter y de los retardos
-            {                         // (si no, arrastran audio viejo tras el salto → glitch/"choque")
-                for (auto& ps : trackShifter) if (ps) ps->reset();
-                for (auto& dl : trackDelay)   dl.clear();
-                tempShift.clear();
-            }
             const double fr = fileRates.isEmpty() ? 44100.0 : fileRates[0];
             positionOut.store ((long long) (sk * deviceSampleRate / fr));
             // Guía dinámica: al saltar, cortar el anuncio en curso y reprogramar según la nueva posición.
@@ -1133,37 +1127,7 @@ public:
         else if (cueActiveBuf >= 0) { cueActiveBuf = -1; cuePos = 0; }
 
         const float m = masterGain.load();
-        for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] *= m; }   // master (softClip al final)
-        // Guardar el audio LIMPIO (pre-overlay) en el anillo, para el crossfade de futuros saltos.
-        {
-            const int R = jxRing.getNumSamples();
-            if (R > 0)
-            {
-                float* r0 = jxRing.getWritePointer (0);
-                float* r1 = jxRing.getNumChannels() > 1 ? jxRing.getWritePointer (1) : r0;
-                const float* o0 = out[0];
-                const float* o1 = (useCh > 1 && out[1] != nullptr) ? out[1] : o0;
-                int wp = jxRingPos;
-                for (int n = 0; n < nn; ++n) { r0[wp] = o0[n]; r1[wp] = o1[n]; if (++wp >= R) wp = 0; }
-                jxRingPos = wp;
-            }
-        }
-        // Crossfade de salto: encimar la cola vieja (desvaneciéndose) sobre la sección nueva → sin silencio.
-        if (jxLen > jxPos && jxBuf.getNumSamples() >= jxLen)
-        {
-            const int k  = juce::jmin (nn, jxLen - jxPos);
-            const int ch = juce::jmin (2, useCh);
-            for (int c = 0; c < ch; ++c)
-            {
-                float* o = out[c];
-                const float* t = jxBuf.getReadPointer (jxBuf.getNumChannels() > 1 ? c : 0);
-                for (int i = 0; i < k; ++i)
-                    o[i] += t[jxPos + i] * (1.0f - (float) (jxPos + i) / (float) jxLen);
-            }
-            jxPos += k;
-            if (jxPos >= jxLen) { jxPos = 0; jxLen = 0; }
-        }
-        for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] = softClip (o[n]); }
+        for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] = softClip (o[n] * m); }
         positionOut.fetch_add (nn);
 
         const double posSec = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
@@ -1398,28 +1362,7 @@ public:
             }
         }
 
-        // Salto de sección: iniciar el CROSSFADE. La cola del mix actual (guardada en el anillo) se
-        // encimará desvaneciéndose sobre la sección nueva en los próximos bloques, tapando el hueco del
-        // reposicionamiento del buffer. Resultado: sin silencio y sin corte/choque. El lado nuevo entra
-        // además con su propio fundido (afG). (No aplica a repeticiones/∞, que son loops sin corte.)
-        if (cutAtSec >= 0.0)
-            startJumpXfade();
-    }
-
-    // Toma una instantánea de la cola reciente del mix (del anillo) para el crossfade del salto.
-    void startJumpXfade()
-    {
-        const int R = jxRing.getNumSamples();
-        const int L = juce::jmin (jxTotal, juce::jmin (R - 1, jxBuf.getNumSamples()));
-        if (L <= 0) return;
-        const int ch = juce::jmin (jxRing.getNumChannels(), jxBuf.getNumChannels());
-        int rp = jxRingPos - L; while (rp < 0) rp += R;
-        for (int i = 0; i < L; ++i)
-        {
-            for (int c = 0; c < ch; ++c) jxBuf.setSample (c, i, jxRing.getSample (c, rp));
-            if (++rp >= R) rp = 0;
-        }
-        jxPos = 0; jxLen = L;
+        (void) cutAtSec;   // (revertido) el salto usa solo el fundido de entrada original (afG)
     }
 
     void paint (juce::Graphics& g) override
@@ -7176,7 +7119,7 @@ private:
     std::atomic<float> padGain { 1.0f };           // fader del pad (0 dB por defecto)
     std::atomic<int>   padPlayingIdx { -1 };       // tono objetivo que suena (0-11), -1 = ninguno
     std::atomic<int>   padJobGen { 0 };            // generación: descarta descargas viejas
-    double padXfadeSec = 4.5;                       // duración del fade/crossfade del pad (s) — aparición/desvanecimiento más largo
+    double padXfadeSec = 5.5;                       // duración del fade/crossfade del pad (s) — aparición/desvanecimiento más largo
     float  padGainCur = 1.0f;                        // ganancia suavizada del fader (anti-zipper)
     int    padMode = 0;                             // 0 = Auto (sigue la canción), 1 = Manual
     int    padManualIdx = 0;                        // tono elegido a mano (0-11)
