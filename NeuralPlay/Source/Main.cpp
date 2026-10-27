@@ -1417,6 +1417,28 @@ public:
                         juce::Justification::centred, false);
         }
 
+        // Caja de CARGA DE CPU del audio (a la par del BPM): "CPU" arriba, "NN%" abajo.
+        if (! cpuBoxBounds.isEmpty())
+        {
+            auto boxf = cpuBoxBounds.toFloat();
+            g.setColour (juce::Colour (0xff1f1f1f)); g.fillRoundedRectangle (boxf, 7.0f);
+            g.setColour (juce::Colour (0x22ffffff)); g.drawRoundedRectangle (boxf, 7.0f, 1.0f);
+            const int   hh  = cpuBoxBounds.getHeight() / 2;
+            const bool  phC = npEsIPhone();
+            const int   pct = juce::jlimit (0, 999, juce::roundToInt (cpuPctSmooth));
+            // Verde < 60, ámbar 60–85, rojo > 85
+            const juce::Colour col = pct > 85 ? juce::Colour (0xffE5534B)
+                                   : pct > 60 ? juce::Colour (0xffE0A43A)
+                                              : juce::Colour (0xff5BD17A);
+            g.setColour (juce::Colour (0xffb0b0b0));
+            g.setFont (juce::Font (phC ? 9.0f : 10.5f, juce::Font::bold));
+            g.drawText ("CPU", cpuBoxBounds.withHeight (hh).translated (0, 1), juce::Justification::centred, false);
+            g.setColour (col);
+            g.setFont (juce::Font (phC ? 10.5f : 12.5f, juce::Font::bold));
+            g.drawText (juce::String (pct) + "%", cpuBoxBounds.withTrimmedTop (hh).translated (0, -1),
+                        juce::Justification::centred, false);
+        }
+
         // Indicador de NeuralSync (bajo el botón Play): solo cuando NeuralSync está activo.
         if (syncEnabled && ! syncBadgeBounds.isEmpty())
         {
@@ -2214,6 +2236,8 @@ public:
             timeLabel.setBounds (lx, gy, boxW, BH);
             lx += boxW + boxG;
             compasBoxBounds = juce::Rectangle<int> (lx, gy, boxW, BH);
+            lx += boxW + boxG;
+            cpuBoxBounds = juce::Rectangle<int> (lx, gy, boxW, BH);   // carga de CPU del audio (a la par del BPM)
             lx += boxW + G;
             // El botón PAD se movió al panel de pads (lado derecho del strip superior).
             // Se queda vivo pero oculto para que el MIDI-learn (kaPad -> triggerClick) siga funcionando.
@@ -5595,6 +5619,12 @@ private:
             if (songPrevBtn.isEnabled() != nav) { songPrevBtn.setEnabled (nav); songPrevBtn.setAlpha (nav ? 1.0f : 0.45f); songPrevBtn.repaint(); }
             if (songNextBtn.isEnabled() != nav) { songNextBtn.setEnabled (nav); songNextBtn.setAlpha (nav ? 1.0f : 0.45f); songNextBtn.repaint(); }
         }
+        // Carga de CPU del audio (real, del dispositivo), suavizada para el cuadrito del header.
+        {
+            const float nowCpu = (float) (deviceManager.getCpuUsage() * 100.0);
+            cpuPctSmooth += (nowCpu - cpuPctSmooth) * 0.25f;   // suavizado exponencial (anti-parpadeo)
+            if (! cpuBoxBounds.isEmpty()) repaint (cpuBoxBounds);
+        }
         if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 2000)
         {
             splashOn = false;
@@ -7306,6 +7336,8 @@ private:
     int loadGen = 0;                 // generación de carga: descarta callbacks de cargas canceladas
     juce::Rectangle<int> setlistBandBounds;   // franja donde se dibuja el nombre del repertorio
     juce::Rectangle<int> compasBoxBounds;     // caja de Tempo/Compás (a la par del tiempo)
+    juce::Rectangle<int> cpuBoxBounds;        // caja de carga de CPU del audio (a la par del BPM)
+    float cpuPctSmooth = 0.0f;                // % de carga suavizado (anti-parpadeo)
     RepEditPanel repEdit;
     AddCard addCard;
     bool editMode = false;
