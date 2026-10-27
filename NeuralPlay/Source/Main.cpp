@@ -2348,12 +2348,15 @@ public:
                 padPlayerBtn.setVisible (false);
                 muteMidiBtn.setVisible (false);
                 juce::Button* btns[4] = { &faderViewBtn, &busesBtn, &repeatBtn, &infiniteBtn };
-                const int bgap = 4;
-                const int bh2 = (btnCol.getHeight() - bgap * 3) / 4;
+                const int bgap = 8;
+                // Botones cuadrados (no estirados): se limita el alto al ancho de la columna y
+                // se centra el grupo verticalmente en lugar de rellenar todo el alto.
+                const int bh2 = juce::jmin (btnColW, (btnCol.getHeight() - bgap * 3) / 4);
+                auto col = btnCol.withSizeKeepingCentre (btnCol.getWidth(), bh2 * 4 + bgap * 3);
                 for (int i = 0; i < 4; ++i)
                 {
-                    btns[i]->setBounds (btnCol.removeFromTop (bh2));
-                    if (i < 3) btnCol.removeFromTop (bgap);
+                    btns[i]->setBounds (col.removeFromTop (bh2));
+                    if (i < 3) col.removeFromTop (bgap);
                 }
             }
             masterLabel.setBounds (mcol.removeFromBottom (16));

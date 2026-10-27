@@ -1697,6 +1697,14 @@ struct SwitchLNF : public juce::LookAndFeel_V4
     }
 };
 
+// LookAndFeel para los botones de texto del Menú y Acerca de: fuente FIJA 14.5 bold
+// (igual que los toggles), para que NO se achique con el alto del botón.
+struct MenuBtnLNF : public PillLNF
+{
+    juce::Font getTextButtonFont (juce::TextButton&, int) override
+    { return juce::Font (14.5f, juce::Font::bold); }
+};
+
 // Botón "Acerca de" con un icono de info (círculo con "i") a la par del texto.
 struct FlagReportButton : public juce::Button
 {
@@ -1734,6 +1742,12 @@ struct AboutPanel : public juce::Component
     juce::TextButton soporteBtn, emailBtn, manualBtn, webBtn, backBtn, closeBtn;
     std::function<void()> onSoporte, onEmail, onManual, onWeb, onBack, onClose;
     juce::Rectangle<int> headerArea;
+    MenuBtnLNF menuBtnLnf;   // fuente fija pareja para todos los botones
+    ~AboutPanel() override
+    {
+        for (auto* b : { &soporteBtn, &emailBtn, &manualBtn, &webBtn, &backBtn, &closeBtn })
+            b->setLookAndFeel (nullptr);
+    }
 
     AboutPanel()
     {
@@ -1742,6 +1756,7 @@ struct AboutPanel : public juce::Component
             b.setButtonText (juce::String::fromUTF8 (t));
             b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1f1f1f));
             b.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff2f2f2));
+            b.setLookAndFeel (&menuBtnLnf);
             addAndMakeVisible (b);
         };
         st (soporteBtn, "Contactar con soporte"); soporteBtn.onClick = [this] { if (onSoporte) onSoporte(); };
@@ -1806,9 +1821,12 @@ struct SettingsPanel : public juce::Component
     juce::TextButton syncBtn, cfgBtn, refreshBtn, storeBtn, countInBtn, masterPSBtn, mixPSBtn, closeBtn, logoutBtn, midiBtn;
     FlagReportButton reportBtn;
     SwitchLNF switchLnf;
+    MenuBtnLNF menuBtnLnf;   // fuente fija para los botones de texto (no se achica)
     ~SettingsPanel() override
     {
         for (auto* b : { &syncBtn, &countInBtn, &masterPSBtn, &mixPSBtn })
+            b->setLookAndFeel (nullptr);
+        for (auto* b : { &cfgBtn, &refreshBtn, &storeBtn, &midiBtn, &logoutBtn })
             b->setLookAndFeel (nullptr);
     }
     bool syncOn = false, linked = false, countInOn = false, masterPSOn = true, mixPSOn = true;
@@ -1881,6 +1899,7 @@ struct SettingsPanel : public juce::Component
         addAndMakeVisible (closeBtn);
 
         for (auto* b : { &syncBtn, &countInBtn, &masterPSBtn, &mixPSBtn }) b->setLookAndFeel (&switchLnf);
+        for (auto* b : { &cfgBtn, &refreshBtn, &storeBtn, &midiBtn, &logoutBtn }) b->setLookAndFeel (&menuBtnLnf);   // fuente pareja
 
         setAlwaysOnTop (true);
         refresh();
