@@ -53,6 +53,23 @@ struct FaderLNF : public juce::LookAndFeel_V4
         g.setColour (juce::Colour (0xff2a2b30));
         g.drawRoundedRectangle (track.reduced (0.5f), rad, 1.0f);
 
+        // Escala tenue de dB (−60..0, lineal) a los lados del riel: look de mezcladora.
+        {
+            const int marks[] = { 0, -6, -12, -24, -48 };
+            for (int db : marks)
+            {
+                const float fy = top + (float) (-db) / 60.0f * (bot - top);
+                g.setColour (juce::Colour (0x3affffff));
+                g.fillRect (track.getX() - 4.0f, fy - 0.5f, 3.0f, 1.0f);          // tick izquierda
+                g.fillRect (track.getRight() + 1.0f, fy - 0.5f, 3.0f, 1.0f);      // tick derecha
+                g.setColour (juce::Colour (0x66ffffff));
+                g.setFont (juce::Font (7.0f));
+                g.drawText (db == 0 ? juce::String ("0") : juce::String (db),
+                            track.getRight() + 4.5f, fy - 4.5f, 13.0f, 9.0f,
+                            juce::Justification::centredLeft, false);
+            }
+        }
+
         const bool muted = (bool) slider.getProperties().getWithDefault ("muted", false);
         const bool dim   = (bool) slider.getProperties().getWithDefault ("dim", false);   // opacar al haber solo en otro canal
         juce::Colour fillCol = muted ? juce::Colour (0xffE0433E) : juce::Colour (0xffF2F2F2);
@@ -363,7 +380,8 @@ struct SongCard : public juce::Component
     juce::String titulo, tono;
     juce::String arrNombre;   // arreglo activo (vacío = Original): se muestra como chip en la portada
     bool active = false;
-    bool pending = false;   // encolada: seleccionada pero aún descargando (aro ámbar); se carga sola al terminar
+    bool pending = false;   // (en desuso) encolada
+    bool ready = true;      // false = aún descargando / en cola: se ve atenuada y NO se puede seleccionar
     bool editMode = false;
     int index = 0;
     int songId = 0;   // #4 id de la canción (para mapping de teclado)
@@ -473,6 +491,7 @@ struct SongCard : public juce::Component
                                    // no activa dejaba alpha ~0.1 y oscurecía la portada. Forzamos 100%.
             if (cover.isValid()) g.drawImage (cover, cov, juce::RectanglePlacement::fillDestination);  // portada original (sin realce)
             else { g.setColour (juce::Colour (0xff1f1f1f)); g.fillRect (cov); }
+            if (! ready) { g.setColour (juce::Colour (0x88000000)); g.fillRect (cov); }   // aún descargando / en cola: atenuar
             g.restoreState();
         }
         g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (cov, 6.0f, 1.0f);
@@ -486,7 +505,8 @@ struct SongCard : public juce::Component
         const bool  hasArr = arrNombre.isNotEmpty();
         juce::String linea = titulo;
         if (tono.isNotEmpty()) linea << "  (" << tono << ")";
-        g.setColour (active ? juce::Colours::white : juce::Colour (0xfff2f2f2));
+        g.setColour (! ready ? juce::Colour (0xff6e6e6e)                               // atenuado mientras baja
+                             : (active ? juce::Colours::white : juce::Colour (0xfff2f2f2)));
         g.setFont (juce::Font (npEsIPhone() ? 13.0f : 16.0f, juce::Font::bold));
         if (hasArr)
         {
@@ -877,27 +897,10 @@ struct RepertoireLoader : public juce::Thread
 
             status ("Preparando " + juce::String (i + 1) + "/" + juce::String (cs->size()) + ": " + e.titulo);
 
-            const auto pistasUrl = serverUrl + "/api/live/pistas/" + juce::String (e.id) + "?t=" + juce::String (e.tono);
+            // Siempre se descarga el ORIGINAL (t=0); la transposición se hace EN EL DISPOSITIVO.
+            // e.tono queda como metadato (semitonos) para aplicar el pitch-shift al cargar.
+            const auto pistasUrl = serverUrl + "/api/live/pistas/" + juce::String (e.id) + "?t=0";
             auto pv = juce::JSON::parse (httpGet (pistasUrl, token));
-
-            // Si el tono no está renderizado en el servidor, pedir que se genere y esperar
-            if (e.tono != 0 && ! (bool) pv.getProperty ("listo", false))
-            {
-                status (juce::String::fromUTF8 ("Este tono no se encontraba renderizado, espere unos momentos mientras se renderiza\xe2\x80\xa6"));
-                httpPostForm (serverUrl + "/api/live/render/" + juce::String (e.id) + "/"
-                              + juce::String (e.tono), {}, token);
-                for (int tries = 0; tries < 600 && ! threadShouldExit(); ++tries)   // hasta ~10 min
-                {
-                    auto est = juce::JSON::parse (httpGet (serverUrl + "/api/live/render/" + juce::String (e.id) + "/"
-                                                           + juce::String (e.tono) + "/estado", token));
-                    if ((bool) est.getProperty ("listo", false)) break;
-                    auto prog = est.getProperty ("progreso", "").toString();
-                    status (juce::String::fromUTF8 ("Renderizando tono de ") + e.titulo
-                            + (prog.isNotEmpty() ? ("   " + prog) : juce::String()));
-                    juce::Thread::sleep (1000);
-                }
-                pv = juce::JSON::parse (httpGet (pistasUrl, token));   // re-pedir, ya con el tono listo
-            }
 
             e.tempo = (double) pv.getProperty ("tempo", 0.0);
             auto comp = pv.getProperty ("compas", "4/4").toString();
@@ -912,7 +915,7 @@ struct RepertoireLoader : public juce::Thread
                     e.secNames.add (sc.getProperty ("nombre", sc.getProperty ("tipo", juce::var (""))).toString());
                 }
 
-            e.folder = cacheDir.getChildFile ("song_" + juce::String (e.id) + "_t" + juce::String (e.tono));
+            e.folder = cacheDir.getChildFile ("song_" + juce::String (e.id) + "_t0");   // siempre el original
             e.folder.createDirectory();
             if (e.portada.isNotEmpty())
             {
@@ -981,7 +984,7 @@ struct RepertoireLoader : public juce::Thread
                 if (! dest.existsAsFile() || dest.getSize() < 2000)
                 {
                     const auto durl = serverUrl + "/api/live/pista/" + juce::String (e.id) + "/"
-                                      + juce::URL::addEscapeChars (fn, false) + "?t=" + juce::String (e.tono);
+                                      + juce::URL::addEscapeChars (fn, false) + "?t=0";   // siempre el original
                     const int kk = k, ii = i;
                     bool ok = false;
                     int intento = 0;
@@ -3420,7 +3423,28 @@ struct NPAlertLnF : public juce::LookAndFeel_V4
                                   alert.getLocalBounds().getHeight() - getAlertWindowButtonHeight() - 20);
         textLayout.draw (g, txt.toFloat());
     }
-    int getAlertWindowButtonHeight() override { return 36; }
+    int getAlertWindowButtonHeight() override { return 38; }
+
+    // Botones estilo app: píldora redondeada. Azul = primario, rojo = destructivo (Borrar), gris = Cancelar.
+    void drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour&,
+                               bool over, bool down) override
+    {
+        auto r = b.getLocalBounds().toFloat().reduced (4.0f, 5.0f);
+        const float rad = juce::jmin (r.getHeight() * 0.5f, 11.0f);
+        const auto t = b.getButtonText().toLowerCase();
+        juce::Colour base;
+        if (t.contains ("borrar") || t.contains ("eliminar")) base = juce::Colour (0xffCf4444);   // destructivo
+        else if (t.contains ("cancelar"))                     base = juce::Colour (0xff2a2d33);    // cancelar
+        else                                                  base = juce::Colour (0xff2E6BE6);    // primario
+        if (down) base = base.darker (0.18f); else if (over) base = base.brighter (0.12f);
+        g.setColour (base); g.fillRoundedRectangle (r, rad);
+    }
+    void drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool) override
+    {
+        g.setColour (juce::Colours::white);
+        g.setFont (juce::Font (14.0f, juce::Font::bold));
+        g.drawText (b.getButtonText(), b.getLocalBounds(), juce::Justification::centred, true);
+    }
 };
 
 // Enlace pequeño "Enviar correo a soporte" (una sola línea, centrado) para el

@@ -1627,8 +1627,8 @@ public:
                                            inner.getY() + inner.getHeight() / 2 - 15, 30, 30);
                 addClickBtnRect = pill;
                 auto pf = pill.toFloat();
-                g.setColour (juce::Colour (0xff2E6BE6)); g.fillRoundedRectangle (pf, 7.0f);
-                g.setColour (juce::Colour (0x66000000)); g.drawRoundedRectangle (pf, 7.0f, 1.0f);
+                g.setColour (juce::Colour (0x66000000)); g.fillRoundedRectangle (pf, 7.0f);   // monocromo, como los demás +/-
+                g.setColour (juce::Colour (0xcceaeaea)); g.drawRoundedRectangle (pf, 7.0f, 1.3f);
                 g.setColour (juce::Colours::white); g.setFont (juce::Font (20.0f, juce::Font::bold));
                 g.drawText ("+", pill, juce::Justification::centred);
             }
@@ -1947,7 +1947,7 @@ public:
         for (int i = 0; i < repertoire.size(); ++i)
             if (repertoire.getReference (i).id == songId)
             {
-                if (i < songReady.size() && ! songReady[i]) { pendingLoadId = songId; highlightSongButton(); return; }  // aún descargando: encolar
+                if (i < songReady.size() && ! songReady[i]) return;   // aún descargando / en cola: NO seleccionable
                 loadSong (i); return;
             }
     }
@@ -2620,6 +2620,7 @@ private:
     // En escritorio no hace nada (el AlertWindow va a su propia ventana).
     void presentModalAlert (juce::AlertWindow* aw)
     {
+        aw->setLookAndFeel (&npAlertLnf);   // estilo oscuro de la app en todas las alertas (fondo + botones)
        #if JUCE_IOS || JUCE_ANDROID
         addChildComponent (aw);
         aw->setAlwaysOnTop (true);
@@ -2671,7 +2672,6 @@ private:
             juce::String::fromUTF8 ("Reportar un problema"),
             juce::String::fromUTF8 ("Contanos qu\xc3\xa9 pas\xc3\xb3: qu\xc3\xa9 hac\xc3\xad""as, qu\xc3\xa9 esperabas y qu\xc3\xa9 ocurri\xc3\xb3."),
             juce::MessageBoxIconType::NoIcon);
-        static NPAlertLnF npAlertLnf;
         w->setLookAndFeel (&npAlertLnf);
         w->addTextEditor ("msg", juce::String(), juce::String(), false);
         if (auto* te = w->getTextEditor ("msg"))
@@ -3314,7 +3314,7 @@ private:
 
     void reloadCurrent()   // "Actualizar": vuelve a bajar el setlist actual (agarra cambios de tono/chart)
     {
-        startLoadId (lastSetlistId);
+        startLoadId (lastSetlistId, true);   // forzar: toma la lista nueva aunque haya una carga en curso (agregar/quitar varias)
     }
 
     // ───────── Edición de repertorio ─────────
@@ -3647,6 +3647,11 @@ private:
             juce::MessageManager::callAsync ([sp, id]
             {
                 if (sp == nullptr || id.isEmpty()) return;
+                sp->repertoire.clearQuick();            // vaciar YA la vista: el repertorio nuevo arranca vacío
+                sp->songReady.clearQuick();
+                sp->currentSong = -1;
+                sp->clearSong();
+                sp->rebuildRepertoireStrip();
                 if (! sp->editMode) sp->toggleEdit();   // entrar en modo edición para agregar canciones
                 sp->startLoadId (id);
             });
@@ -3860,15 +3865,32 @@ private:
         }
 
         // Cambio de tono: transposición EN VIVO en el dispositivo (Signalsmith). Sin render, sin recarga.
+        // 1) Guardar la elección por canción en memoria (se aplica al cargar: incluso las no-actuales).
+        for (int i = 0; i < repertoire.size(); ++i)
+            if (repertoire.getReference (i).id == sid)
+            {
+                auto& e = repertoire.getReference (i);
+                e.tono = sem;              // semitono elegido (loadSong lo aplica)
+                e.tonoNombre = nombre;     // nombre del tono (etiqueta de la tarjeta)
+                break;
+            }
+        // 2) Si es la canción cargada, transponer YA (instantáneo; sem 0 = vuelve al original).
         const bool esActual = (currentSong >= 0 && currentSong < repertoire.size()
                                && repertoire.getReference (currentSong).id == sid);
-        if (esActual)
-        {
-            applyTranspose (sem);                                        // instantáneo (sem 0 = vuelve al original)
-            repertoire.getReference (currentSong).tonoNombre = nombre;   // reflejar el tono en la tarjeta (en memoria)
-        }
-        // TODO (próximo paso): persistir el tono elegido por canción y re-aplicarlo al cargar y en las no-actuales.
+        if (esActual) applyTranspose (sem);
+        // 3) Persistir en el servidor (solo guarda el tono del setlist; NO recarga la UI).
+        persistSongTono (sid, nombre);
         rebuildRepertoireStrip(); repaint();
+    }
+
+    // Guarda el tono elegido de una canción en el setlist (servidor), sin recargar la UI.
+    void persistSongTono (int songId, juce::String tonoName)
+    {
+        if (lastSetlistId.isEmpty() || serverUrl.isEmpty()) return;
+        const auto base = serverUrl + "/api/live/setlist/" + lastSetlistId + "/tono/" + juce::String (songId);
+        const auto tok = serverToken;
+        juce::StringPairArray p; p.set ("tono", tonoName);
+        juce::Thread::launch ([base, p, tok] { httpPostForm (base, p, tok); });
     }
 
     void openTonoFor (int songId, juce::String title, bool addFlow)
@@ -4275,8 +4297,7 @@ private:
                         for (auto& c : *cs)
                         {
                             const int id = (int) c.getProperty ("id", 0);
-                            const int tono = (int) c.getProperty ("tono_semitonos", 0);
-                            used.addIfNotAlreadyThere ("song_" + juce::String (id) + "_t" + juce::String (tono));
+                            used.addIfNotAlreadyThere ("song_" + juce::String (id) + "_t0");   // ahora siempre el original
                         }
             juce::MessageManager::callAsync ([cb, used] { cb (used); });
         });
@@ -4398,13 +4419,15 @@ private:
         connStatus.setText (juce::String::fromUTF8 ("Descargando repertorio para offline\xe2\x80\xa6"), juce::dontSendNotification);
     }
 
-    void startLoadId (juce::String setlistId)
+    void startLoadId (juce::String setlistId, bool force = false)
     {
         if (serverToken.isEmpty()) { connStatus.setText ("Falta servidor/token", juce::dontSendNotification); return; }
         // Evitar recargas duplicadas del MISMO repertorio (doble-tap tactil): si ya hay un
         // loader trabajando en ese id, ignorar. Asi no quedan dos hilos bajando los mismos
         // stems en paralelo (se autolibera cuando el hilo termina: isThreadRunning() == false).
-        if (loader && loader->isThreadRunning() && setlistId == lastSetlistId)
+        // 'force' lo salta: al agregar/quitar canciones hay que reiniciar para tomar la lista nueva
+        // (si no, al agregar varias de golpe solo baja la primera y el resto queda en "Agregando…").
+        if (! force && loader && loader->isThreadRunning() && setlistId == lastSetlistId)
             return;
         if (loader && loader->isThreadRunning())      // cancelar la carga anterior y reiniciar (no bloquear crear/agregar)
         {
@@ -4459,8 +4482,7 @@ private:
                         for (auto& c : *cs)
                         {
                             const int cid = (int) c.getProperty ("id", 0);
-                            const int tono = (int) c.getProperty ("tono_semitonos", 0);
-                            auto folder = npCacheDir().getChildFile ("song_" + juce::String (cid) + "_t" + juce::String (tono));
+                            auto folder = npCacheDir().getChildFile ("song_" + juce::String (cid) + "_t0");   // ahora siempre el original
                             if (! (folder.isDirectory() && folder.getNumberOfChildFiles (juce::File::findFiles) > 0)) { cached = false; break; }
                         }
                     }
@@ -4543,6 +4565,7 @@ private:
         {
             songCards[idx]->dlProgress = (f >= 1.0) ? -1.0f : (float) f;
             songCards[idx]->dlKind = 2;   // Descargando audio
+            songCards[idx]->ready = (f >= 1.0);   // al terminar: deja de estar atenuada y ya se puede seleccionar
             songCards[idx]->repaint();
         }
         // Actualizar el % del placeholder central mientras aun no hay cancion cargada,
@@ -4677,6 +4700,7 @@ private:
             c->editMode = editMode;
             c->index = i;
             c->songId = s.id;
+            c->ready = (i < songReady.size()) ? (bool) songReady[i] : false;   // atenuada + no seleccionable mientras baja
             {   // barra ligada al id: primero el render de tono ("preparando"), luego la descarga
                 auto rit = renderById.find (s.id);
                 if (rit != renderById.end())
@@ -4693,9 +4717,8 @@ private:
             {
                 if (armSongIfMapping (sid)) return;
                 if (playing.load()) return;                                   // EN VIVO: no cambiar de canción mientras se reproduce
-                if (idx < songReady.size() && ! songReady[idx])              // aún descargando: encolar y mostrar progreso, se carga sola al terminar
-                { pendingLoadId = sid; highlightSongButton(); return; }
-                pendingLoadId = -1;                                           // selección directa: cancela cualquier encolada
+                if (idx < songReady.size() && ! songReady[idx]) return;      // aún descargando / en cola: NO seleccionable (evita malas reproducciones)
+                pendingLoadId = -1;
                 loadSong (idx);
             };
             c->onRemove   = [this, sid] { removeSong (sid); };
@@ -4847,6 +4870,7 @@ private:
                     resamplers[i]->setResamplingRatio (fileRates[i] / deviceSampleRate);
                     resamplers[i]->prepareToPlay (currentBlockSize, deviceSampleRate);
                 }
+            applyTranspose (sng.tono);   // aplica el tono guardado de la canción (0 = original → bypass)
             loadingSong.store (false);
         }
 
@@ -5432,10 +5456,11 @@ private:
         const double win = juce::jmin (20.0, juce::jmax (4.0, total));
         // El centro (aguja) va en tiempo DISPLAY (de la secuencia) para alinear con el mapa dibujado
         const double center = browsing ? browseCenter : seqDisplayNow();
-        // Aguja fija al inicio (borde izquierdo): el mapa se desplaza por debajo.
-        // Igual para natural y arreglo (sin acote) para poder llegar hasta el final del mapa.
-        juce::ignoreUnused (total);
-        vs = center;
+        if (playing.load())
+            vs = center;   // REPRODUCIENDO: la aguja queda fija al inicio y el MAPA se desplaza por debajo
+        else
+            // PARADO (editar/arrastrar): el final queda anclado al borde derecho, así sí se llega al final.
+            vs = juce::jlimit (0.0, juce::jmax (0.0, total - win), center);
         ve = vs + win;
     }
     double totalSeconds() const
@@ -5456,6 +5481,8 @@ private:
             if (barPrevBtn.isEnabled() != nav) { barPrevBtn.setEnabled (nav); barPrevBtn.repaint(); }
             if (barNextBtn.isEnabled() != nav) { barNextBtn.setEnabled (nav); barNextBtn.repaint(); }
             if (settingsBtn.isEnabled() != nav) { settingsBtn.setEnabled (nav); settingsBtn.repaint(); }  // Menú bloqueado en vivo
+            const bool canEdit = nav && ! lastSetlistId.isEmpty();                                        // Editar bloqueado en vivo (evita accidentes)
+            if (editBtn.isEnabled() != canEdit) { editBtn.setEnabled (canEdit); editBtn.setAlpha (canEdit ? 1.0f : 0.45f); editBtn.repaint(); }
         }
         if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 2000)
         {
@@ -7145,6 +7172,7 @@ private:
     SettingsPanel settingsPanel;
     AboutPanel aboutPanel;
     NPTonoLnF transMenuLnf;   // estilo compacto/oscuro para el menú de transiciones
+    NPAlertLnF npAlertLnf;    // estilo oscuro de la app para TODAS las alertas (presentModalAlert)
     StoragePanel storagePanel;
     bool cacheAutoClean = false;
     int  cacheCapGB = 0;
