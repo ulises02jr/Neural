@@ -555,6 +555,8 @@ public:
         double fileRate = 44100.0;
         float  gain = 0.0f, target = 0.0f;   // envolvente de crossfade
         int    idx = -1;
+        int    semis = 0;                    // transposición en el cliente (desde el audio base del pad)
+        std::unique_ptr<PitchShifter> shifter;   // nullptr = sin transponer (semis==0)
         bool   dead = false;                 // marcada en el hilo de audio; se libera en el timer (fuera del audio)
     };
     struct PadPack { juce::String id, nombre, portada; int baseIdx = 0; bool listo = false; };
@@ -575,7 +577,12 @@ public:
         {
             const juce::ScopedLock pl (padLock);
             padTemp.setSize (2, juce::jmax (spb, 2048) + 8);
-            for (auto* pv : padVoices) if (pv->res) { pv->res->setResamplingRatio (pv->fileRate / sampleRate); pv->res->prepareToPlay (spb, sampleRate); }
+            padShiftTemp.setSize (2, juce::jmax (spb, 2048) + 8);   // scratch del pitch-shift de pads
+            for (auto* pv : padVoices)
+            {
+                if (pv->res) { pv->res->setResamplingRatio (pv->fileRate / sampleRate); pv->res->prepareToPlay (spb, sampleRate); }
+                if (pv->shifter) { pv->shifter->prepare (2, sampleRate, juce::jmax (spb, 2048)); pv->shifter->setSemitones ((float) pv->semis); }
+            }
         }
         {
             const juce::ScopedLock tl (tailLock);   // Fase D: cola del crossfade
@@ -658,8 +665,18 @@ public:
             padTemp.clear();
             juce::AudioSourceChannelInfo pi (&padTemp, 0, nn);
             pv->res->getNextAudioBlock (pi);
-            const float* sL = padTemp.getReadPointer (0);
-            const float* sR = padTemp.getNumChannels() > 1 ? padTemp.getReadPointer (1) : sL;
+            // Transposición en el cliente: si la voz lleva shifter, se procesa a padShiftTemp.
+            const juce::AudioBuffer<float>* srcBuf = &padTemp;
+            if (pv->shifter != nullptr && padShiftTemp.getNumSamples() >= nn)
+            {
+                const int ch = padTemp.getNumChannels();
+                const float* in[2]  = { padTemp.getReadPointer (0), padTemp.getReadPointer (ch > 1 ? 1 : 0) };
+                float*       out[2] = { padShiftTemp.getWritePointer (0), padShiftTemp.getWritePointer (ch > 1 ? 1 : 0) };
+                pv->shifter->process (in, out, nn);
+                srcBuf = &padShiftTemp;
+            }
+            const float* sL = srcBuf->getReadPointer (0);
+            const float* sR = srcBuf->getNumChannels() > 1 ? srcBuf->getReadPointer (1) : sL;
             const float g0 = pv->gain;
             float g1 = pv->gain;
             if      (pv->gain < pv->target) g1 = juce::jmin (pv->target, pv->gain + step);
@@ -714,13 +731,20 @@ public:
         return npAppDir().getChildFile ("pads").getChildFile (pack)
                          .getChildFile ("tono_" + juce::String (idx) + ".wav");
     }
-    void buildPadVoice (const juce::File& f, int idx, int gen, bool instant = false)
+    static int padSemisFor (int idx, int base)   // ruta más corta base->idx dentro de la octava (-5..+6)
+    {
+        int d = (((idx - base) % 12) + 12) % 12;
+        if (d > 6) d -= 12;
+        return d;
+    }
+    void buildPadVoice (const juce::File& f, int idx, int gen, bool instant = false, int semis = 0)
     {
         auto* reader = formatManager.createReaderFor (f);
         if (reader == nullptr) return;
         auto voice = std::make_unique<PadVoice>();
         voice->fileRate = reader->sampleRate > 0 ? reader->sampleRate : 44100.0;
         voice->idx = idx;
+        voice->semis = semis;
         voice->gain = instant ? 1.0f : 0.0f;              // instant = a full (sin fade-in)
         auto* rs = new juce::AudioFormatReaderSource (reader, true);
         rs->setLooping (true);
@@ -730,6 +754,12 @@ public:
         const double sr = deviceSampleRate; const int bs = juce::jmax (256, currentBlockSize);
         voice->res->setResamplingRatio (voice->fileRate / sr);
         voice->res->prepareToPlay (bs, sr);
+        if (semis != 0)   // transposición en el cliente desde el audio base del pad
+        {
+            voice->shifter = PitchShifter::createDefault();
+            voice->shifter->prepare (2, sr, juce::jmax (256, bs));
+            voice->shifter->setSemitones ((float) semis);
+        }
         voice->target = 1.0f;
         const juce::ScopedLock pl (padLock);
         if (padJobGen.load() != gen) return;              // hubo otro cambio: descartar
@@ -741,10 +771,14 @@ public:
         if (padPackId.isEmpty() || idx < 0 || idx > 11) return;
         padPlayingIdx.store (idx);
         const int gen = padJobGen.fetch_add (1) + 1;
-        const juce::String url = serverUrl + "/api/live/pad/" + padPackId + "/" + juce::String (idx);
+        // Transposición EN EL CLIENTE: siempre se baja el audio BASE del pack (una sola vez) y se
+        // transpone en tiempo real a 'idx'. El server deja de rendir 12 tonos (migración cliente).
+        const int base  = padPackBaseIdx;
+        const int semis = padSemisFor (idx, base);
+        const juce::String url = serverUrl + "/api/live/pad/" + padPackId + "/" + juce::String (base);
         const juce::String tok = serverToken;
-        const juce::File dest = padCacheFile (padPackId, idx);
-        juce::Thread::launch ([this, gen, url, tok, dest, idx, instant]
+        const juce::File dest = padCacheFile (padPackId, base);
+        juce::Thread::launch ([this, gen, url, tok, dest, idx, instant, semis]
         {
             if (! dest.existsAsFile())
             {
@@ -752,7 +786,7 @@ public:
                 httpDownload (url, tok, dest);
             }
             if (padJobGen.load() != gen || ! dest.existsAsFile()) return;
-            buildPadVoice (dest, idx, gen, instant);
+            buildPadVoice (dest, idx, gen, instant, semis);
         });
     }
     // Aplica el tono según el modo (Auto = raíz de la canción, Manual = elegido)
@@ -2979,7 +3013,7 @@ private:
             });
         }
         computePadReadyMask();
-        prefetchPadTones();      // baja los 12 tonos en segundo plano (para que el usuario vea el progreso)
+        prefetchPadTones();      // baja SOLO el audio base en segundo plano (los tonos se transponen en el cliente)
         if (userAction)
         {
             saveStorageCfg();
@@ -3051,9 +3085,11 @@ private:
     }
     void computePadReadyMask()
     {
+        // Transposición en el cliente: con el audio BASE descargado, TODOS los tonos están disponibles
+        // (se transponen en tiempo real). Si el base no está, ninguno.
         int m = 0;
-        if (! padPackId.isEmpty())
-            for (int i = 0; i < 12; ++i) if (padCacheFile (padPackId, i).existsAsFile()) m |= (1 << i);
+        if (! padPackId.isEmpty() && padCacheFile (padPackId, padPackBaseIdx).existsAsFile())
+            m = 0xFFF;   // 12 tonos listos
         padReadyMask.store (m);
     }
     void prefetchPadTones()
@@ -3062,24 +3098,23 @@ private:
         const int gen = padPrefetchGen.fetch_add (1) + 1;
         const juce::String pack = padPackId;
         const juce::String tok  = serverToken;
-        const juce::String base = serverUrl + "/api/live/pad/" + pack + "/";
-        juce::Thread::launch ([this, gen, pack, tok, base]
+        const int baseIdx = padPackBaseIdx;
+        const juce::String url = serverUrl + "/api/live/pad/" + pack + "/" + juce::String (baseIdx);
+        // Transposición en el cliente: basta descargar UNA sola vez el audio base del pack.
+        juce::Thread::launch ([this, gen, pack, tok, url, baseIdx]
         {
-            for (int i = 0; i < 12; ++i)
+            if (padPrefetchGen.load() != gen) return;
+            auto dest = padCacheFile (pack, baseIdx);
+            if (! dest.existsAsFile())
             {
-                if (padPrefetchGen.load() != gen) return;
-                auto dest = padCacheFile (pack, i);
-                if (! dest.existsAsFile())
-                {
-                    dest.getParentDirectory().createDirectory();
-                    httpDownload (base + juce::String (i), tok, dest);
-                }
-                if (padPrefetchGen.load() != gen) return;
-                juce::MessageManager::callAsync ([this, pack]
-                {
-                    if (padPackId == pack) { computePadReadyMask(); refreshPadPanel(); }
-                });
+                dest.getParentDirectory().createDirectory();
+                httpDownload (url, tok, dest);
             }
+            if (padPrefetchGen.load() != gen) return;
+            juce::MessageManager::callAsync ([this, pack]
+            {
+                if (padPackId == pack) { computePadReadyMask(); refreshPadPanel(); }
+            });
         });
     }
 
@@ -7058,6 +7093,7 @@ private:
     juce::CriticalSection padLock;                 // protege padVoices (aparte de graphLock)
     juce::OwnedArray<PadVoice> padVoices;          // 1-2 voces (crossfade al cambiar de tono)
     juce::AudioBuffer<float> padTemp;
+    juce::AudioBuffer<float> padShiftTemp;   // scratch del pitch-shift de pads (in/out no pueden ser el mismo buffer)
     std::atomic<bool>  padEnabled { false };
     std::atomic<float> padGain { 1.0f };           // fader del pad (0 dB por defecto)
     std::atomic<int>   padPlayingIdx { -1 };       // tono objetivo que suena (0-11), -1 = ninguno
