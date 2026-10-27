@@ -874,6 +874,12 @@ public:
         {
             for (auto* b : bufferingSources) b->setNextReadPosition (sk);
             for (auto* r : resamplers)       r->flushBuffers();
+            if (curSemitones != 0)   // transponiendo: limpiar el estado del pitch-shifter y de los retardos
+            {                         // (si no, arrastran audio viejo tras el salto → glitch/"choque")
+                for (auto& ps : trackShifter) if (ps) ps->reset();
+                for (auto& dl : trackDelay)   dl.clear();
+                tempShift.clear();
+            }
             const double fr = fileRates.isEmpty() ? 44100.0 : fileRates[0];
             positionOut.store ((long long) (sk * deviceSampleRate / fr));
             // Guía dinámica: al saltar, cortar el anuncio en curso y reprogramar según la nueva posición.
@@ -1093,6 +1099,7 @@ public:
 
         const double posSec = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
         const double fr2 = fileRates.isEmpty() ? 44100.0 : fileRates[0];
+        double cutAtSec = -1.0;   // si este bloque dispara un salto, aquí va el tiempo del borde (para el micro-fundido de salida)
 
         // ── Fase D: transición AUTOMÁTICA al terminar (armada). Pide al timer que haga la transición. ──
         if (autoTrans.load() != 0 && autoReqPending.load() == 0 && ! arrangementActive.load()
@@ -1207,6 +1214,7 @@ public:
                     const double tgt = secStartOf (arrangement[q]);
                     seekTo.store ((long long) (tgt * fr2));
                     arrFadeStart.store (tgt); arrFadeEnd.store (tgt + kArrFadeSec);   // anti-click
+                    cutAtSec = secEndOf (secIdx);   // micro-fundido de salida en el borde de la sección saliente
                     boundaryHandled = true;
                 }
             }
@@ -1225,6 +1233,7 @@ public:
                 {
                     seekTo.store ((long long) (sectionTimes[q] * fr2));
                     arrFadeStart.store (sectionTimes[q]); arrFadeEnd.store (sectionTimes[q] + kArrFadeSec);   // anti-click
+                    cutAtSec = endQF;   // micro-fundido de salida en el borde
                     if (arrangementActive.load())   // sincronizar el paso del arreglo con el salto
                     {
                         int st = -1;
@@ -1273,6 +1282,7 @@ public:
                         {
                             seekTo.store ((long long) (nStart * fr2));
                             arrFadeStart.store (nStart); arrFadeEnd.store (nStart + kArrFadeSec);   // anti-click
+                            cutAtSec = endSec;   // micro-fundido de salida en el borde (salto no contiguo)
                         }
                     }
                     else
@@ -1316,6 +1326,24 @@ public:
                 playing.store (false);
                 const double inS = juce::jmax (0.0, songInSec.load());   // volver al inicio (o al punto de entrada)
                 seekTo.store ((long long) (inS * fr2));
+            }
+        }
+
+        // Micro-fundido de salida en el borde del salto: apaga el "overshoot" (el pedacito de la
+        // sección saliente que se alcanzó a reproducir de más antes de que el seek tome efecto en el
+        // siguiente bloque). Así el empalme con la nueva sección NO se oye como corte/choque; el lado
+        // nuevo entra con su propio fundido (afG). No se aplica a repeticiones/∞ (loops sin corte).
+        if (cutAtSec >= 0.0)
+        {
+            const double over = (posSec - cutAtSec) * deviceSampleRate;             // samples pasados del borde en ESTE bloque
+            int idx = nn - (int) juce::jlimit (0.0, (double) nn, over);             // sample donde cae el borde dentro del bloque
+            idx = juce::jlimit (0, nn, idx);
+            const int fade = juce::jmin (nn - idx, (int) (0.004 * deviceSampleRate) + 1);   // ~4 ms de rampa 1->0
+            for (int c = 0; c < useCh; ++c)
+            {
+                float* o = out[c];
+                for (int i = 0; i < fade; ++i)      o[idx + i] *= 1.0f - (float) (i + 1) / (float) (fade + 1);
+                for (int i = idx + fade; i < nn; ++i) o[i] = 0.0f;                  // resto del overshoot: silencio
             }
         }
     }
@@ -7006,6 +7034,7 @@ private:
             }
             pos = (pos + nn) % len;
         }
+        void clear() { buf.clear(); pos = 0; }   // limpiar el retardo tras un salto (evita arrastrar audio viejo)
     };
     juce::AudioBuffer<float> tempShift;                        // scratch de salida del pitch (in/out no pueden ser el mismo)
     int curSemitones = 0;                                      // transposición de la canción cargada (0 = original → bypass total)
