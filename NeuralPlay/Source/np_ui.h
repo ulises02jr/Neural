@@ -557,8 +557,8 @@ struct SongCard : public juce::Component
         // Solo fuera de edición y cuando no hay barra de descarga ocupando ese espacio.
         if (! editMode && transMode != 0 && ! (dlProgress >= 0.0f && dlProgress < 1.0f))
         {
-            const float s  = npEsIPhone() ? 16.0f : 18.0f;
-            juce::Rectangle<float> ic (full.getRight() - 12.0f - s, full.getCentreY() - s * 0.5f, s, s);
+            const float s  = npEsIPhone() ? 24.0f : 28.0f;
+            juce::Rectangle<float> ic (full.getRight() - 14.0f - s, full.getCentreY() - s * 0.5f, s, s);
             const float cx = ic.getCentreX(), cy = ic.getCentreY();
             if (transMode == 1)   // Autolink: dos eslabones entrelazados (cadenas)
             {
