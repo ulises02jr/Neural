@@ -76,6 +76,12 @@ public:
         addAndMakeVisible (settingsBtn);
         addAndMakeVisible (repertoireBtn);
         repertoireBtn.onClick = [this] { openRepertoirePicker(); };
+
+        songPrevBtn.kind = 5; songNextBtn.kind = 6;   // chevrons arriba/abajo: navegar el repertorio (mapeable)
+        addAndMakeVisible (songPrevBtn);
+        addAndMakeVisible (songNextBtn);
+        songPrevBtn.onClick = [this] { if (clickOrArm (kaSongPrev)) return; selectAdjacentSong (-1); };
+        songNextBtn.onClick = [this] { if (clickOrArm (kaSongNext)) return; selectAdjacentSong (+1); };
         repPicker.onLoad = [this] (juce::String id) { startLoadId (id); };
         repPicker.onNew  = [this] { createSetlist(); };
         repPicker.onDelete = [this] (juce::String id) { confirmDeleteSetlist (id); };
@@ -1742,10 +1748,10 @@ public:
         if (dragSeeks)
         {
             seekToDisplay (dt);   // el drag va en tiempo display -> real
-            // En arreglo, seqDisplayNow() va con atraso (el seek es asíncrono y arrStep cambia ya):
-            // seguimos la vista con el valor arrastrado para que NO se jale/salte.
-            if (arrangementActive.load())
-            { browsing = true; browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), dt); }
+            // La vista sigue SIEMPRE el valor arrastrado (no el cursor real), para que el arrastre
+            // manual llegue hasta el final sin "trabarse" cuando el seek/snap se satura cerca del fin.
+            browsing = true;
+            browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), dt);
             repaint (mapBounds);
         }
         else { browsing = true; browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), dt); repaint (mapBounds); }
@@ -1789,15 +1795,21 @@ public:
         pendingChipK = -1;
         if (dragSeeks)
         {
-            if (e.getDistanceFromDragStart() < 5) seekFromMouse (e);          // clic simple
+            if (e.getDistanceFromDragStart() < 5)   // clic simple: salta y recentra en el cursor
+            {
+                seekFromMouse (e);
+                browsing = false;   // tap: la vista vuelve a seguir el cursor real
+            }
             else
-            {                                                                // al soltar el arrastre, cae en un click
+            {   // arrastre: deja la vista DONDE la soltó (no regresa al tope); el cursor también va ahí
                 auto inner = mapBounds.reduced (8);
                 const double win = juce::jmin (20.0, seqTotalOf (mapSeq()));
                 const double dx = e.getDistanceFromDragStartX() * (win / juce::jmax (1, inner.getWidth())) * npMapDragSens();
-                seekToDisplay (dragStartCenter - dx);
+                const double dt = dragStartCenter - dx;
+                seekToDisplay (dt);
+                browsing = true;   // MANTENER la posición explorada (parado); no se auto-regresa
+                browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), dt);
             }
-            browsing = false;   // la vista vuelve a seguir el cursor real (ya aplicado el seek)
             repaint (mapBounds);
         }
         else   // en vivo: mantener la posición navegada al soltar; el reloj de auto-regreso arranca ahora
@@ -1821,15 +1833,14 @@ public:
         if (w.isReversed) d = -d;
         // Scroll de dos dedos: en tiempo DISPLAY (compactado del arreglo), igual que el arrastre.
         // Antes iba en tiempo real y en los arreglos se atoraba (real != display).
+        if (! browsing) browseCenter = seqDisplayNow();
+        browsing = true;
+        browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), browseCenter + d * 6.0);   // más suave (antes 22, muy rápido)
         if (playing.load())
-        {
-            if (! browsing) browseCenter = seqDisplayNow();
-            browsing = true;
-            browseCenter = juce::jlimit (0.0, seqTotalOf (mapSeq()), browseCenter + d * 22.0);
-            lastInteractionMs = juce::Time::getMillisecondCounter();
-            repaint (mapBounds);
-        }
-        else seekToDisplay (seqDisplayNow() + d * 22.0);
+            lastInteractionMs = juce::Time::getMillisecondCounter();   // en vivo: dispara el auto-regreso a la aguja
+        else
+            seekToDisplay (browseCenter);   // parado: el cursor acompaña; la vista se queda (sin tope, llega al final)
+        repaint (mapBounds);
     }
 
     // #4 teclas: en modo mapping asigna/desasigna; en modo normal dispara lo mapeado
@@ -1950,6 +1961,22 @@ public:
                 if (i < songReady.size() && ! songReady[i]) return;   // aún descargando / en cola: NO seleccionable
                 loadSong (i); return;
             }
+    }
+    void selectAdjacentSong (int dir)   // -1 sube / +1 baja por el repertorio; salta las que no están listas
+    {
+        if (playing.load()) return;        // EN VIVO: no cambiar de canción mientras se reproduce
+        if (repertoire.isEmpty()) return;
+        const int n = repertoire.size();
+        int i = currentSong;
+        // si no hay selección, arranca del extremo según la dirección
+        if (i < 0 || i >= n) i = (dir > 0 ? -1 : n);
+        for (int step = 0; step < n; ++step)
+        {
+            i += dir;
+            if (i < 0 || i >= n) return;    // llegó al borde: no hay más
+            if (i < songReady.size() && ! songReady[i]) continue;   // aún descargando: saltarla
+            loadSong (i); return;
+        }
     }
 
     void drawKeyBadge (juce::Graphics& g, juce::Rectangle<int> host, int code, bool armd,
@@ -2145,6 +2172,13 @@ public:
             fadeButton.setBounds   (cx + BW / 2 + G, gy, BW, BH);
             transBtn.setBounds     (cx + BW / 2 + G + BW + G, gy, BW, BH);
             transBtn.setVisible    (! editMode && indiceSiguiente() >= 0);
+
+            // Flechas subir/abajo del repertorio: columna apilada a la izq. del botón Inicio.
+            const int chevW  = phone ? 30 : 38;
+            const int chevH  = (BH - 2) / 2;
+            const int chevX  = (cx - BW / 2 - G - BW) - G - chevW;
+            songPrevBtn.setBounds (chevX, gy, chevW, chevH);                 // arriba
+            songNextBtn.setBounds (chevX, gy + BH - chevH, chevW, chevH);    // abajo
         }
         connStatus.setVisible (false);
         area.removeFromTop (phone ? 1 : 6);   // iPhone: subir un poco las tarjetas
@@ -5341,6 +5375,7 @@ private:
             for (int i = anchors.size() - 1; i >= 0; --i) if (anchors[i] < t - eps) { target = anchors[i]; break; }
         }
         seekSeconds (juce::jlimit (0.0, totalSeconds(), target));
+        browsing = false;   // las flechas de sección recentran la vista en el cursor
     }
     double pulsesAt (double t) const   // pulsos de MIDI clock (24 PPQN) acumulados hasta t
     {
@@ -5454,13 +5489,17 @@ private:
     {
         const double total = seqTotalOf (mapSeq());   // largo del mapa (secuencia) en tiempo display
         const double win = juce::jmin (20.0, juce::jmax (4.0, total));
-        // El centro (aguja) va en tiempo DISPLAY (de la secuencia) para alinear con el mapa dibujado
-        const double center = browsing ? browseCenter : seqDisplayNow();
         if (playing.load())
-            vs = center;   // REPRODUCIENDO: la aguja queda fija al inicio y el MAPA se desplaza por debajo
+            // REPRODUCIENDO: sigue la aguja, pero permite un vistazo manual temporal (browse) que
+            // se auto-regresa a la aguja tras ~1.8s (ver timerCallback).
+            vs = browsing ? browseCenter : seqDisplayNow();
+        else if (browsing)
+            // ARRASTRE MANUAL (parado): la vista se queda donde el usuario la dejó y puede
+            // empujarse hasta lo último (sin tope en total-win), hasta que el usuario toque/reproduzca.
+            vs = juce::jlimit (0.0, total, browseCenter);
         else
-            // PARADO (editar/arrastrar): el final queda anclado al borde derecho, así sí se llega al final.
-            vs = juce::jlimit (0.0, juce::jmax (0.0, total - win), center);
+            // PARADO quieto (sin explorar): el final queda anclado al borde derecho.
+            vs = juce::jlimit (0.0, juce::jmax (0.0, total - win), seqDisplayNow());
         ve = vs + win;
     }
     double totalSeconds() const
@@ -5483,6 +5522,9 @@ private:
             if (settingsBtn.isEnabled() != nav) { settingsBtn.setEnabled (nav); settingsBtn.repaint(); }  // Menú bloqueado en vivo
             const bool canEdit = nav && ! lastSetlistId.isEmpty();                                        // Editar bloqueado en vivo (evita accidentes)
             if (editBtn.isEnabled() != canEdit) { editBtn.setEnabled (canEdit); editBtn.setAlpha (canEdit ? 1.0f : 0.45f); editBtn.repaint(); }
+            // Flechas de repertorio: solo cambian de canción con la reproducción detenida.
+            if (songPrevBtn.isEnabled() != nav) { songPrevBtn.setEnabled (nav); songPrevBtn.setAlpha (nav ? 1.0f : 0.45f); songPrevBtn.repaint(); }
+            if (songNextBtn.isEnabled() != nav) { songNextBtn.setEnabled (nav); songNextBtn.setAlpha (nav ? 1.0f : 0.45f); songNextBtn.repaint(); }
         }
         if (splashOn && juce::Time::getMillisecondCounter() - splashStart > 2000)
         {
@@ -5526,7 +5568,9 @@ private:
         // Auto-regreso a seguir la aguja tras un rato sin interacción (igual en vivo o parado).
         // El reloj arranca al SOLTAR el dedo (ver mouseUp), para dar tiempo a mirar adelante
         // y encolar el salto; luego el mapa vuelve a seguir la aguja solo — como en Mac.
-        if (browsing && ! isDragging && (juce::Time::getMillisecondCounter() - lastInteractionMs > 1800))
+        // El auto-regreso a seguir la aguja SOLO aplica en reproducción. Parado, la vista
+        // explorada se queda donde el usuario la dejó hasta que toque/reproduzca.
+        if (playing.load() && browsing && ! isDragging && (juce::Time::getMillisecondCounter() - lastInteractionMs > 1800))
         { browsing = false; repaint (mapBounds); }
         if (playing.load() || browsing) repaint (mapBounds);
         if (playing.load() && currentBeatGrid.size() >= 2) repaint (compasBoxBounds);   // BPM que sigue el medley
@@ -5583,6 +5627,7 @@ private:
             seekSeconds (0.0);
         if (p && countInEnabled) prepararConteo();       // #1 conteo con entrada de faders (si está al inicio de una sección)
         else                     countInActive.store (false);
+        if (p) browsing = false;   // al reproducir, la vista deja de estar en modo exploración manual
         playing.store (p);
         playButton.setButtonText (p ? "Pausa" : "Play");
     }
@@ -5779,9 +5824,9 @@ private:
         {
             seekSeconds (secStartOf (arrangement[0]));
             arrStep.store (0);
-            browsing = false;
         }
         else seekSeconds (0.0);
+        browsing = false;   // ir al inicio recentra la vista en el cursor (sale de exploración manual)
     }
 
     // ── #4 mapping de teclado ──
@@ -5801,6 +5846,8 @@ private:
             case kaMidi:      setFaderView (2);    break;
             case kaFaderView: setFaderView (0);    break;
             case kaPadPlayer: padPlayerBtn.triggerClick(); break;
+            case kaSongPrev:  selectAdjacentSong (-1); break;
+            case kaSongNext:  selectAdjacentSong (+1); break;
             default: break;
         }
     }
@@ -6155,6 +6202,8 @@ private:
             case kaMidi:      return &muteMidiBtn;
             case kaFaderView: return &faderViewBtn;
             case kaPadPlayer: return &padPlayerBtn;
+            case kaSongPrev:  return &songPrevBtn;
+            case kaSongNext:  return &songNextBtn;
         }
         return nullptr;
     }
@@ -7114,7 +7163,9 @@ private:
 
     // #4 mapping de teclado
     enum KMAct { kaPlay = 0, kaReturn, kaPrevBar, kaNextBar, kaFade, kaLoop, kaRepeat,
-                 kaPad, kaBuses, kaMidi, kaFaderView, kaPadPlayer, kaCount };
+                 kaPad, kaBuses, kaMidi, kaFaderView, kaPadPlayer,
+                 kaSongPrev, kaSongNext,   // navegar el repertorio (subir/bajar en la lista), mapeable
+                 kaCount };
     int  actKey[kaCount] = { 0 };               // código de tecla por acción fija (0 = sin asignar)
     std::map<juce::String,int> keyByTrack;      // nombre de track (MUTE) -> tecla
     std::map<juce::String,int> keyBySolo;       // nombre de track (SOLO) -> tecla
@@ -7164,6 +7215,7 @@ private:
     juce::Slider masterSlider;
     juce::TextButton busesBtn, padPlayerBtn, muteMidiBtn, editBtn, padBtn, keyMapBtn, saveArrBtn, saveAsNewBtn;
     IconButton faderViewBtn, repeatBtn, infiniteBtn, settingsBtn, repertoireBtn;
+    IconButton songPrevBtn, songNextBtn;          // navegar el repertorio (subir/bajar), mapeable
     FaderStripComp faderStrip;
     HScrollViewport faderViewport;
     MidiPanel midiPanel;

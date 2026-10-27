@@ -783,6 +783,28 @@ struct IconButton : public juce::Button
                 g.fillRoundedRectangle (page.getX() + 3.0f, yy - 0.9f, page.getWidth() - 6.0f, 1.8f, 0.9f);
             }
         }
+        else if (kind == 5 || kind == 6)   // chevrons: 5 = arriba, 6 = abajo (navegar repertorio)
+        {
+            const float w  = b.getWidth() * 0.26f;
+            const float cx = b.getCentreX();
+            const float cy = b.getCentreY();
+            const float h  = w * 0.60f;
+            juce::Path p;
+            if (kind == 5)   // arriba: ^
+            {
+                p.startNewSubPath (cx - w, cy + h * 0.5f);
+                p.lineTo (cx,     cy - h * 0.5f);
+                p.lineTo (cx + w, cy + h * 0.5f);
+            }
+            else             // abajo: v
+            {
+                p.startNewSubPath (cx - w, cy - h * 0.5f);
+                p.lineTo (cx,     cy + h * 0.5f);
+                p.lineTo (cx + w, cy - h * 0.5f);
+            }
+            g.setColour (ic);
+            g.strokePath (p, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
         else
         {
             g.setColour (ic);
