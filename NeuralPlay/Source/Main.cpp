@@ -78,8 +78,8 @@ public:
         repertoireBtn.onClick = [this] { openRepertoirePicker(); };
 
         songPrevBtn.kind = 5; songNextBtn.kind = 6;   // chevrons arriba/abajo: navegar el repertorio (mapeable)
-        addAndMakeVisible (songPrevBtn);
-        addAndMakeVisible (songNextBtn);
+        addChildComponent (songPrevBtn);   // solo visibles en modo mapping (ver updateMapNavVis)
+        addChildComponent (songNextBtn);
         songPrevBtn.onClick = [this] { if (clickOrArm (kaSongPrev)) return; selectAdjacentSong (-1); };
         songNextBtn.onClick = [this] { if (clickOrArm (kaSongNext)) return; selectAdjacentSong (+1); };
         repPicker.onLoad = [this] (juce::String id) { startLoadId (id); };
@@ -2179,6 +2179,10 @@ public:
             const int chevX  = (cx - BW / 2 - G - BW) - G - chevW;
             songPrevBtn.setBounds (chevX, gy, chevW, chevH);                 // arriba
             songNextBtn.setBounds (chevX, gy + BH - chevH, chevW, chevH);    // abajo
+            // Solo se muestran mientras se está asignando teclas/MIDI; fuera de mapping desaparecen.
+            const bool showNav = (keyMapMode || midiMapMode);
+            songPrevBtn.setVisible (showNav);
+            songNextBtn.setVisible (showNav);
         }
         connStatus.setVisible (false);
         area.removeFromTop (phone ? 1 : 6);   // iPhone: subir un poco las tarjetas
@@ -4165,6 +4169,7 @@ private:
         if (modo == 1 || modo == 2) transPorSetlist[lastSetlistId][sid] = modo;
         else                        transPorSetlist[lastSetlistId].erase (sid);
         saveTrans();
+        rebuildRepertoireStrip();   // refrescar el indicador de transición en la tarjeta
     }
     int guiaSelFor (int sid) const   // 0 = Tracks (por defecto), 1 = Neural
     { auto it = songGuia.find (sid); return (it != songGuia.end()) ? it->second : 0; }
@@ -4734,6 +4739,7 @@ private:
             c->editMode = editMode;
             c->index = i;
             c->songId = s.id;
+            c->transMode = transSelFor (s.id);   // indicador de transición al terminar (cadenas/flechas cruzadas)
             c->ready = (i < songReady.size()) ? (bool) songReady[i] : false;   // atenuada + no seleccionable mientras baja
             {   // barra ligada al id: primero el render de tono ("preparando"), luego la descarga
                 auto rit = renderById.find (s.id);

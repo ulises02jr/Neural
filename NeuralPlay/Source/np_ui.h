@@ -383,6 +383,7 @@ struct SongCard : public juce::Component
     bool pending = false;   // (en desuso) encolada
     bool ready = true;      // false = aún descargando / en cola: se ve atenuada y NO se puede seleccionar
     bool editMode = false;
+    int  transMode = 0;     // transición AL TERMINAR hacia la siguiente canción: 0 ninguna, 1 Autolink (cadenas), 2 Sobreponer (flechas cruzadas)
     int index = 0;
     int songId = 0;   // #4 id de la canción (para mapping de teclado)
     std::function<void()> onClick, onRemove, onTono, onAddAfter;
@@ -549,6 +550,44 @@ struct SongCard : public juce::Component
                 g.setFont (juce::Font (npEsIPhone() ? 10.0f : 12.0f, juce::Font::bold));
                 juce::Rectangle<float> lab (full.getRight() - 10.0f - dlLabelW, full.getY(), dlLabelW, full.getHeight());
                 g.drawText (txt, lab, juce::Justification::centredRight, true);
+            }
+        }
+
+        // Indicador de TRANSICIÓN al terminar hacia la siguiente canción (esquina der.).
+        // Solo fuera de edición y cuando no hay barra de descarga ocupando ese espacio.
+        if (! editMode && transMode != 0 && ! (dlProgress >= 0.0f && dlProgress < 1.0f))
+        {
+            const float s  = npEsIPhone() ? 16.0f : 18.0f;
+            juce::Rectangle<float> ic (full.getRight() - 12.0f - s, full.getCentreY() - s * 0.5f, s, s);
+            const float cx = ic.getCentreX(), cy = ic.getCentreY();
+            if (transMode == 1)   // Autolink: dos eslabones entrelazados (cadenas)
+            {
+                g.setColour (juce::Colour (0xffCBD2DA));
+                const float lw = s * 0.22f, lh = s * 0.42f, r = lw * 0.5f;
+                juce::Rectangle<float> a (cx - lw * 0.95f, cy - lh * 0.5f, lw, lh);
+                juce::Rectangle<float> b (cx + lw * 0.95f - lw, cy - lh * 0.5f, lw, lh);
+                g.drawRoundedRectangle (a, r, 1.6f);
+                g.drawRoundedRectangle (b, r, 1.6f);
+                g.fillRect (juce::Rectangle<float> (cx - lw * 0.6f, cy - 0.9f, lw * 1.2f, 1.8f));  // unión central
+            }
+            else                  // Sobreponer: dos flechas cruzadas
+            {
+                g.setColour (juce::Colour (0xff8FB7FF));
+                const float d = s * 0.34f;
+                juce::Path p;
+                p.startNewSubPath (cx - d, cy - d); p.lineTo (cx + d, cy + d);   // ↘
+                p.startNewSubPath (cx + d, cy - d); p.lineTo (cx - d, cy + d);   // ↙
+                g.strokePath (p, juce::PathStrokeType (1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+                auto head = [&] (float hx, float hy, float dx, float dy)
+                {
+                    juce::Path t;
+                    const float a = s * 0.16f;
+                    t.addTriangle (hx, hy, hx - dx * a - dy * a * 0.6f, hy - dy * a + dx * a * 0.6f,
+                                           hx - dx * a + dy * a * 0.6f, hy - dy * a - dx * a * 0.6f);
+                    g.fillPath (t);
+                };
+                head (cx + d, cy + d,  0.707f,  0.707f);
+                head (cx - d, cy + d, -0.707f,  0.707f);
             }
         }
 
