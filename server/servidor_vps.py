@@ -3497,13 +3497,18 @@ def _pad_estado(pack_id):
         except Exception:
             pass
         return {"hechos": hechos, "total": total, "listo": False, "render": True}
+    # Transposición en el cliente: basta con el tono base (pad_<base_idx>.wav).
+    pack = _pad_pack(pack_id)
+    base_idx = int(pack.get("base_idx", 0)) if pack else 0
     presentes = set(_listar_audio(d, exts=(".wav",)))
-    hechos = sum(1 for i in range(12) if ("pad_%d.wav" % i) in presentes)
-    return {"hechos": hechos, "total": total, "listo": hechos >= total, "render": False}
+    listo = ("pad_%d.wav" % base_idx) in presentes
+    return {"hechos": 1 if listo else 0, "total": 1, "listo": listo, "render": False}
 
 
 def _render_pad_pack(pack_id, org=None):
-    """Genera los 12 tonos del pad desde el base, por pitch-shift (rubberband)."""
+    """Prepara SOLO el tono base del pad (pad_<base_idx>.wav). Los demás tonos ya no se
+    pre-renderizan: NeuralPlay los transpone en el dispositivo en tiempo real (migración
+    a transposición en el cliente). Así el servidor no gasta CPU/almacenamiento por pack."""
     if org is not None:
         _set_org_ctx(org)
     pack = _pad_pack(pack_id)
@@ -3518,38 +3523,22 @@ def _render_pad_pack(pack_id, org=None):
     base_idx = int(pack.get("base_idx", 0))
     lock = d / ".lock"
     try:
-        lock.write_text("0/12")
-        hechos = 0
-        for i in range(12):
-            out = d / ("pad_%d.wav" % i)
-            if _existe_audio(out):
-                hechos += 1
-                try:
-                    lock.write_text(str(hechos) + "/12")
-                except Exception:
-                    pass
-                continue
-            semis = _pad_semitonos(base_idx, i)
-            if semis == 0:
-                cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
-                       "-i", str(base), str(out)]
-            else:
-                ratio = 2 ** (semis / 12.0)
-                cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
-                       "-i", str(base), "-af", "rubberband=pitch=" + repr(ratio),
-                       str(out)]
+        lock.write_text("0/1")
+        out = d / ("pad_%d.wav" % base_idx)   # solo el base (semis=0): copia a WAV
+        if not _existe_audio(out):
+            cmd = ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y",
+                   "-i", str(base), str(out)]
             try:
                 subprocess.run(cmd, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL, timeout=600)
             except Exception as e:
-                logging.error("render pad %s idx %d: %s", pack_id, i, e)
+                logging.error("preparar pad base %s: %s", pack_id, e)
             _subir_audio(out)
             _limpiar_local(out)
-            hechos += 1
-            try:
-                lock.write_text(str(hechos) + "/12")
-            except Exception:
-                pass
+        try:
+            lock.write_text("1/1")
+        except Exception:
+            pass
     finally:
         _limpiar_local(base)   # el base vive en Spaces
         try:
@@ -3621,7 +3610,7 @@ def admin_pads_crear():
         lst.append(entrada)
         _pads_guardar(lst)
     _render_pad_async(pack_id)
-    flash("Pad creado. Generando los 12 tonos…", "success")
+    flash("Pad creado. Preparando el audio base…", "success")
     return redirect(url_for("admin_pads"))
 
 
@@ -3668,7 +3657,7 @@ def admin_pads_regenerar(pack_id):
         except Exception:
             pass
     _render_pad_async(pack_id)
-    flash("Regenerando los 12 tonos…", "success")
+    flash("Regenerando el audio base…", "success")
     return redirect(url_for("admin_pads"))
 
 
@@ -3761,7 +3750,7 @@ def admin_pads_editar(pack_id):
             except Exception:
                 pass
         _render_pad_async(pack_id)
-    flash("Pad actualizado" + (". Regenerando los 12 tonos…" if regen else ""), "success")
+    flash("Pad actualizado" + (". Regenerando el audio base…" if regen else ""), "success")
     return redirect(url_for("admin_pads"))
 
 
