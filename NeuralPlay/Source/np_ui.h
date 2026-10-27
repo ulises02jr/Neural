@@ -560,34 +560,34 @@ struct SongCard : public juce::Component
             const float s  = npEsIPhone() ? 24.0f : 28.0f;
             juce::Rectangle<float> ic (full.getRight() - 14.0f - s, full.getCentreY() - s * 0.5f, s, s);
             const float cx = ic.getCentreX(), cy = ic.getCentreY();
-            if (transMode == 1)   // Autolink: dos eslabones entrelazados (cadenas)
+            if (transMode == 1)   // Autolink: cadena de dos eslabones entrelazados (diagonal)
             {
-                g.setColour (juce::Colour (0xffCBD2DA));
-                const float lw = s * 0.22f, lh = s * 0.42f, r = lw * 0.5f;
-                juce::Rectangle<float> a (cx - lw * 0.95f, cy - lh * 0.5f, lw, lh);
-                juce::Rectangle<float> b (cx + lw * 0.95f - lw, cy - lh * 0.5f, lw, lh);
-                g.drawRoundedRectangle (a, r, 1.6f);
-                g.drawRoundedRectangle (b, r, 1.6f);
-                g.fillRect (juce::Rectangle<float> (cx - lw * 0.6f, cy - 0.9f, lw * 1.2f, 1.8f));  // unión central
-            }
-            else                  // Sobreponer: dos flechas cruzadas
-            {
-                g.setColour (juce::Colour (0xff8FB7FF));
-                const float d = s * 0.34f;
-                juce::Path p;
-                p.startNewSubPath (cx - d, cy - d); p.lineTo (cx + d, cy + d);   // ↘
-                p.startNewSubPath (cx + d, cy - d); p.lineTo (cx - d, cy + d);   // ↙
-                g.strokePath (p, juce::PathStrokeType (1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-                auto head = [&] (float hx, float hy, float dx, float dy)
+                g.setColour (juce::Colour (0xffD6DCE4));
+                const float lw = s * 0.54f, lh = s * 0.30f, th = s * 0.10f, off = s * 0.135f;
+                auto link = [&] (float ox, float oy)
                 {
-                    juce::Path t;
-                    const float a = s * 0.16f;
-                    t.addTriangle (hx, hy, hx - dx * a - dy * a * 0.6f, hy - dy * a + dx * a * 0.6f,
-                                           hx - dx * a + dy * a * 0.6f, hy - dy * a - dx * a * 0.6f);
-                    g.fillPath (t);
+                    juce::Path p;
+                    p.addRoundedRectangle (-lw * 0.5f, -lh * 0.5f, lw, lh, lh * 0.5f);
+                    p.applyTransform (juce::AffineTransform::rotation (-0.7854f)   // -45°
+                                          .translated (cx + ox, cy + oy));
+                    g.strokePath (p, juce::PathStrokeType (th, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
                 };
-                head (cx + d, cy + d,  0.707f,  0.707f);
-                head (cx - d, cy + d, -0.707f,  0.707f);
+                link (-off, -off);
+                link ( off,  off);
+            }
+            else                  // Sobreponer: dos capas superpuestas (overlay)
+            {
+                const float sq = s * 0.46f, r = s * 0.11f, off = s * 0.15f, th = s * 0.085f;
+                // capa de atrás (solo contorno)
+                g.setColour (juce::Colour (0xcc8FB7FF));
+                g.drawRoundedRectangle (cx - sq * 0.5f - off, cy - sq * 0.5f - off, sq, sq, r, th);
+                // capa de adelante (relleno suave + contorno, tapa parte de la de atrás)
+                g.setColour (juce::Colour (0xff0d0d0d));
+                g.fillRoundedRectangle (cx - sq * 0.5f + off, cy - sq * 0.5f + off, sq, sq, r);
+                g.setColour (juce::Colour (0x4d8FB7FF));
+                g.fillRoundedRectangle (cx - sq * 0.5f + off, cy - sq * 0.5f + off, sq, sq, r);
+                g.setColour (juce::Colour (0xff8FB7FF));
+                g.drawRoundedRectangle (cx - sq * 0.5f + off, cy - sq * 0.5f + off, sq, sq, r, th);
             }
         }
 

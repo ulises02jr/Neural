@@ -568,6 +568,11 @@ public:
         currentBlockSize = spb;
         temp.setSize (2, juce::jmax (spb, 2048) + 8);
         tempShift.setSize (2, juce::jmax (spb, 2048) + 8);   // scratch del pitch-shift
+        jxTotal = (int) (0.07 * sampleRate);                 // ~70 ms de crossfade en el salto de sección
+        { const int rsz = juce::jmax (spb * 2 + 16, jxTotal + spb + 16);
+          jxRing.setSize (2, rsz); jxRing.clear();
+          jxBuf.setSize (2, juce::jmax (jxTotal + 8, 16)); jxBuf.clear();
+          jxRingPos = 0; jxPos = 0; jxLen = 0; }
         for (int i = 0; i < resamplers.size(); ++i)
         {
             resamplers[i]->setResamplingRatio (fileRates[i] / sampleRate);
@@ -1128,7 +1133,37 @@ public:
         else if (cueActiveBuf >= 0) { cueActiveBuf = -1; cuePos = 0; }
 
         const float m = masterGain.load();
-        for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] = softClip (o[n] * m); }
+        for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] *= m; }   // master (softClip al final)
+        // Guardar el audio LIMPIO (pre-overlay) en el anillo, para el crossfade de futuros saltos.
+        {
+            const int R = jxRing.getNumSamples();
+            if (R > 0)
+            {
+                float* r0 = jxRing.getWritePointer (0);
+                float* r1 = jxRing.getNumChannels() > 1 ? jxRing.getWritePointer (1) : r0;
+                const float* o0 = out[0];
+                const float* o1 = (useCh > 1 && out[1] != nullptr) ? out[1] : o0;
+                int wp = jxRingPos;
+                for (int n = 0; n < nn; ++n) { r0[wp] = o0[n]; r1[wp] = o1[n]; if (++wp >= R) wp = 0; }
+                jxRingPos = wp;
+            }
+        }
+        // Crossfade de salto: encimar la cola vieja (desvaneciéndose) sobre la sección nueva → sin silencio.
+        if (jxLen > jxPos && jxBuf.getNumSamples() >= jxLen)
+        {
+            const int k  = juce::jmin (nn, jxLen - jxPos);
+            const int ch = juce::jmin (2, useCh);
+            for (int c = 0; c < ch; ++c)
+            {
+                float* o = out[c];
+                const float* t = jxBuf.getReadPointer (jxBuf.getNumChannels() > 1 ? c : 0);
+                for (int i = 0; i < k; ++i)
+                    o[i] += t[jxPos + i] * (1.0f - (float) (jxPos + i) / (float) jxLen);
+            }
+            jxPos += k;
+            if (jxPos >= jxLen) { jxPos = 0; jxLen = 0; }
+        }
+        for (int c = 0; c < useCh; ++c) { float* o = out[c]; for (int n = 0; n < nn; ++n) o[n] = softClip (o[n]); }
         positionOut.fetch_add (nn);
 
         const double posSec = (double) positionOut.load() / juce::jmax (1.0, deviceSampleRate);
@@ -1363,23 +1398,28 @@ public:
             }
         }
 
-        // Micro-fundido de salida en el borde del salto: apaga el "overshoot" (el pedacito de la
-        // sección saliente que se alcanzó a reproducir de más antes de que el seek tome efecto en el
-        // siguiente bloque). Así el empalme con la nueva sección NO se oye como corte/choque; el lado
-        // nuevo entra con su propio fundido (afG). No se aplica a repeticiones/∞ (loops sin corte).
+        // Salto de sección: iniciar el CROSSFADE. La cola del mix actual (guardada en el anillo) se
+        // encimará desvaneciéndose sobre la sección nueva en los próximos bloques, tapando el hueco del
+        // reposicionamiento del buffer. Resultado: sin silencio y sin corte/choque. El lado nuevo entra
+        // además con su propio fundido (afG). (No aplica a repeticiones/∞, que son loops sin corte.)
         if (cutAtSec >= 0.0)
+            startJumpXfade();
+    }
+
+    // Toma una instantánea de la cola reciente del mix (del anillo) para el crossfade del salto.
+    void startJumpXfade()
+    {
+        const int R = jxRing.getNumSamples();
+        const int L = juce::jmin (jxTotal, juce::jmin (R - 1, jxBuf.getNumSamples()));
+        if (L <= 0) return;
+        const int ch = juce::jmin (jxRing.getNumChannels(), jxBuf.getNumChannels());
+        int rp = jxRingPos - L; while (rp < 0) rp += R;
+        for (int i = 0; i < L; ++i)
         {
-            const double over = (posSec - cutAtSec) * deviceSampleRate;             // samples pasados del borde en ESTE bloque
-            int idx = nn - (int) juce::jlimit (0.0, (double) nn, over);             // sample donde cae el borde dentro del bloque
-            idx = juce::jlimit (0, nn, idx);
-            const int fade = juce::jmin (nn - idx, (int) (0.004 * deviceSampleRate) + 1);   // ~4 ms de rampa 1->0
-            for (int c = 0; c < useCh; ++c)
-            {
-                float* o = out[c];
-                for (int i = 0; i < fade; ++i)      o[idx + i] *= 1.0f - (float) (i + 1) / (float) (fade + 1);
-                for (int i = idx + fade; i < nn; ++i) o[i] = 0.0f;                  // resto del overshoot: silencio
-            }
+            for (int c = 0; c < ch; ++c) jxBuf.setSample (c, i, jxRing.getSample (c, rp));
+            if (++rp >= R) rp = 0;
         }
+        jxPos = 0; jxLen = L;
     }
 
     void paint (juce::Graphics& g) override
@@ -4976,6 +5016,7 @@ private:
             stemFiles.clear();
             trackShifter.clear();        // los shifters apuntaban al grafo viejo
             trackDelay.clear();
+            jxLen = 0; jxPos = 0; jxRing.clear(); jxRingPos = 0;   // cancelar cualquier crossfade de salto del grafo viejo
             curSemitones = 0;            // cada canción arranca en su tono original (bypass)
             shifterLatency = 0;
             lengthSamples = 0;
@@ -7102,6 +7143,13 @@ private:
         void clear() { buf.clear(); pos = 0; }   // limpiar el retardo tras un salto (evita arrastrar audio viejo)
     };
     juce::AudioBuffer<float> tempShift;                        // scratch de salida del pitch (in/out no pueden ser el mismo)
+    // Crossfade de salto de sección: cola corta del mix de tracks que se encima (desvaneciéndose)
+    // sobre la sección nueva mientras entra, para tapar el hueco del reposicionamiento (sin silencio).
+    juce::AudioBuffer<float> jxRing;   // anillo del audio reciente (post-master, pre-overlay) del mix de tracks
+    juce::AudioBuffer<float> jxBuf;    // instantánea de la cola a reproducir en el crossfade
+    int jxRingPos = 0;                 // próximo índice de escritura en el anillo
+    int jxPos = 0, jxLen = 0;          // avance/largo del crossfade activo (0 = inactivo)
+    int jxTotal = 0;                   // largo del crossfade en samples (≈70 ms, fijado en prepareToPlay)
     int curSemitones = 0;                                      // transposición de la canción cargada (0 = original → bypass total)
     int shifterLatency = 0;                                    // latencia del motor (para el delay de los fijos)
     std::vector<std::unique_ptr<PitchShifter>> trackShifter;   // por track; nullptr = no se transpone (familia fija)
@@ -7128,7 +7176,7 @@ private:
     std::atomic<float> padGain { 1.0f };           // fader del pad (0 dB por defecto)
     std::atomic<int>   padPlayingIdx { -1 };       // tono objetivo que suena (0-11), -1 = ninguno
     std::atomic<int>   padJobGen { 0 };            // generación: descarta descargas viejas
-    double padXfadeSec = 3.0;                       // duración del fade/crossfade (s)
+    double padXfadeSec = 4.5;                       // duración del fade/crossfade del pad (s) — aparición/desvanecimiento más largo
     float  padGainCur = 1.0f;                        // ganancia suavizada del fader (anti-zipper)
     int    padMode = 0;                             // 0 = Auto (sigue la canción), 1 = Manual
     int    padManualIdx = 0;                        // tono elegido a mano (0-11)
