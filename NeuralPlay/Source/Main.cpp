@@ -403,6 +403,7 @@ public:
         };
         masterGain.store (dbToGain (0.0f));
         masterSlider.setLookAndFeel (&faderLnf);
+        masterSlider.getProperties().set ("noscale", true);   // sin marcas dB (no caben bien)
         masterSlider.setRepaintsOnMouseActivity (false);
         addAndMakeVisible (masterSlider);
         masterLabel.setText ("Master", juce::dontSendNotification);
@@ -464,6 +465,7 @@ public:
         addAndMakeVisible (padPanel);
         padPanel.setVisible (false);
         padPanel.fader.setLookAndFeel (&faderLnf);
+        padPanel.fader.getProperties().set ("noscale", true);   // sin marcas dB (no caben bien)
         padPanel.onOpenMenu = [this] { showPadPackMenu(); };
         padPanel.onFaderArm = [this] { armPadFader(); };
         padPanel.onPower    = [this] { if (clickOrArm (kaPad)) return; padManualToggle(); };   // misma acción que el viejo botón PAD del encabezado
@@ -2341,13 +2343,17 @@ public:
             fx.removeFromLeft (midGap);
             auto mcol = fx.removeFromRight (mColW);
             {
-                juce::Button* btns[6] = { &faderViewBtn, &busesBtn, &padPlayerBtn, &muteMidiBtn, &repeatBtn, &infiniteBtn };
+                // iPhone: 4 botones (como iPad). 'Pad' y 'MIDI' se quitan de aquí (el pad ya está
+                // siempre visible arriba y el MIDI vive en el Menú); siguen vivos pero ocultos.
+                padPlayerBtn.setVisible (false);
+                muteMidiBtn.setVisible (false);
+                juce::Button* btns[4] = { &faderViewBtn, &busesBtn, &repeatBtn, &infiniteBtn };
                 const int bgap = 4;
-                const int bh2 = (btnCol.getHeight() - bgap * 5) / 6;
-                for (int i = 0; i < 6; ++i)
+                const int bh2 = (btnCol.getHeight() - bgap * 3) / 4;
+                for (int i = 0; i < 4; ++i)
                 {
                     btns[i]->setBounds (btnCol.removeFromTop (bh2));
-                    if (i < 5) btnCol.removeFromTop (bgap);
+                    if (i < 3) btnCol.removeFromTop (bgap);
                 }
             }
             masterLabel.setBounds (mcol.removeFromBottom (16));
@@ -4835,6 +4841,7 @@ private:
             c->onTono     = [this, sid, title] { openTonoFor (sid, title, false); };
             c->onAddAfter = [this, sid] { openBibliotecaForAddAfter (sid); };
             c->onReorder  = [this] (int from, int to) { reorderSong (from, to); };
+            c->onScrollDrag = [this] (int delta) { stripScroll = juce::jmax (0, stripScroll - delta); resized(); };   // scroll táctil del setlist
             cardHost.addAndMakeVisible (c);
         }
         addCard.setVisible (editMode && ! lastSetlistId.isEmpty());

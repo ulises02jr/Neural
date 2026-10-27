@@ -54,6 +54,8 @@ struct FaderLNF : public juce::LookAndFeel_V4
         g.drawRoundedRectangle (track.reduced (0.5f), rad, 1.0f);
 
         // Escala tenue de dB (−60..0, lineal) a los lados del riel: look de mezcladora.
+        // Se omite en faders marcados "noscale" (Master y Pad: no caben bien y no la necesitan).
+        if (! (bool) slider.getProperties().getWithDefault ("noscale", false))
         {
             const int marks[] = { 0, -6, -12, -24, -48 };
             for (int db : marks)
@@ -388,6 +390,8 @@ struct SongCard : public juce::Component
     int songId = 0;   // #4 id de la canción (para mapping de teclado)
     std::function<void()> onClick, onRemove, onTono, onAddAfter;
     std::function<void (int fromIndex, int toIndex)> onReorder;   // arrastrar para reordenar
+    std::function<void (int deltaY)> onScrollDrag;   // arrastre vertical fuera de edición = scroll del setlist (táctil)
+    int lastDragY = 0;
     float dlProgress = -1.0f;   // -1 = sin barra; 0..1 = progreso
     int   dlKind = 2;           // 1 = Transponiendo (render en servidor), 2 = Descargando
 
@@ -436,7 +440,7 @@ struct SongCard : public juce::Component
 
     void mouseDown (const juce::MouseEvent&) override
     {
-        homeX = getX(); homeY = getY(); dragging = false;
+        homeX = getX(); homeY = getY(); dragging = false; lastDragY = 0;
     }
     // Resaltado al pasar el mouse por los botones de edición.
     void mouseMove  (const juce::MouseEvent&) override { if (editMode) repaint(); }
@@ -444,7 +448,16 @@ struct SongCard : public juce::Component
     void mouseExit  (const juce::MouseEvent&) override { if (editMode) repaint(); }
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        if (! editMode) return;
+        if (! editMode)
+        {   // fuera de edición: arrastre vertical = scroll del setlist (táctil en iPhone/iPad)
+            const int dy = e.getDistanceFromDragStartY();
+            if (std::abs (dy) > 3 || lastDragY != 0)
+            {
+                const int delta = dy - lastDragY; lastDragY = dy;
+                if (onScrollDrag) onScrollDrag (delta);
+            }
+            return;
+        }
         const int dy = e.getDistanceFromDragStartY();   // reordenar VERTICAL (lista)
         if (dragging || std::abs (dy) > 5)
         {
@@ -1187,8 +1200,9 @@ struct MidiPanel : public juce::Component
     {
         const bool ph = npEsIPhone();
         const int rowsN = juce::jmax (1, rows.size());
-        const int w = juce::jmin (ph ? getWidth() - 20 : 720, getWidth() - (ph ? 12 : 48));
-        const int h = juce::jmin ((ph ? 46 : 52) + rowsN * (ph ? 40 : 46) + (ph ? 16 : 26),
+        // Tarjeta centrada y acotada (en iPhone horizontal NO usar casi toda la pantalla).
+        const int w = juce::jmin (ph ? 640 : 720, getWidth() - (ph ? 40 : 48));
+        const int h = juce::jmin ((ph ? 42 : 52) + rowsN * (ph ? 34 : 46) + (ph ? 12 : 26),
                                   getHeight() - (ph ? 16 : 48));
         return getLocalBounds().withSizeKeepingCentre (w, h);
     }
@@ -1229,14 +1243,14 @@ struct MidiPanel : public juce::Component
     {
         const bool ph = npEsIPhone();
         auto p = panelBounds();
-        headerArea = p.removeFromTop (ph ? 46 : 52);
+        headerArea = p.removeFromTop (ph ? 42 : 52);
         backBtn.setBounds (headerArea.getX() + (ph ? 10 : 16),
-                           headerArea.getCentreY() - 15,
-                           ph ? 84 : 96, 30);
-        closeBtn.setBounds (headerArea.getRight() - (ph ? 42 : 46),
-                            headerArea.getCentreY() - 15, 34, 30);
-        auto a = p.reduced (ph ? 10 : 18, ph ? 6 : 10);
-        const int rh = ph ? 40 : 46;   // alto fijo por fila (compacto)
+                           headerArea.getCentreY() - 14,
+                           ph ? 78 : 96, 28);
+        closeBtn.setBounds (headerArea.getRight() - (ph ? 40 : 46),
+                            headerArea.getCentreY() - 14, 32, 28);
+        auto a = p.reduced (ph ? 10 : 18, ph ? 5 : 10);
+        const int rh = ph ? 34 : 46;   // alto fijo por fila (compacto)
         const int ctrlH = ph ? 26 : 32;
         for (auto* r : rows)
         {
@@ -1751,8 +1765,9 @@ struct AboutPanel : public juce::Component
     juce::Rectangle<int> panelBounds() const
     {
         const bool ph = npEsIPhone();
-        const int w = juce::jmin (ph ? getWidth() - 20 : 460, getWidth() - (ph ? 12 : 48));
-        const int h = (ph ? 46 : 52) + 4 * (ph ? 48 : 54) + (ph ? 16 : 24);
+        // Tarjeta centrada y acotada (en iPhone horizontal NO usar casi toda la pantalla).
+        const int w = juce::jmin (460, getWidth() - (ph ? 40 : 48));
+        const int h = (ph ? 44 : 52) + 4 * (ph ? 44 : 54) + (ph ? 14 : 24);
         return getLocalBounds().withSizeKeepingCentre (w, h);
     }
 
@@ -1763,7 +1778,7 @@ struct AboutPanel : public juce::Component
         g.setColour (juce::Colour (0xff141414)); g.fillRoundedRectangle (pf, 14.0f);
         g.setColour (juce::Colour (0x33ffffff)); g.drawRoundedRectangle (pf, 14.0f, 1.2f);
         g.setColour (juce::Colours::white);
-        g.setFont (juce::Font (juce::FontOptions (18.0f, juce::Font::bold)));
+        g.setFont (juce::Font (juce::FontOptions (npEsIPhone() ? 16.0f : 18.0f, juce::Font::bold)));
         g.drawText (juce::String::fromUTF8 ("Acerca de"), headerArea, juce::Justification::centred);
         g.setColour (juce::Colour (0x18ffffff));
         g.drawLine (pf.getX() + 14.0f, (float) headerArea.getBottom(), pf.getRight() - 14.0f, (float) headerArea.getBottom(), 1.0f);
@@ -3285,22 +3300,22 @@ struct PadPanel : public juce::Component
         auto r = full.reduced (ph ? 8 : 14);
         r.removeFromRight (ph ? 8 : 12);
 
-        auto top = r.removeFromTop (ph ? 38 : 40);     // barra selectora más baja (empuja los tonos arriba)
-        rPower = top.removeFromLeft (ph ? 42 : 46).reduced (0, ph ? 5 : 5);   // ON/OFF del pad (antes estaba en el encabezado)
-        top.removeFromLeft (ph ? 6 : 8);
-        rLink = top.removeFromLeft (ph ? 46 : 44).reduced (0, ph ? 5 : 5);
-        top.removeFromLeft (ph ? 8 : 10);
-        rName = top.reduced (0, ph ? 4 : 5);           // la barra de vidrio ocupa el resto
-        { auto inner = rName.reduced (5); rPort = inner.removeFromLeft (inner.getHeight()); }   // portada cuadrada DENTRO de la barra
-        r.removeFromTop (ph ? 4 : 7);
-        rStatus = r.removeFromTop (ph ? 13 : 16);
-        r.removeFromTop (ph ? 5 : 8);
+        auto top = r.removeFromTop (ph ? 30 : 40);     // barra selectora más baja (empuja los tonos arriba)
+        rPower = top.removeFromLeft (ph ? 40 : 46).reduced (0, ph ? 3 : 5);   // ON/OFF del pad (antes estaba en el encabezado)
+        top.removeFromLeft (ph ? 5 : 8);
+        rLink = top.removeFromLeft (ph ? 44 : 44).reduced (0, ph ? 3 : 5);
+        top.removeFromLeft (ph ? 6 : 10);
+        rName = top.reduced (0, ph ? 3 : 5);           // la barra de vidrio ocupa el resto
+        { auto inner = rName.reduced (ph ? 4 : 5); rPort = inner.removeFromLeft (inner.getHeight()); }   // portada cuadrada DENTRO de la barra
+        r.removeFromTop (ph ? 3 : 7);
+        rStatus = r.removeFromTop (ph ? 10 : 16);
+        r.removeFromTop (ph ? 3 : 8);
 
         // Grilla 6×2: celdas compactas, juntas y centradas (estilo igual, solo más chico).
-        const int cols = 6, rows = 2, gap = ph ? 4 : 6;
+        const int cols = 6, rows = 2, gap = ph ? 3 : 6;
         int cw = (r.getWidth() - (cols - 1) * gap) / cols;
-        cw = juce::jmin (cw, ph ? 46 : 54);            // tope de ancho -> botones un pelín más chicos
-        const int chh = ph ? 34 : 38;                 // alto fijo un pelín más chico
+        cw = juce::jmin (cw, ph ? 42 : 54);            // tope de ancho -> botones un pelín más chicos
+        const int chh = ph ? 22 : 38;                 // alto fijo un pelín más chico (iPhone: entran las 2 filas)
         const int gridW = cols * cw + (cols - 1) * gap;
         const int gridH = rows * chh + (rows - 1) * gap;
         const int ox = r.getX() + juce::jmax (0, (r.getWidth()  - gridW) / 2);
