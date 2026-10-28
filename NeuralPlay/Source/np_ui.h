@@ -1410,13 +1410,14 @@ struct RepertoirePicker : public juce::Component
     {
         const bool ph = npEsIPhone();
         const int w = ph ? 420 : 460;
-        const int h = (ph ? 58 : 64) + juce::jmax (1, items.size()) * rowH() + 14 + barH() + (ph ? 12 : 18);
+        const int h = (ph ? 68 : 64) + juce::jmax (1, items.size()) * rowH() + 14 + barH() + (ph ? 12 : 18);
         return getLocalBounds().withSizeKeepingCentre (w, juce::jmin (h, getHeight() - (ph ? 16 : 40)));
     }
     juce::Rectangle<int> rowBounds (int i) const
     {
         auto p = panelBounds();
-        return { p.getX() + 20, p.getY() + (npEsIPhone() ? 56 : 64) + i * rowH(), p.getWidth() - 40, npEsIPhone() ? 42 : 48 };
+        // iPhone: las filas empiezan más abajo para no quedar bajo el mensaje "Cambios sin guardar".
+        return { p.getX() + 20, p.getY() + (npEsIPhone() ? 66 : 64) + i * rowH(), p.getWidth() - 40, npEsIPhone() ? 42 : 48 };
     }
     juce::Rectangle<int> chipRect (int i) const
     {
