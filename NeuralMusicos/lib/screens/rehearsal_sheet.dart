@@ -132,13 +132,22 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     });
   }
 
+  // Familias que NO se transponen (van al tono original): Click, Guía, Batería, Percusión, Loops.
+  bool _esFija(String fam) {
+    final f = fam.toLowerCase().trim();
+    return f.startsWith('click') || f.startsWith('gu') || f.startsWith('bater')
+        || f.startsWith('percus') || f.startsWith('loop');
+  }
+
   Future<void> _cargar() async {
     setState(() {
       _cargando = true;
       _status = null;
       _tonoNoListo = false;
     });
-    final j = await Api.I.pistas(widget.numero, widget.sem);
+    // Pedimos el metadata (stems + secciones) en el TONO ORIGINAL: es independiente del tono,
+    // y el audio se transpone en vivo en el dispositivo (ya no se renderizan tonos en el servidor).
+    final j = await Api.I.pistas(widget.numero, 0);
     if (!mounted) return;
     if (j == null) {
       setState(() { _cargando = false; _status = 'No pude cargar las pistas. Intentá de nuevo.'; });
@@ -192,9 +201,11 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       return;
     }
 
-    // Si ya esta cargada esta cancion+tono, reconectar sin re-descargar (sigue sonando).
+    // Si ya está cargada esta canción, reconectar sin re-descargar (sigue sonando) y solo
+    // ajustar el tono en vivo (sin bajar nada de nuevo).
     if (AudioEngine.I.loadedFor(widget.numero, widget.sem)) {
       try {
+        await AudioEngine.I.setPitch(widget.sem.toDouble());   // cambio de tono en vivo
         final pos = await AudioEngine.I.position();
         final playing = await AudioEngine.I.isPlaying();
         final bytes = await AudioEngine.I.cacheSize();
@@ -220,14 +231,16 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       final list = _stems.map((s) {
         final base = s.id.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
         final proxy = 'web/$base.mp3';
-        return {
+        return <String, dynamic>{
           'id': s.id,
-          'url': Api.I.stemDownloadUrl(widget.numero, proxy, widget.sem),
-          'key': '${widget.numero}_t${widget.sem}_$base.mp3',
+          'url': Api.I.stemDownloadUrl(widget.numero, proxy, 0),   // SIEMPRE el tono original
+          'key': '${widget.numero}_t0_$base.mp3',
+          'fixed': _esFija(s.familia),                             // Click/Guía/Batería/Percusión/Loops: no se transponen
         };
       }).toList();
       setState(() => _status = 'Descargando pistas…');
       final dur = await AudioEngine.I.load(list, numero: widget.numero, sem: widget.sem);
+      await AudioEngine.I.setPitch(widget.sem.toDouble());   // transponer en vivo al tono pedido
       Api.I.marcarDescargada(widget.numero); // queda disponible offline
       if (!mounted) return;
       final bytes = await AudioEngine.I.cacheSize();

@@ -63,6 +63,9 @@ class MainFlutterWindow: NSWindow {
           self.audio.setVolume(id, Float(v))
         }
         result(nil)
+      case "setPitch":
+        self.audio.setPitch(Float(args["semitones"] as? Double ?? 0))
+        result(nil)
       case "position":
         result(self.audio.positionSec())
       case "isPlaying":
@@ -125,7 +128,10 @@ class MultiTrackAudio {
   private var players: [String: AVAudioPlayerNode] = [:]
   private var files: [String: AVAudioFile] = [:]
   private var volumes: [String: Float] = [:]
-
+  // Transposición en vivo: un AVAudioUnitTimePitch por stem transponible (los fijos van directo).
+  private var pitches: [String: AVAudioUnitTimePitch] = [:]
+  private var fixedIds: Set<String> = []     // stems que NO se transponen (Click/Guía/Batería/Percusión/Loops)
+  private var curSemitones: Float = 0        // transposición actual (semitonos)
   private var durationSec: Double = 0
   private var playing = false
   private var startOffsetSec: Double = 0
@@ -135,7 +141,9 @@ class MultiTrackAudio {
     stop()
     engine.stop()
     for (_, p) in players { engine.detach(p) }
+    for (_, px) in pitches { engine.detach(px) }
     players.removeAll(); files.removeAll(); volumes.removeAll()
+    pitches.removeAll(); fixedIds.removeAll()
     durationSec = 0
 
     let dir = cacheDir
@@ -157,6 +165,7 @@ class MultiTrackAudio {
       guard let id = stem["id"] as? String, let urlStr = stem["url"] as? String,
             let url = URL(string: urlStr) else { continue }
       let key = (stem["key"] as? String) ?? id
+      if (stem["fixed"] as? Bool) ?? false { fixedIds.insert(id) }   // NO se transpone
       let dest = dir.appendingPathComponent(key)
 
       // Si ya esta en cache, usarla sin descargar.
@@ -187,7 +196,14 @@ class MultiTrackAudio {
       for (id, file) in self.files {
         let player = AVAudioPlayerNode()
         self.engine.attach(player)
-        self.engine.connect(player, to: self.engine.mainMixerNode, format: file.processingFormat)
+        // TODOS los stems pasan por un pitch node (misma latencia → sincronía perfecta).
+        // Los fijos quedan en 0 (nunca se transponen); los transponibles siguen a setPitch.
+        let px = AVAudioUnitTimePitch()
+        px.pitch = self.fixedIds.contains(id) ? 0.0 : self.curSemitones * 100.0   // cents (semitono = 100)
+        self.engine.attach(px)
+        self.engine.connect(player, to: px, format: file.processingFormat)
+        self.engine.connect(px, to: self.engine.mainMixerNode, format: file.processingFormat)
+        self.pitches[id] = px
         player.volume = self.volumes[id] ?? 1.0
         self.players[id] = player
       }
@@ -255,6 +271,13 @@ class MultiTrackAudio {
   func setVolume(_ id: String, _ value: Float) {
     volumes[id] = value
     players[id]?.volume = value
+  }
+
+  /// Transposición en vivo: cambia el tono de los stems transponibles (sin tocar los fijos).
+  func setPitch(_ semitones: Float) {
+    curSemitones = semitones
+    let cents = semitones * 100.0
+    for (id, px) in pitches where !fixedIds.contains(id) { px.pitch = cents }   // los fijos quedan en 0
   }
 
   func positionSec() -> Double {

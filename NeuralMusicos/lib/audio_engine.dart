@@ -19,10 +19,12 @@ class AudioEngine {
   // Lo lee ChartScreen para resaltar la sección correcta aunque se repita.
   int? arrStep;
 
-  bool loadedFor(int numero, int sem) => loadedNumero == numero && loadedSem == sem;
+  // El audio se baja SIEMPRE en el tono original y se transpone en vivo, así que basta
+  // con que sea la misma canción (el tono se cambia con setPitch, sin re-descargar).
+  bool loadedFor(int numero, int sem) => loadedNumero == numero;
 
-  /// Carga los stems: cada uno {id, url}. Devuelve la duracion en segundos.
-  Future<double> load(List<Map<String, String>> stems, {int? numero, int? sem}) async {
+  /// Carga los stems: cada uno {id, url, key, fixed}. Devuelve la duracion en segundos.
+  Future<double> load(List<Map<String, dynamic>> stems, {int? numero, int? sem}) async {
     final d = await _ch.invokeMethod('load', {'stems': stems});
     loadedDur = (d as num?)?.toDouble() ?? 0;
     loadedNumero = numero;
@@ -35,6 +37,11 @@ class AudioEngine {
   Future<void> seek(double offset) => _ch.invokeMethod('seek', {'offset': offset});
   Future<void> setVolume(String id, double value) =>
       _ch.invokeMethod('setVolume', {'id': id, 'value': value});
+
+  /// Transposición EN VIVO: cambia el tono de los stems transponibles (los fijos no se tocan).
+  /// Se baja el audio en su tono original una sola vez y se transpone en el dispositivo.
+  Future<void> setPitch(double semitones) =>
+      _ch.invokeMethod('setPitch', {'semitones': semitones});
 
   Future<void> stop() async {
     await _ch.invokeMethod('stop');
