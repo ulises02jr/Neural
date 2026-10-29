@@ -199,6 +199,7 @@ class MultiTrackAudio {
         // Los fijos se quedan en 0 (nunca se transponen); los transponibles siguen a setPitch.
         let px = AVAudioUnitTimePitch()
         px.pitch = self.fixedIds.contains(id) ? 0.0 : self.curSemitones * 100.0   // cents (semitono = 100)
+        px.bypass = (self.curSemitones == 0)   // en original: bypass → arranque instantaneo
         self.engine.attach(px)
         self.engine.connect(player, to: px, format: file.processingFormat)
         self.engine.connect(px, to: self.engine.mainMixerNode, format: file.processingFormat)
@@ -320,13 +321,38 @@ class MultiTrackAudio {
   func setPitch(_ semitones: Float) {
     curSemitones = semitones
     let cents = semitones * 100.0
-    for (id, px) in pitches where !fixedIds.contains(id) { px.pitch = cents }   // los fijos quedan en 0
+    // En tono ORIGINAL (0 semitonos) TODOS los nodos van en bypass: el audio pasa de largo
+    // sin procesarse → entra al instante (el phase-vocoder es lo que tardaba 2-8 s en cargar).
+    // Al transponer se activan TODOS parejo (incluidas las fijas, en pitch 0 pero activas)
+    // para que compartan la misma latencia y no se desincronicen entre si.
+    let bypass = (semitones == 0)
+    for (id, px) in pitches {
+      px.pitch = fixedIds.contains(id) ? 0.0 : cents
+      px.bypass = bypass
+    }
   }
 
   func positionSec() -> Double {
-    if playing, let s = startDate {
-      return min(startOffsetSec + Date().timeIntervalSince(s), durationSec)
+    // Posicion medida del AUDIO REAL (no del reloj): cuenta los frames que el motor
+    // de verdad reprodujo. Asi la aguja ESPERA a que entre el sonido (sea 0.2 s en
+    // tono original u 8 s con transposicion por el cebado del pitch) y nunca se adelanta;
+    // el auto-avance de secciones tampoco salta antes de tiempo, asi no se acumula el desfase.
+    // Guardas estrictas: solo consultar playerTime cuando TODO esta en estado valido.
+    // (Consultarlo en un estado transitorio —motor parado, nodo no reproduciendo— puede
+    //  lanzar una excepcion nativa y CERRAR la app; pasa mas seguido con arreglos por los
+    //  multiples seeks. Si algo no esta listo, devolvemos el inicio del tramo sin tocar nada.)
+    if playing, engine.isRunning,
+       let p = players.values.first, p.isPlaying,
+       let nodeTime = p.lastRenderTime, nodeTime.isSampleTimeValid,
+       let pt = p.playerTime(forNodeTime: nodeTime),
+       pt.isSampleTimeValid, pt.sampleRate > 0 {
+      // sampleTime es NEGATIVO durante el 'lead' (antes del arranque real), 0 al empezar
+      // el audio, y luego cuenta los frames reproducidos. max(0,...) mantiene la aguja
+      // quieta en el inicio del tramo hasta que entra el sonido.
+      let reproducido = max(0, Double(pt.sampleTime) / pt.sampleRate)
+      return min(startOffsetSec + reproducido, durationSec)
     }
+    // Aun sin reloj de muestras valido: quedarse en el inicio del tramo (no adelantar).
     return startOffsetSec
   }
 

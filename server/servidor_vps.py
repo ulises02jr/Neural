@@ -3204,7 +3204,7 @@ def _asegurar_web(numero, n, org=None):
         lock.write_text("0/" + str(len(reales)))
         hechos = 0
         for nombre in reales:
-            out = web / (os.path.splitext(nombre)[0] + ".mp3")
+            out = web / (os.path.splitext(nombre)[0] + ".m4a")
             if _existe_audio(out):
                 hechos += 1
                 try:
@@ -3217,9 +3217,12 @@ def _asegurar_web(numero, n, org=None):
                 logging.error("proxy %s/%s: falta real %s", numero, n, nombre)
                 continue
             try:
+                # Proxy AAC .m4a con faststart: el indice de busqueda queda al frente,
+                # asi los saltos de seccion en NeuralCharts son instantaneos (el mp3 obligaba
+                # a decodificar desde el principio en cada salto).
                 subprocess.run(
                     ["/usr/bin/nice", "-n", "19", "/usr/bin/ffmpeg", "-y", "-i", str(entrada),
-                     "-b:a", "128k", str(out)],
+                     "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
             except Exception as e:
                 logging.error("proxy %s/%s %s: %s", numero, n, nombre, e)
@@ -3246,7 +3249,7 @@ def _web_listo(numero, n):
     reales = [os.path.splitext(x)[0] for x in _listar_audio(d)]
     if not reales:
         return False
-    web = set(os.path.splitext(x)[0] for x in _listar_audio(d / "web", exts=(".mp3",)))
+    web = set(os.path.splitext(x)[0] for x in _listar_audio(d / "web", exts=(".m4a",)))
     return all(s in web for s in reales)
 
 
@@ -3829,7 +3832,7 @@ def api_pistas(numero):
     fam_por_stem = {os.path.splitext(k)[0]: v for k, v in fam_guardadas.items()}
     if listo:
         web = _carpeta_tono(numero, n) / "web"
-        for nombre in _listar_audio(web, exts=(".mp3",)):
+        for nombre in _listar_audio(web, exts=(".m4a",)):
             base = os.path.splitext(nombre)[0]
             stems.append({"name": base, "file": nombre,
                           "familia": fam_por_stem.get(base) or _familia_auto(base)})
@@ -4978,13 +4981,13 @@ def admin_pista_borrar_una(numero):
     if archivo:
         stem = os.path.splitext(archivo)[0]
         base = dir_pistas(_cur_org()) / str(numero)
-        objetivos = [base / archivo, base / "web" / (stem + ".mp3")]
+        objetivos = [base / archivo, base / "web" / (stem + ".m4a"), base / "web" / (stem + ".mp3")]
         for d in base.glob("tono_*"):
             if d.is_dir():
-                objetivos += [d / archivo, d / "web" / (stem + ".mp3")]
+                objetivos += [d / archivo, d / "web" / (stem + ".m4a"), d / "web" / (stem + ".mp3")]
         # Spaces: borra el original y su proxy web (los tonos los purga _invalidar_tonos)
         if almacen.habilitado():
-            for lp in (base / archivo, base / "web" / (stem + ".mp3")):
+            for lp in (base / archivo, base / "web" / (stem + ".m4a"), base / "web" / (stem + ".mp3")):
                 k = _key_audio(lp)
                 if k:
                     try:

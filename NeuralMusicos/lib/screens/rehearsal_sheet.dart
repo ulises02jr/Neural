@@ -67,6 +67,8 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   Timer? _timer;
   int _cacheBytes = 0;
   double _dragAcc = 0;
+  final ScrollController _secScroll = ScrollController(); // tira de secciones corrediza
+  int _secScrollIdx = -1;                                 // última sección a la que se desplazó
 
   // Arreglo activo (índices de sección reales, con repeticiones). Vacío = canción completa.
   // Cuando hay arreglo, el AUDIO del ensayo salta de sección en sección siguiendo el orden.
@@ -83,6 +85,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
   @override
   void dispose() {
     _timer?.cancel();
+    _secScroll.dispose();
     // No detenemos el audio al cerrar el panel: sigue sonando (como en la web).
     // Se detiene al salir de la cancion (ChartScreen.dispose).
     super.dispose();
@@ -177,14 +180,19 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
       }));
     _secciones
       ..clear()
-      ..addAll(secs.map((s) {
-        final m = Map<String, dynamic>.from(s as Map);
-        return _Sec(
-          (m['t'] is num) ? (m['t'] as num).toDouble() : 0,
-          (m['nombre'] ?? '').toString(),
-          (m['i'] is num) ? (m['i'] as num).toInt() : -1,
-        );
-      }));
+      ..addAll(secs
+          .map((s) {
+            final m = Map<String, dynamic>.from(s as Map);
+            return _Sec(
+              (m['t'] is num) ? (m['t'] as num).toDouble() : 0,
+              (m['nombre'] ?? '').toString(),
+              (m['i'] is num) ? (m['i'] as num).toInt() : -1,
+            );
+          })
+          // Descartar secciones placeholder SIN NOMBRE (el metadata en tono original trae
+          // un pickup/intro sin nombre al inicio). El chart no las muestra, así que si las
+          // dejáramos la tira quedaría corrida una sección contra el chart.
+          .where((sec) => sec.nombre.trim().isNotEmpty));
     _secciones.sort((a, b) => a.t.compareTo(b.t));
     // Marcadores para que el chart siga la musica (los lee ChartScreen).
     AudioEngine.I.loadedSecs =
@@ -227,14 +235,15 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
 
     // Cargar audio nativo.
     try {
-      // Usar los proxys MP3 (web/<base>.mp3): ~decenas de veces mas livianos que los WAV.
+      // Usar los proxys AAC (web/<base>.m4a): livianos como mp3 pero con indice de busqueda,
+      // asi los saltos de seccion entran al instante (el mp3 decodificaba desde el principio).
       final list = _stems.map((s) {
         final base = s.id.split('/').last.replaceAll(RegExp(r'\.[^.]+$'), '');
-        final proxy = 'web/$base.mp3';
+        final proxy = 'web/$base.m4a';
         return <String, dynamic>{
           'id': s.id,
           'url': Api.I.stemDownloadUrl(widget.numero, proxy, 0),   // SIEMPRE el tono original
-          'key': '${widget.numero}_t0_$base.mp3',
+          'key': '${widget.numero}_t0_$base.m4a',
           'fixed': _esFija(s.familia),                             // Click/Guía/Batería/Percusión/Loops: no se transponen
         };
       }).toList();
@@ -698,86 +707,103 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     return '';
   }
 
-  Widget _secbar() {
-    // Con arreglo: una celda por PASO del arreglo (con repeticiones), en su orden.
-    if (_arrOn) {
-      return Container(
-        height: 26,
-        decoration: BoxDecoration(color: NW.bg, borderRadius: BorderRadius.circular(6)),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: List.generate(_arr.length, (k) {
-            final d = _stepDur(k);
-            final flex = (d * 1000).round().clamp(1, 1 << 30);
-            final cur = k == _arrStep;
-            return Expanded(
-              flex: flex,
-              child: GestureDetector(
-                onTap: () => _irPaso(k),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: cur ? _acentoSoft : NW.raised,
-                    border: Border(left: BorderSide(color: k == 0 ? Colors.transparent : NW.line)),
-                  ),
-                  alignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.only(left: 4),
-                  child: Text(_nombreReal(_arr[k]),
-                      maxLines: 1,
-                      overflow: TextOverflow.clip,
-                      style: TextStyle(fontSize: 9, color: cur ? NW.txt : NW.txt2)),
-                ),
-              ),
-            );
-          }),
+  // Un chip de sección de ancho legible (ya no proporcional a la duración:
+  // así no se apiñan cuando hay muchas). La tira entera se desplaza en horizontal.
+  Widget _secChip(String texto, bool cur, bool loop, VoidCallback onTap) {
+    final Color bg = loop ? _acento : (cur ? _acentoSoft : NW.raised);
+    final Color fg = loop ? Colors.black : (cur ? NW.txt : NW.txt2);
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 46),
+            padding: const EdgeInsets.symmetric(horizontal: 11),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: cur ? _acento : NW.line),
+            ),
+            child: Text(texto,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, fontWeight: cur ? FontWeight.w600 : FontWeight.w500, color: fg)),
+          ),
         ),
-      );
+      ),
+    );
+  }
+
+  // Ancho aproximado de un chip (para seguir la sección activa al desplazar).
+  double _anchoChip(String t) => (t.length * 7.0 + 26).clamp(46.0, 240.0);
+
+  // Desplaza la tira para dejar visible la sección activa (con un poco de margen a la izquierda).
+  void _seguirSeccion(List<String> labels, int activa) {
+    if (!mounted || activa < 0 || activa == _secScrollIdx || !_secScroll.hasClients) return;
+    _secScrollIdx = activa;
+    try {
+      double antes = 0;
+      for (var i = 0; i < activa && i < labels.length; i++) { antes += _anchoChip(labels[i]) + 4; }
+      final destino = (antes - 52).clamp(0.0, _secScroll.position.maxScrollExtent);
+      _secScroll.animateTo(destino, duration: const Duration(milliseconds: 280), curve: Curves.easeOut);
+    } catch (_) {/* si la tira aun no esta medida, no pasa nada */}
+  }
+
+  Widget _secbar() {
+    final List<Widget> chips = [];
+    final List<String> labels = [];
+    int activa;
+
+    if (_arrOn) {
+      // Con arreglo: un chip por PASO del arreglo (con repeticiones), en su orden.
+      activa = _arrStep;
+      for (var k = 0; k < _arr.length; k++) {
+        final nombre = _nombreReal(_arr[k]);
+        labels.add(nombre);
+        chips.add(_secChip(nombre, k == _arrStep, false, () => _irPaso(k)));
+      }
+    } else {
+      // Sin arreglo: un chip por sección de la canción.
+      activa = _secActiva;
+      for (var i = 0; i < _secciones.length; i++) {
+        final start = _secciones[i].t;
+        final end = i < _secciones.length - 1 ? _secciones[i + 1].t : (_dur > 0 ? _dur : start + 1);
+        final nombre = _secciones[i].nombre;
+        final loop = _loopRange != null && (_loopRange![0] - start).abs() < 0.02;
+        labels.add(nombre);
+        chips.add(_secChip(nombre, i == activa, loop, () {
+          _seek(start);
+          if (_loop) setState(() => _loopRange = [start, end]);
+        }));
+      }
     }
 
-    final activa = _secActiva;
-    return Container(
-      height: 26,
-      decoration: BoxDecoration(color: NW.bg, borderRadius: BorderRadius.circular(6)),
-      clipBehavior: Clip.antiAlias,
-      child: Row(
-        children: List.generate(_secciones.length, (i) {
-          final start = _secciones[i].t;
-          final end = i < _secciones.length - 1 ? _secciones[i + 1].t : (_dur > 0 ? _dur : start + 1);
-          final flex = ((end - start) * 1000).round().clamp(1, 1 << 30);
-          final cur = i == activa;
-          final loop = _loopRange != null && (_loopRange![0] - start).abs() < 0.02;
-          return Expanded(
-            flex: flex,
-            child: GestureDetector(
-              onTap: () {
-                _seek(start);
-                if (_loop) setState(() => _loopRange = [start, end]);
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  color: loop ? _acento : (cur ? _acentoSoft : NW.raised),
-                  border: Border(left: BorderSide(color: i == 0 ? Colors.transparent : NW.line)),
-                ),
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.only(left: 4),
-                child: Text(_secciones[i].nombre,
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                    style: TextStyle(fontSize: 9, color: loop ? Colors.black : (cur ? NW.txt : NW.txt2))),
-              ),
-            ),
-          );
-        }),
+    // Tras pintar, deja visible la sección activa deslizando la tira.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _seguirSeccion(labels, activa));
+
+    return SizedBox(
+      height: 30,
+      child: ListView(
+        controller: _secScroll,
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        children: chips,
       ),
     );
   }
 
   Widget _transportBtns() {
     return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      _tbtn('⏮', false, false, _goStart),
+      _tbtn(Icons.skip_previous_rounded, false, false, _goStart),
       const SizedBox(width: 12),
-      _tbtn(_playing ? '❚❚' : '▶', true, false, _togglePlay),
+      _tbtn(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded, true, false, _togglePlay),
       const SizedBox(width: 12),
-      _tbtn('🔁', false, _loop, () {
+      _tbtn(Icons.repeat_rounded, false, _loop, () {
         setState(() {
           _loop = !_loop;
           _loopRange = _loop ? _seccionEn(_pos) : null;
@@ -786,7 +812,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
     ]);
   }
 
-  Widget _tbtn(String glifo, bool play, bool on, VoidCallback onTap) {
+  Widget _tbtn(IconData icono, bool play, bool on, VoidCallback onTap) {
     final size = play ? 50.0 : 42.0;
     final activo = play || on;
     return Material(
@@ -800,7 +826,7 @@ class _RehearsalBodyState extends State<_RehearsalBody> {
           height: size,
           alignment: Alignment.center,
           decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: activo ? _acento : NW.line)),
-          child: Text(glifo, style: TextStyle(color: activo ? Colors.black : NW.txt, fontSize: play ? 20 : 16)),
+          child: Icon(icono, color: activo ? Colors.black : NW.txt, size: play ? 26 : 22),
         ),
       ),
     );
